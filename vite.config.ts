@@ -8,7 +8,7 @@ const root = resolve(import.meta.dirname, 'src')
 const outDir = resolve(import.meta.dirname, 'dist')
 
 /**
- * Copie `manifest.json` et `index.html` à la racine de `dist/`.
+ * Copie les fichiers statiques à la racine de `dist/`.
  *
  * L'entrée du build est `main.tsx`, pas `index.html` : Vite ne bundle un HTML
  * que si son script porte `type="module"`, or UXP ne charge pas de modules ES.
@@ -21,9 +21,15 @@ function copyStaticFiles(): Plugin {
     apply: 'build',
     closeBundle() {
       mkdirSync(outDir, { recursive: true })
-      for (const file of ['manifest.json', 'index.html']) {
-        copyFileSync(resolve(root, file), resolve(outDir, file))
-      }
+      copyFileSync(resolve(root, 'manifest.json'), resolve(outDir, 'manifest.json'))
+
+      // Le panneau servi par CEP est la version vanilla : un seul fichier, sans
+      // framework ni bundle, seule forme dont on soit certain qu'elle s'exécute
+      // dans le Chromium figé de CEP.
+      copyFileSync(resolve(root, 'panel-cep.html'), resolve(outDir, 'index.html'))
+
+      // La version React reste livrée à côté, pour l'hôte UXP.
+      copyFileSync(resolve(root, 'index.html'), resolve(outDir, 'panel-react.html'))
 
       // CEP cherche son descripteur dans `CSXS/manifest.xml`, à la racine de
       // l'extension. Le `.debug` autorise le débogage distant d'une extension

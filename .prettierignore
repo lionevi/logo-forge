@@ -6,3 +6,6 @@ package-lock.json
 
 # HTML du panneau : figé tel quel pour CEP (DOCTYPE en majuscules).
 src/index.html
+
+# Panneau CEP vanilla : figé tel quel, il est livré sans transformation.
+src/panel-cep.html

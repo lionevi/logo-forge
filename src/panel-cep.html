@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>Logo Forge</title>
+
+    <!--
+      Panneau CEP autonome.
+
+      Un seul fichier, sans framework, sans module, sans bundle : c'est la seule
+      forme dont on soit certain qu'elle s'exécute dans le Chromium figé de CEP.
+
+      Contraintes tenues dans tout ce fichier, pour Chromium 61 (CEP 9) :
+        - pas de `?.` ni `??` (Chrome 80) ;
+        - pas de `gap` en flexbox (Chrome 84) — les gouttières passent par des
+          marges ;
+        - pas de `inset` (Chrome 87), pas de `rgb(r g b / a%)` (Chrome 65) ;
+        - pas d'unité `vh` : la mise en page est ancrée en positionnement absolu.
+    -->
+
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #252525;
+        color: #e3e3e3;
+        font-family: 'Adobe Clean', adobe-clean, system-ui, -apple-system,
+          'Segoe UI', Roboto, sans-serif;
+        font-size: 12px;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      /* Barre de défilement discrète */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        border: 2px solid transparent;
+        border-radius: 4px;
+        background: #5a5a5a;
+        background-clip: content-box;
+      }
+
+      /* ---- Structure : trois bandes ancrées en absolu ---- */
+
+      .panel {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        overflow: hidden;
+      }
+
+      .panel-header {
+        position: absolute;
+        top: 0;
+        right: 0;
+        left: 0;
+        height: 44px;
+        padding: 0 12px;
+        border-bottom: 1px solid #3e3e3e;
+        background: #2f2f2f;
+      }
+
+      .panel-body {
+        position: absolute;
+        top: 44px;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        padding: 12px 12px 96px;
+        overflow-x: hidden;
+        overflow-y: auto;
+      }
+
+      .panel-footer {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        padding: 12px;
+        border-top: 1px solid #3e3e3e;
+        background: #2f2f2f;
+      }
+
+      /* ---- En-tête ---- */
+
+      .brand {
+        position: absolute;
+        top: 13px;
+        left: 12px;
+      }
+
+      .brand-name {
+        font-size: 14px;
+        font-weight: 700;
+        color: #ffffff;
+      }
+
+      .brand-version {
+        margin-left: 5px;
+        font-size: 10px;
+        color: #909090;
+      }
+
+      .connection {
+        position: absolute;
+        top: 15px;
+        right: 12px;
+        font-size: 10px;
+        color: #909090;
+      }
+
+      .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        margin-right: 5px;
+        border-radius: 50%;
+        background: #6e6e6e;
+        vertical-align: middle;
+      }
+
+      .status-dot.on {
+        background: #2d9d78;
+      }
+      .status-dot.partial {
+        background: #e68619;
+      }
+      .status-dot.off {
+        background: #e34850;
+      }
+
+      /* ---- Sections ---- */
+
+      .section {
+        margin-bottom: 16px;
+      }
+
+      .section-title {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #909090;
+      }
+
+      .section-count {
+        float: right;
+        font-weight: 400;
+        letter-spacing: 0;
+      }
+
+      .card {
+        padding: 8px 10px;
+        border: 1px solid #3e3e3e;
+        border-radius: 4px;
+        background: #2f2f2f;
+      }
+
+      .card.empty {
+        border-style: dashed;
+        border-color: #4a4a4a;
+      }
+
+      .doc-name {
+        margin: 0;
+        overflow: hidden;
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      .card.empty .doc-name {
+        color: #e68619;
+      }
+
+      .doc-meta {
+        margin: 2px 0 0;
+        font-size: 11px;
+        color: #909090;
+      }
+
+      .icon-button {
+        float: right;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: 1px solid #3e3e3e;
+        border-radius: 4px;
+        background: transparent;
+        color: #909090;
+        font-size: 13px;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .icon-button:hover {
+        border-color: #4a4a4a;
+        background: #323232;
+        color: #e3e3e3;
+      }
+
+      /* ---- Grille de préréglages, 2 colonnes ---- */
+
+      .preset-grid {
+        margin: 0 -3px;
+        overflow: hidden;
+      }
+
+      .preset-cell {
+        float: left;
+        width: 50%;
+        padding: 0 3px 6px;
+      }
+
+      .preset-tile {
+        position: relative;
+        display: block;
+        width: 100%;
+        padding: 8px 34px 8px 8px;
+        border: 1px solid #3e3e3e;
+        border-radius: 4px;
+        background: #2f2f2f;
+        color: #e3e3e3;
+        font-family: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .preset-tile:hover {
+        border-color: #4a4a4a;
+        background: #323232;
+      }
+
+      .preset-tile.on {
+        border-color: #2680eb;
+        background: rgba(38, 128, 235, 0.1);
+      }
+
+      .preset-emoji {
+        float: left;
+        margin-right: 7px;
+        font-size: 15px;
+        line-height: 1.4;
+      }
+
+      .preset-label {
+        display: block;
+        overflow: hidden;
+        font-size: 11px;
+        font-weight: 700;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      .preset-summary {
+        display: block;
+        overflow: hidden;
+        font-size: 10px;
+        color: #909090;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      .preset-switch {
+        position: absolute;
+        top: 50%;
+        right: 8px;
+        width: 22px;
+        height: 12px;
+        margin-top: -6px;
+        border-radius: 6px;
+        background: #5a5a5a;
+      }
+
+      .preset-tile.on .preset-switch {
+        background: #2680eb;
+      }
+
+      .preset-knob {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #ffffff;
+      }
+
+      .preset-tile.on .preset-knob {
+        left: 12px;
+      }
+
+      /* ---- Cases à cocher ---- */
+
+      .check-row {
+        display: block;
+        padding: 4px 2px;
+        cursor: pointer;
+      }
+
+      .check-row.disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      .check-row input {
+        width: 13px;
+        height: 13px;
+        margin: 0 7px 0 0;
+        vertical-align: middle;
+      }
+
+      .badge {
+        margin-left: 6px;
+        padding: 1px 5px;
+        border-radius: 8px;
+        background: #323232;
+        color: #909090;
+        font-size: 9px;
+        font-weight: 700;
+      }
+
+      /* ---- Champs ---- */
+
+      .field-label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 11px;
+        color: #909090;
+      }
+
+      input[type='text'] {
+        width: 100%;
+        margin-bottom: 8px;
+        padding: 5px 8px;
+        border: 1px solid #4a4a4a;
+        border-radius: 4px;
+        background: #252525;
+        color: #e3e3e3;
+        font-family: inherit;
+        font-size: 12px;
+      }
+
+      input[type='text']:focus {
+        border-color: #2680eb;
+        outline: none;
+      }
+
+      .destination {
+        margin: 6px 0 0;
+        overflow: hidden;
+        font-family: 'Source Code Pro', monospace;
+        font-size: 10px;
+        color: #909090;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+
+      .destination.empty {
+        font-style: italic;
+      }
+
+      /* ---- Résumé, avertissements ---- */
+
+      .summary {
+        margin: 0 0 12px;
+        padding: 6px 8px;
+        border-radius: 4px;
+        background: #2f2f2f;
+        color: #909090;
+        font-size: 11px;
+      }
+
+      .notice {
+        margin: 0 0 8px;
+        padding: 6px 8px;
+        border-left: 3px solid #e68619;
+        border-radius: 0 4px 4px 0;
+        background: #2f2f2f;
+        color: #e68619;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+
+      .notice.error {
+        border-left-color: #e34850;
+        color: #e34850;
+      }
+
+      .notice.ok {
+        border-left-color: #2d9d78;
+        color: #2d9d78;
+      }
+
+      /* ---- Boutons ---- */
+
+      .button {
+        display: block;
+        width: 100%;
+        padding: 7px 12px;
+        border: 1px solid #4a4a4a;
+        border-radius: 14px;
+        background: transparent;
+        color: #e3e3e3;
+        font-family: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .button:hover {
+        background: #323232;
+      }
+
+      .button.primary {
+        border-color: #2680eb;
+        background: #2680eb;
+        color: #ffffff;
+        font-weight: 700;
+      }
+
+      .button.primary:hover {
+        border-color: #1473e6;
+        background: #1473e6;
+      }
+
+      .button[disabled] {
+        border-color: #4a4a4a;
+        background: #4a4a4a;
+        color: #909090;
+        cursor: not-allowed;
+      }
+
+      /* Bandeau de diagnostic : styles en ligne dans le JS, rien ici. */
+    </style>
+  </head>
+
+  <body>
+    <div class="panel">
+      <div class="panel-header">
+        <div class="brand">
+          <span class="brand-name">Logo Forge</span>
+          <span class="brand-version" id="version">v0.1.0</span>
+        </div>
+        <div class="connection">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-label">…</span>
+        </div>
+      </div>
+
+      <div class="panel-body">
+        <div class="section">
+          <h2 class="section-title">
+            Document
+            <button
+              class="icon-button"
+              id="refresh"
+              title="Re-détecter le document actif"
+            >
+              &#8635;
+            </button>
+          </h2>
+          <div id="document-card"></div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">
+            Préréglages <span class="section-count" id="preset-count"></span>
+          </h2>
+          <div class="preset-grid" id="preset-grid"></div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Déclinaisons</h2>
+          <div id="scheme-list"></div>
+        </div>
+
+        <div class="section">
+          <h2 class="section-title">Destination</h2>
+          <label class="field-label" for="package-name">Nom du package</label>
+          <input type="text" id="package-name" placeholder="mon-logo" />
+          <button class="button" id="choose-folder">Choisir le dossier&hellip;</button>
+          <p class="destination empty" id="destination">Aucun dossier choisi</p>
+        </div>
+
+        <div id="messages"></div>
+      </div>
+
+      <div class="panel-footer">
+        <button class="button primary" id="export" disabled>
+          Exporter le package logo
+        </button>
+      </div>
+    </div>
+
+    <!--
+      CSInterface, quand l'hôte le met à disposition. Le panneau n'en dépend
+      pas : il parle directement à `window.__adobe_cep__`, que CEP injecte et
+      sur lequel CSInterface n'est qu'une surcouche. Un 404 sur cette ligne est
+      donc sans conséquence.
+    -->
+    <script src="./CSInterface.js"></script>
+
+    <script>
+      ;(function () {
+        'use strict'
+
+        /* ---------------------------------------------------------------- *
+         * Filet de diagnostic
+         *
+         * Un panneau muet est le pire des symptômes : toute erreur non
+         * interceptée s'affiche donc dans le panneau lui-même, la console
+         * distante CEP n'étant pas toujours joignable.
+         * ---------------------------------------------------------------- */
+
+        function showError(title, detail) {
+          var host = document.querySelector('.panel-body') || document.body
+          if (!host) return
+          var box = document.getElementById('fatal')
+          if (!box) {
+            box = document.createElement('div')
+            box.id = 'fatal'
+            box.setAttribute(
+              'style',
+              'padding:12px;margin:8px 0;border:1px solid #e34850;' +
+                'border-radius:4px;background:rgba(227,72,80,0.12);color:#ff6b6b;' +
+                'font-family:monospace;font-size:11px;line-height:1.5;' +
+                'white-space:pre-wrap;word-break:break-word'
+            )
+            host.appendChild(box)
+          }
+          box.appendChild(document.createTextNode(title + '\n' + detail + '\n\n'))
+        }
+
+        function describe(value) {
+          if (value && value.message) {
+            return value.message + '\n' + (value.stack || '(pile indisponible)')
+          }
+          return String(value)
+        }
+
+        window.onerror = function (message, source, line, column, error) {
+          showError('Erreur JavaScript :', describe(error || message))
+        }
+
+        /** Exécute une fonction en signalant toute erreur, sans la propager. */
+        function guard(label, fn) {
+          try {
+            return fn()
+          } catch (error) {
+            showError('Erreur — ' + label + ' :', describe(error))
+            return null
+          }
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Pont Illustrator
+         * ---------------------------------------------------------------- */
+
+        // Repli demandé pour le développement hors CEP.
+        if (typeof CSInterface === 'undefined') {
+          window.CSInterface = function () {}
+          window.CSInterface.prototype.evalScript = function (script, callback) {
+            if (callback) callback('')
+          }
+        }
+
+        /** Environnement d'exécution : 'cep', 'uxp' ou 'dev'. */
+        function detectEnvironment() {
+          if (typeof window.__adobe_cep__ !== 'undefined') return 'cep'
+          try {
+            if (typeof require === 'function' && require('uxp')) return 'uxp'
+          } catch (ignored) {
+            /* pas d'hôte UXP */
+          }
+          return 'dev'
+        }
+
+        var ENVIRONMENT = detectEnvironment()
+
+        var ENVIRONMENT_LABEL = {
+          cep: { dot: 'on', text: 'CEP' },
+          uxp: { dot: 'on', text: 'UXP' },
+          dev: { dot: 'off', text: 'Dev' },
+        }
+
+        /**
+         * Évalue un script ExtendScript dans Illustrator.
+         *
+         * On passe par `__adobe_cep__` plutôt que par CSInterface : c'est ce que
+         * CSInterface appelle en interne, et cela évite de dépendre d'un fichier
+         * qui peut manquer.
+         */
+        function evalScript(script, callback) {
+          if (ENVIRONMENT === 'cep' && window.__adobe_cep__) {
+            window.__adobe_cep__.evalScript(script, callback)
+            return
+          }
+          var bridge = new CSInterface()
+          bridge.evalScript(script, callback)
+        }
+
+        /** Script ExtendScript : nom du document actif et nombre de plans de travail. */
+        var DOCUMENT_SCRIPT =
+          'var r = "";' +
+          'try {' +
+          '  if (app.documents.length > 0) {' +
+          '    var d = app.activeDocument;' +
+          '    r = d.name + "|" + d.artboards.length;' +
+          '  }' +
+          '} catch (e) { r = ""; }' +
+          'r;'
+
+        /**
+         * Lit le document actif.
+         * @param callback reçoit `{name, artboards}` ou `null`.
+         */
+        function readDocument(callback) {
+          if (ENVIRONMENT === 'dev') {
+            callback(null)
+            return
+          }
+
+          evalScript(DOCUMENT_SCRIPT, function (result) {
+            if (!result || result === 'EvalScript error.' || result === 'undefined') {
+              callback(null)
+              return
+            }
+            var parts = String(result).split('|')
+            if (!parts[0]) {
+              callback(null)
+              return
+            }
+            callback({
+              name: parts[0],
+              artboards: parseInt(parts[1], 10) || 1,
+            })
+          })
+        }
+
+        /**
+         * Ouvre un sélecteur de dossier.
+         * @param callback reçoit le chemin natif, ou `null` si annulé.
+         */
+        function chooseFolder(callback) {
+          // API de fichiers CEP, disponible dès CEP 5.
+          if (window.cep && window.cep.fs && window.cep.fs.showOpenDialog) {
+            var result = window.cep.fs.showOpenDialog(
+              false,
+              true,
+              'Dossier de destination du pack',
+              '',
+              null
+            )
+            if (result && result.data && result.data.length > 0) {
+              callback(result.data[0])
+              return
+            }
+            callback(null)
+            return
+          }
+
+          // Repli ExtendScript.
+          evalScript(
+            'var f = Folder.selectDialog("Dossier de destination du pack"); f ? f.fsName : "";',
+            function (path) {
+              callback(path && path.length > 0 ? path : null)
+            }
+          )
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Données
+         *
+         * Les huit préréglages reprennent ceux de `src/core/presets.ts`. Ce
+         * fichier étant autonome par construction, la liste y est recopiée :
+         * toute modification là-bas doit être répercutée ici.
+         * ---------------------------------------------------------------- */
+
+        var PRESETS = [
+          { id: 'sources', emoji: '📦', label: 'Sources', summary: 'AI natif' },
+          { id: 'web', emoji: '🌐', label: 'Web', summary: 'SVG + PNG 72 ppp' },
+          {
+            id: 'print',
+            emoji: '🖨️',
+            label: 'Impression',
+            summary: 'PDF + EPS 300 ppp',
+          },
+          {
+            id: 'social',
+            emoji: '📱',
+            label: 'Social',
+            summary: 'PNG par plateforme',
+          },
+          {
+            id: 'favicon',
+            emoji: '⭐',
+            label: 'Favicon',
+            summary: 'ICO + PNG multi-tailles',
+          },
+          {
+            id: 'office',
+            emoji: '📄',
+            label: 'Bureautique',
+            summary: 'PNG 150 ppp',
+          },
+          {
+            id: 'appIcons',
+            emoji: '📲',
+            label: 'Icônes App',
+            summary: 'PNG multi-tailles',
+          },
+          {
+            id: 'video',
+            emoji: '🎬',
+            label: 'Vidéo',
+            summary: 'PNG 1920 × 1080',
+          },
+        ]
+
+        var SCHEMES = [
+          { id: 'full-color', label: 'Full Color' },
+          { id: 'black', label: 'Black' },
+          { id: 'white', label: 'White' },
+          { id: 'grayscale', label: 'Grayscale' },
+        ]
+
+        /** Formats qu'Illustrator ne sait pas produire par script. */
+        var UNSUPPORTED = { favicon: 'ICO' }
+
+        var state = {
+          document: null,
+          presets: { sources: true, web: true },
+          schemes: { 'full-color': true },
+          packageName: '',
+          nameEdited: false,
+          destination: null,
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Rendu
+         * ---------------------------------------------------------------- */
+
+        function byId(id) {
+          return document.getElementById(id)
+        }
+
+        function selectedPresets() {
+          var list = []
+          for (var i = 0; i < PRESETS.length; i += 1) {
+            if (state.presets[PRESETS[i].id]) list.push(PRESETS[i])
+          }
+          return list
+        }
+
+        function selectedSchemes() {
+          var list = []
+          for (var i = 0; i < SCHEMES.length; i += 1) {
+            if (state.schemes[SCHEMES[i].id]) list.push(SCHEMES[i])
+          }
+          return list
+        }
+
+        /** Retire l'extension d'un nom de fichier. */
+        function stripExtension(name) {
+          var dot = name.lastIndexOf('.')
+          return dot <= 0 ? name : name.slice(0, dot)
+        }
+
+        /** Tronque un chemin par le milieu, en gardant volume et dossier. */
+        function truncatePath(path, max) {
+          if (path.length <= max) return path
+          var head = Math.ceil((max - 1) / 2)
+          var tail = Math.floor((max - 1) / 2)
+          return path.slice(0, head) + '…' + path.slice(path.length - tail)
+        }
+
+        function renderStatus() {
+          var info = ENVIRONMENT_LABEL[ENVIRONMENT]
+          byId('status-dot').className = 'status-dot ' + info.dot
+          byId('status-label').innerHTML = info.text
+        }
+
+        function renderDocument() {
+          var card = byId('document-card')
+          if (state.document) {
+            card.className = 'card'
+            card.innerHTML =
+              '<p class="doc-name"></p><p class="doc-meta"></p>'
+            card.childNodes[0].appendChild(
+              document.createTextNode(state.document.name)
+            )
+            card.childNodes[1].appendChild(
+              document.createTextNode(
+                state.document.artboards +
+                  ' plan' +
+                  (state.document.artboards > 1 ? 's' : '') +
+                  ' de travail'
+              )
+            )
+          } else {
+            card.className = 'card empty'
+            card.innerHTML =
+              '<p class="doc-name">Aucun document ouvert</p>' +
+              '<p class="doc-meta">Ouvrez le logo à exporter dans Illustrator, ' +
+              'puis actualisez.</p>'
+          }
+        }
+
+        function renderPresets() {
+          var html = ''
+          for (var i = 0; i < PRESETS.length; i += 1) {
+            var preset = PRESETS[i]
+            var on = state.presets[preset.id] ? ' on' : ''
+            html +=
+              '<div class="preset-cell">' +
+              '<button type="button" class="preset-tile' +
+              on +
+              '" data-preset="' +
+              preset.id +
+              '">' +
+              '<span class="preset-emoji">' +
+              preset.emoji +
+              '</span>' +
+              '<span class="preset-label">' +
+              preset.label +
+              '</span>' +
+              '<span class="preset-summary">' +
+              preset.summary +
+              '</span>' +
+              '<span class="preset-switch"><span class="preset-knob"></span></span>' +
+              '</button>' +
+              '</div>'
+          }
+          byId('preset-grid').innerHTML = html
+          byId('preset-count').innerHTML =
+            selectedPresets().length + ' / ' + PRESETS.length
+        }
+
+        function renderSchemes() {
+          var html = ''
+          for (var i = 0; i < SCHEMES.length; i += 1) {
+            var scheme = SCHEMES[i]
+            var checked = state.schemes[scheme.id] ? ' checked' : ''
+            html +=
+              '<label class="check-row">' +
+              '<input type="checkbox" data-scheme="' +
+              scheme.id +
+              '"' +
+              checked +
+              ' />' +
+              scheme.label +
+              '</label>'
+          }
+          html +=
+            '<label class="check-row disabled">' +
+            '<input type="checkbox" disabled />Custom' +
+            '<span class="badge">v1.1</span>' +
+            '</label>'
+          byId('scheme-list').innerHTML = html
+        }
+
+        function renderDestination() {
+          var element = byId('destination')
+          if (state.destination) {
+            element.className = 'destination'
+            element.innerHTML = ''
+            element.appendChild(
+              document.createTextNode(truncatePath(state.destination, 44))
+            )
+            element.title = state.destination
+          } else {
+            element.className = 'destination empty'
+            element.innerHTML = 'Aucun dossier choisi'
+            element.title = ''
+          }
+        }
+
+        function renderMessages() {
+          var presets = selectedPresets()
+          var schemes = selectedSchemes()
+          var html = ''
+
+          if (presets.length === 0) {
+            html += '<p class="notice">Activez au moins un préréglage.</p>'
+          }
+          if (schemes.length === 0) {
+            html += '<p class="notice">Cochez au moins une déclinaison.</p>'
+          }
+
+          for (var i = 0; i < presets.length; i += 1) {
+            var format = UNSUPPORTED[presets[i].id]
+            if (format) {
+              html +=
+                '<p class="notice">Illustrator ne sait pas exporter ' +
+                format +
+                ' par script : assemblez ces fichiers depuis les PNG produits.</p>'
+            }
+          }
+
+          if (presets.length > 0 && schemes.length > 0) {
+            html +=
+              '<p class="summary">' +
+              presets.length +
+              ' préréglage' +
+              (presets.length > 1 ? 's' : '') +
+              ' · ' +
+              schemes.length +
+              ' déclinaison' +
+              (schemes.length > 1 ? 's' : '') +
+              '</p>'
+          }
+
+          byId('messages').innerHTML = html
+        }
+
+        function renderExportButton() {
+          var ready =
+            state.document !== null &&
+            selectedPresets().length > 0 &&
+            selectedSchemes().length > 0 &&
+            state.packageName.replace(/^\s+|\s+$/g, '').length > 0
+          byId('export').disabled = !ready
+        }
+
+        function renderAll() {
+          renderStatus()
+          renderDocument()
+          renderPresets()
+          renderSchemes()
+          renderDestination()
+          renderMessages()
+          renderExportButton()
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Interactions
+         * ---------------------------------------------------------------- */
+
+        function applyDocument(next) {
+          var before = state.document ? state.document.name : null
+          var after = next ? next.name : null
+          if (before === after) return
+
+          state.document = next
+          if (!state.nameEdited) {
+            state.packageName = next ? stripExtension(next.name) : ''
+            byId('package-name').value = state.packageName
+          }
+          renderDocument()
+          renderExportButton()
+        }
+
+        function refreshDocument() {
+          guard('lecture du document', function () {
+            readDocument(function (next) {
+              guard('affichage du document', function () {
+                applyDocument(next)
+              })
+            })
+          })
+        }
+
+        byId('preset-grid').onclick = function (event) {
+          var node = event.target
+          while (node && node !== this && !node.getAttribute('data-preset')) {
+            node = node.parentNode
+          }
+          if (!node || node === this) return
+
+          var id = node.getAttribute('data-preset')
+          state.presets[id] = !state.presets[id]
+          renderPresets()
+          renderMessages()
+          renderExportButton()
+        }
+
+        byId('scheme-list').onclick = function (event) {
+          var id = event.target.getAttribute('data-scheme')
+          if (!id) return
+          state.schemes[id] = event.target.checked
+          renderMessages()
+          renderExportButton()
+        }
+
+        byId('package-name').oninput = function () {
+          state.nameEdited = true
+          state.packageName = this.value
+          renderExportButton()
+        }
+
+        byId('refresh').onclick = refreshDocument
+
+        byId('choose-folder').onclick = function () {
+          guard('choix du dossier', function () {
+            chooseFolder(function (path) {
+              if (!path) return
+              state.destination = path
+              renderDestination()
+            })
+          })
+        }
+
+        byId('export').onclick = function () {
+          var messages = byId('messages')
+          if (!state.destination) {
+            messages.innerHTML =
+              '<p class="notice">Choisissez d\'abord un dossier de destination.</p>'
+            return
+          }
+          // Le moteur d'export reste à brancher sur ce panneau : il vit dans
+          // src/illustrator/, côté TypeScript.
+          messages.innerHTML =
+            '<p class="notice">Moteur d\'export non encore relié au panneau CEP. ' +
+            'Pack prévu : ' +
+            selectedPresets().length +
+            ' préréglages × ' +
+            selectedSchemes().length +
+            ' déclinaisons vers ' +
+            state.destination +
+            '</p>'
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Démarrage
+         * ---------------------------------------------------------------- */
+
+        /** Période de relecture du document, en millisecondes. */
+        var POLL_MS = 3000
+        /** Échecs consécutifs au-delà desquels la relecture s'arrête. */
+        var POLL_FAILURE_LIMIT = 3
+
+        var failures = 0
+        var timer = null
+
+        function poll() {
+          try {
+            readDocument(function (next) {
+              try {
+                applyDocument(next)
+                failures = 0
+              } catch (inner) {
+                failures += 1
+              }
+            })
+          } catch (error) {
+            failures += 1
+          }
+
+          if (failures >= POLL_FAILURE_LIMIT && timer !== null) {
+            clearInterval(timer)
+            timer = null
+            if (window.console) console.warn('CEP mode - polling disabled')
+          }
+        }
+
+        guard('démarrage', function () {
+          renderAll()
+          refreshDocument()
+          timer = setInterval(poll, POLL_MS)
+        })
+      })()
+    </script>
+  </body>
+</html>
