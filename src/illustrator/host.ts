@@ -86,55 +86,133 @@ let injectedHost: IllustratorHost | null = null
 let cachedHost: IllustratorHost | null = null
 
 /**
- * Remplace le module hôte, pour les tests.
- * Passer `null` restaure le chargement normal par `require`.
+ * Environnement d'exécution du panneau.
+ *
+ * - `uxp` : plugin UXP dans Illustrator, l'API est joignable.
+ * - `cep` : extension CEP — Chromium embarqué, sans module `uxp` ni
+ *   `illustrator`. Le panneau s'affiche, mais n'exporte pas.
+ * - `none` : navigateur ou test.
  */
-export function setIllustratorHost(host: IllustratorHost | null): void {
-  injectedHost = host
-  cachedHost = null
+export type HostEnvironment = 'uxp' | 'cep' | 'none'
+
+/**
+ * Hôte de repli, renvoyé hors UXP.
+ *
+ * Il expose la forme attendue avec un document absent, de sorte qu'aucun
+ * appelant n'ait à se prémunir d'un hôte manquant : sans lui, le moindre accès
+ * lèverait et laisserait le panneau blanc.
+ */
+function createFallbackHost(): IllustratorHost {
+  return {
+    app: {
+      activeDocument: undefined,
+      documents: { length: 0 },
+    },
+  }
 }
 
-/** Indique si un module Illustrator est joignable, sans lever. */
-export function isIllustratorAvailable(): boolean {
-  if (injectedHost) return true
+/** Indique si le module `uxp` répond, seul marqueur fiable d'un hôte UXP. */
+function isUxp(): boolean {
   try {
-    return loadIllustratorHost() !== null
+    return typeof require === 'function' && require('uxp') !== undefined
   } catch {
     return false
   }
 }
 
 /**
- * Renvoie le module `illustrator`.
- * @throws {Error} hors d'Illustrator, avec un message exploitable par l'interface.
+ * Indique si le panneau tourne dans une extension CEP.
+ *
+ * CEP injecte `window.__adobe_cep__` dans chaque panneau : c'est le marqueur le
+ * plus sûr, disponible que l'intégration Node soit active ou non.
  */
-export function loadIllustratorHost(): IllustratorHost {
+function isCep(): boolean {
+  try {
+    return (
+      typeof window !== 'undefined' &&
+      (window as unknown as Record<string, unknown>).__adobe_cep__ !== undefined
+    )
+  } catch {
+    return false
+  }
+}
+
+/** Détecte l'environnement d'exécution courant. */
+export function getHostEnvironment(): HostEnvironment {
+  if (injectedHost) return 'uxp'
+  if (isUxp()) return 'uxp'
+  if (isCep()) return 'cep'
+  return 'none'
+}
+
+/**
+ * Remplace le module hôte, pour les tests.
+ * Passer `null` restaure la détection normale.
+ */
+export function setIllustratorHost(host: IllustratorHost | null): void {
+  injectedHost = host
+  cachedHost = null
+}
+
+/**
+ * Indique si l'API Illustrator est réellement joignable.
+ *
+ * Faux en CEP : le panneau y fonctionne, mais aucun export n'est possible tant
+ * que le pont ExtendScript n'est pas en place.
+ */
+export function isIllustratorAvailable(): boolean {
+  return getHostEnvironment() === 'uxp'
+}
+
+/**
+ * Renvoie le module `illustrator`, ou un hôte de repli hors UXP.
+ *
+ * Ne lève jamais : en CEP comme au navigateur, un panneau dégradé vaut mieux
+ * qu'un panneau blanc.
+ */
+export function getIllustratorHost(): IllustratorHost {
   if (injectedHost) return injectedHost
   if (cachedHost) return cachedHost
 
-  if (typeof require !== 'function') {
-    throw new Error(
-      "L'API Illustrator est introuvable : le panneau doit s'exécuter dans Illustrator.",
-    )
+  if (!isUxp()) {
+    cachedHost = createFallbackHost()
+    return cachedHost
   }
 
-  let module: unknown
   try {
-    module = require('illustrator')
-  } catch (error) {
-    throw new Error(
-      `Chargement du module « illustrator » impossible : ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    )
+    // UXP fournit ses modules par `require` à l'exécution : un import ES
+    // échouerait au build comme au runtime.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const module = require('illustrator')
+    if (module && typeof module === 'object' && 'app' in module) {
+      cachedHost = module as IllustratorHost
+      return cachedHost
+    }
+  } catch {
+    // L'hôte se dit UXP mais n'expose pas le module : on dégrade plutôt que
+    // de faire échouer le rendu du panneau.
   }
 
-  if (!module || typeof module !== 'object' || !('app' in module)) {
-    throw new Error(
-      "Le module « illustrator » n'expose pas d'objet `app` : version d'hôte incompatible.",
-    )
-  }
-
-  cachedHost = module as IllustratorHost
+  cachedHost = createFallbackHost()
   return cachedHost
+}
+
+/**
+ * Renvoie le module `illustrator`.
+ * @throws {Error} hors UXP, avec un message exploitable par l'interface.
+ */
+export function loadIllustratorHost(): IllustratorHost {
+  if (injectedHost) return injectedHost
+
+  const environment = getHostEnvironment()
+  if (environment !== 'uxp') {
+    throw new Error(
+      environment === 'cep'
+        ? "L'API Illustrator n'est pas joignable en CEP : le module « illustrator » " +
+            "n'existe que dans un plugin UXP."
+        : "L'API Illustrator est introuvable : le panneau doit s'exécuter dans Illustrator.",
+    )
+  }
+
+  return getIllustratorHost()
 }

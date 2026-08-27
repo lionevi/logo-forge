@@ -11,14 +11,17 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ActiveDocumentInfo } from '../core/types'
+import type { HostEnvironment } from '../illustrator/host'
 
 /** Document actif renvoyé par la doublure ; modifiable par chaque test. */
 let activeDocument: ActiveDocumentInfo | null = null
 let illustratorReady = true
+let panelEnvironment: HostEnvironment = 'uxp'
 
 vi.mock('./illustratorBridge', () => ({
   readActiveDocument: () => activeDocument,
   isIllustratorReady: () => illustratorReady,
+  getPanelEnvironment: () => panelEnvironment,
   isUxpAvailable: () => true,
   getIllustratorEngine: () => ({
     getActiveDocument: () => activeDocument,
@@ -57,6 +60,7 @@ function presetTile(label: string): HTMLElement {
 beforeEach(() => {
   activeDocument = aDocument()
   illustratorReady = true
+  panelEnvironment = 'uxp'
   vi.useFakeTimers({ shouldAdvanceTime: true })
 })
 
@@ -123,9 +127,21 @@ describe('Panel — en-tête', () => {
 
   it('affiche un point rouge quand Illustrator est injoignable', () => {
     illustratorReady = false
+    panelEnvironment = 'none'
     render(<Panel />)
 
     expect(screen.getByLabelText('Illustrator injoignable')).toBeInTheDocument()
+  })
+
+  it('signale le mode CEP sans prétendre être connecté', () => {
+    illustratorReady = false
+    panelEnvironment = 'cep'
+    render(<Panel />)
+
+    expect(
+      screen.getByLabelText('Mode CEP — API Illustrator indisponible'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('CEP')).toBeInTheDocument()
   })
 
   it('affiche la version du plugin', () => {

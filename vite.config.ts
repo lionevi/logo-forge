@@ -24,6 +24,16 @@ function copyStaticFiles(): Plugin {
       for (const file of ['manifest.json', 'index.html']) {
         copyFileSync(resolve(root, file), resolve(outDir, file))
       }
+
+      // CEP cherche son descripteur dans `CSXS/manifest.xml`, à la racine de
+      // l'extension. Le `.debug` autorise le débogage distant d'une extension
+      // non signée ; il est sans effet sur une extension signée.
+      mkdirSync(resolve(outDir, 'CSXS'), { recursive: true })
+      copyFileSync(
+        resolve(root, 'cep/manifest.xml'),
+        resolve(outDir, 'CSXS/manifest.xml'),
+      )
+      copyFileSync(resolve(root, 'cep/.debug'), resolve(outDir, '.debug'))
     },
   }
 }
@@ -35,7 +45,11 @@ export default defineConfig({
   build: {
     outDir,
     emptyOutDir: true,
-    target: 'es2020',
+    // CEP embarque un Chromium figé : CEP 9 est en Chromium 61, CEP 10 en 74.
+    // Ni l'un ni l'autre ne sait *parser* `?.` ni `??` (Chrome 80+), et un
+    // bundle impossible à parser ne s'exécute pas du tout — panneau blanc, sans
+    // message. On abaisse donc la cible pour qu'esbuild les transpile.
+    target: ['chrome61'],
     modulePreload: false,
     cssCodeSplit: false,
     sourcemap: false,

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  Descripteur CEP de Logo Forge.
+
+  CEP le cherche dans `CSXS/manifest.xml`, à la racine du dossier d'extension.
+  Le build le copie depuis `src/cep/` pour qu'il reste versionné avec le code
+  qu'il décrit, comme le manifest UXP.
+-->
+<ExtensionManifest Version="9.0"
+                   ExtensionBundleId="com.lionevi.logoforge"
+                   ExtensionBundleVersion="0.1.0"
+                   ExtensionBundleName="Logo Forge">
+  <ExtensionList>
+    <Extension Id="com.lionevi.logoforge.panel" Version="0.1.0" />
+  </ExtensionList>
+
+  <ExecutionEnvironment>
+    <HostList>
+      <!-- ILST = Illustrator. 25.0 correspond à CC 2021. -->
+      <Host Name="ILST" Version="[25.0,99.9]" />
+    </HostList>
+    <LocaleList>
+      <Locale Code="All" />
+    </LocaleList>
+    <RequiredRuntimeList>
+      <RequiredRuntime Name="CSXS" Version="9.0" />
+    </RequiredRuntimeList>
+  </ExecutionEnvironment>
+
+  <DispatchInfoList>
+    <Extension Id="com.lionevi.logoforge.panel">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <CEFCommandLine>
+            <Parameter>--allow-file-access</Parameter>
+            <Parameter>--allow-file-access-from-files</Parameter>
+          </CEFCommandLine>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+        <UI>
+          <Type>Panel</Type>
+          <Menu>Logo Forge</Menu>
+          <Geometry>
+            <Size>
+              <Height>640</Height>
+              <Width>360</Width>
+            </Size>
+            <MinSize>
+              <Height>480</Height>
+              <Width>320</Width>
+            </MinSize>
+          </Geometry>
+          <Icons />
+        </UI>
+      </DispatchInfo>
+    </Extension>
+  </DispatchInfoList>
+</ExtensionManifest>

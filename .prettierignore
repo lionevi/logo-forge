@@ -3,3 +3,6 @@ build
 coverage
 node_modules
 package-lock.json
+
+# HTML du panneau : figé tel quel pour CEP (DOCTYPE en majuscules).
+src/index.html

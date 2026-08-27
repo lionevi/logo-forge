@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Débogage distant d'une extension CEP non signée.
+
+  Avec ce fichier à la racine de l'extension et le mode développeur activé,
+  la console Chromium du panneau s'ouvre dans un navigateur sur
+  http://localhost:8088 — c'est là que s'affichent les erreurs qui rendent
+  un panneau blanc.
+
+  Le mode développeur s'active une fois par machine :
+    macOS   : defaults write com.adobe.CSXS.11 PlayerDebugMode 1
+    Windows : HKEY_CURRENT_USER/Software/Adobe/CSXS.11 -> PlayerDebugMode = "1"
+  (adaptez le numéro CSXS à la version de CEP de votre Illustrator)
+-->
+<ExtensionList>
+  <Extension Id="com.lionevi.logoforge.panel">
+    <HostList>
+      <Host Name="ILST" Port="8088" />
+    </HostList>
+  </Extension>
+</ExtensionList>

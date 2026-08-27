@@ -28,6 +28,7 @@ import { PresetGrid } from './PresetGrid'
 import {
   createUxpWriter,
   getIllustratorEngine,
+  getPanelEnvironment,
   isIllustratorReady,
   isUxpAvailable,
   pickDestinationFolder,
@@ -76,7 +77,7 @@ export function Panel() {
   const [revealError, setRevealError] = useState<string | null>(null)
   const abortRef = useRef<{ aborted: boolean }>({ aborted: false })
 
-  const connected = isIllustratorReady()
+  const environment = getPanelEnvironment()
 
   // Relit le document actif tant qu'aucun export n'est en cours : pendant
   // l'export, le document courant est un duplicata et la lecture serait fausse.
@@ -209,7 +210,7 @@ export function Panel() {
 
   return (
     <div className="panel">
-      <Header connected={connected} />
+      <Header environment={environment} />
 
       <div className="panel-body">
         <DocumentSection

@@ -646,3 +646,10 @@ body {
     transition: none;
   }
 }
+
+/* Témoin de connexion : état intermédiaire propre au mode CEP. */
+
+.status-dot.is-partial {
+  background: var(--notice);
+  box-shadow: 0 0 0 3px rgb(230 134 25 / 20%);
+}

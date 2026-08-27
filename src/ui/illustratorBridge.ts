@@ -8,7 +8,11 @@
  */
 
 import type { ActiveDocumentInfo, FileWriter, IllustratorEngine } from '../core/types'
-import { isIllustratorAvailable } from '../illustrator/host'
+import {
+  getHostEnvironment,
+  isIllustratorAvailable,
+  type HostEnvironment,
+} from '../illustrator/host'
 import {
   createIllustratorEngine,
   getActiveDocument,
@@ -157,6 +161,11 @@ export function readActiveDocument(): ActiveDocumentInfo | null {
 /** Indique si l'API Illustrator répond, donc si un export est possible. */
 export function isIllustratorReady(): boolean {
   return isIllustratorAvailable()
+}
+
+/** Environnement d'exécution du panneau : `uxp`, `cep` ou `none`. */
+export function getPanelEnvironment(): HostEnvironment {
+  return getHostEnvironment()
 }
 
 /* -------------------------------------------------------------------------- *
