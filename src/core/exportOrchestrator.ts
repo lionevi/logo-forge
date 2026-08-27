@@ -18,6 +18,7 @@ import type {
   DocumentHandle,
   ExportConfig,
   ExportFailure,
+  ExportPlan,
   ExportProgress,
   ExportReport,
   FileWriter,
@@ -40,6 +41,12 @@ export interface AbortFlag {
 export interface ExportOptions {
   /** Configuration saisie dans le panneau. */
   config: ExportConfig
+  /**
+   * Plan déjà calculé, quand il ne provient pas d'une seule configuration —
+   * cas d'un pack qui réunit plusieurs préréglages. À défaut, le plan est
+   * calculé depuis `config`.
+   */
+  plan?: ExportPlan
   /** Moteur Illustrator, réel en production, factice en test. */
   engine: IllustratorEngine
   /** Créateur de dossiers ; Illustrator n'ouvre pas un dossier manquant. */
@@ -136,6 +143,7 @@ async function closeQuietly(
 export async function runExport(options: ExportOptions): Promise<ExportReport> {
   const {
     config,
+    plan: providedPlan,
     engine,
     writer,
     destination,
@@ -156,7 +164,7 @@ export async function runExport(options: ExportOptions): Promise<ExportReport> {
   }
 
   // 2. Plan.
-  const plan = planExport(config)
+  const plan = providedPlan ?? planExport(config)
   const blocking = plan.issues.filter((issue) => issue.level === 'error')
   if (blocking.length > 0) {
     throw new Error(

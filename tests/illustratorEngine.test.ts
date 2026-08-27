@@ -436,7 +436,18 @@ describe('exportPlannedFile', () => {
         asDocument(document),
         request({ file: plannedFile({ format: 'webp' }), outputPath: '/tmp/l.webp' }),
       ),
-    ).rejects.toThrow(/WebP n'est pas exportable/)
+    ).rejects.toThrow(/WEBP n'est pas exportable/)
+  })
+
+  it("refuse l'ICO, qu'Illustrator ne sait pas exporter non plus", async () => {
+    const document = createMockDocument()
+
+    await expect(
+      exportPlannedFile(
+        asDocument(document),
+        request({ file: plannedFile({ format: 'ico' }), outputPath: '/tmp/l.ico' }),
+      ),
+    ).rejects.toThrow(/ICO n'est pas exportable/)
   })
 
   it('reporte la transparence du fichier planifié sur le PNG', async () => {

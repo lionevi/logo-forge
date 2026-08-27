@@ -29,7 +29,7 @@ export const COLOR_MODES: readonly ColorMode[] = [
 ]
 
 /** Format de fichier exportable. */
-export type FileFormat = 'ai' | 'eps' | 'pdf' | 'svg' | 'png' | 'jpg' | 'webp'
+export type FileFormat = 'ai' | 'eps' | 'pdf' | 'svg' | 'png' | 'jpg' | 'webp' | 'ico'
 
 export const FILE_FORMATS: readonly FileFormat[] = [
   'ai',
@@ -39,10 +39,11 @@ export const FILE_FORMATS: readonly FileFormat[] = [
   'png',
   'jpg',
   'webp',
+  'ico',
 ]
 
 /** Formats matriciels : ils exigent une ou plusieurs tailles en pixels. */
-export const RASTER_FORMATS: readonly FileFormat[] = ['png', 'jpg', 'webp']
+export const RASTER_FORMATS: readonly FileFormat[] = ['png', 'jpg', 'webp', 'ico']
 
 /** Formats vectoriels : la notion de taille en pixels ne s'y applique pas. */
 export const VECTOR_FORMATS: readonly FileFormat[] = ['ai', 'eps', 'pdf', 'svg']
@@ -55,6 +56,7 @@ export const TRANSPARENT_FORMATS: readonly FileFormat[] = [
   'svg',
   'png',
   'webp',
+  'ico',
 ]
 
 /** Espace colorimétrique du fichier produit. */
@@ -204,15 +206,6 @@ export interface ExportResult {
   durationMs: number
 }
 
-/** Préréglage nommé, réutilisable d'un projet à l'autre. */
-export interface Preset {
-  id: string
-  label: string
-  description: string
-  /** Réglages appliqués par-dessus la configuration courante. */
-  config: Omit<ExportConfig, 'naming'> & { naming: Omit<NamingOptions, 'brand'> }
-}
-
 /* ------------------------------------------------------------------------- *
  * Pont Illustrator
  *
@@ -297,4 +290,60 @@ export interface ExportReport {
   /** `true` si l'export a été interrompu avant la fin. */
   cancelled: boolean
   durationMs: number
+}
+
+/* ------------------------------------------------------------------------- *
+ * Préréglages combinables
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Formats qu'Illustrator ne sait pas produire par script.
+ *
+ * Ils restent sélectionnables — un pack de marque les mentionne — mais le
+ * planificateur en avertit avant l'export, plutôt que de laisser l'utilisateur
+ * découvrir l'échec fichier par fichier.
+ */
+export const UNSUPPORTED_BY_ILLUSTRATOR: readonly FileFormat[] = ['webp', 'ico']
+
+/** Identifiant d'un préréglage livré. */
+export type PresetId =
+  'sources' | 'web' | 'print' | 'social' | 'favicon' | 'office' | 'appIcons' | 'video'
+
+/**
+ * Lot de livrables activable indépendamment des autres.
+ *
+ * Chaque préréglage produit son propre sous-dossier ; le pack final est l'union
+ * des préréglages actifs, et non leur produit cartésien.
+ */
+export interface ExportPreset {
+  id: PresetId
+  /** Pictogramme affiché sur la tuile. */
+  emoji: string
+  label: string
+  /** Résumé d'une ligne, affiché sous le libellé. */
+  summary: string
+  /** Sous-dossier du pack. */
+  folder: string
+  formats: FileFormat[]
+  /**
+   * Tailles explicites en pixels. Vide signifie « suivre `resolution` », la
+   * taille étant alors déduite de la largeur du plan de travail.
+   */
+  sizes: number[]
+  /** Résolution en points par pouce, quand `sizes` est vide. */
+  resolution: number
+  usage: Usage
+  variants: LogoVariant[]
+}
+
+/** Sélection courante du panneau, avant calcul du plan. */
+export interface PackageSelection {
+  /** Préréglages activés ; au moins un est exigé. */
+  presets: ExportPreset[]
+  /** Déclinaisons chromatiques cochées ; au moins une est exigée. */
+  colorModes: ColorMode[]
+  /** Nom du pack, qui devient le dossier racine et le préfixe des fichiers. */
+  packageName: string
+  /** Largeur du plan de travail, en points ; 0 si le document est inconnu. */
+  artboardWidthPoints: number
 }

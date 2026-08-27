@@ -1,122 +1,133 @@
 /**
  * Préréglages livrés avec le plugin.
  *
- * Chaque préréglage couvre un besoin réel de studio : livraison client
- * complète, kit web léger, dossier d'impression, ou export réseaux sociaux.
+ * Ils sont **combinables** : l'utilisateur en active autant qu'il veut, et le
+ * pack final est leur union. Chacun décrit un lot de livrables cohérent, avec
+ * son propre sous-dossier, ses formats et ses tailles.
  */
 
-import type { ExportConfig, Preset } from './types'
-import { DEFAULT_NAMING } from './types'
+import type { ExportPreset, PresetId } from './types'
 
-export const PRESETS: Preset[] = [
+/**
+ * Largeur de plan de travail supposée quand aucun document n'est ouvert, en
+ * points. Elle ne sert qu'à donner un aperçu des tailles dans le panneau :
+ * l'export réel lit toujours la largeur du document actif.
+ */
+export const ASSUMED_ARTBOARD_WIDTH = 512
+
+export const PRESETS: ExportPreset[] = [
   {
-    id: 'brand-delivery',
-    label: 'Livraison client complète',
-    description:
-      'Toutes les variantes, toutes les déclinaisons, vecteur et matriciel, web et print.',
-    config: {
-      naming: {
-        strategy: 'usage-format',
-        namingCase: 'kebab',
-        includeSize: true,
-        includeColorSpace: true,
-        packFolder: 'logo-pack',
-      },
-      variants: ['primary', 'horizontal', 'stacked', 'icon', 'wordmark'],
-      colorModes: ['full-color', 'black', 'white', 'grayscale'],
-      formats: ['ai', 'eps', 'pdf', 'svg', 'png', 'jpg'],
-      sizes: [256, 512, 1024, 2048],
-      usages: ['web', 'print'],
-      background: '#ffffff',
-      quality: 92,
-    },
+    id: 'sources',
+    emoji: '📦',
+    label: 'Sources',
+    summary: 'AI natif',
+    folder: 'Sources',
+    formats: ['ai'],
+    sizes: [],
+    resolution: 72,
+    usage: 'print',
+    variants: ['primary', 'horizontal', 'stacked', 'icon', 'wordmark'],
   },
   {
-    id: 'web-kit',
-    label: 'Kit web',
-    description: "SVG et PNG transparents, RVB uniquement, tailles d'écran usuelles.",
-    config: {
-      naming: {
-        strategy: 'format',
-        namingCase: 'kebab',
-        includeSize: true,
-        includeColorSpace: false,
-        packFolder: 'web',
-      },
-      variants: ['primary', 'horizontal', 'icon'],
-      colorModes: ['full-color', 'white'],
-      formats: ['svg', 'png', 'webp'],
-      sizes: [64, 128, 256, 512],
-      usages: ['web'],
-      background: '#ffffff',
-      quality: 90,
-    },
+    id: 'web',
+    emoji: '🌐',
+    label: 'Web',
+    summary: 'SVG + PNG 72 ppp',
+    folder: 'Web',
+    formats: ['svg', 'png'],
+    sizes: [],
+    resolution: 72,
+    usage: 'web',
+    variants: ['primary', 'horizontal', 'icon'],
   },
   {
-    id: 'print-pack',
-    label: "Dossier d'impression",
-    description: 'Vecteurs CMJN pour imprimeur : AI, EPS et PDF, sans matriciel.',
-    config: {
-      naming: {
-        strategy: 'variant',
-        namingCase: 'kebab',
-        includeSize: false,
-        includeColorSpace: true,
-        packFolder: 'print',
-      },
-      variants: ['primary', 'horizontal', 'stacked'],
-      colorModes: ['full-color', 'black', 'white'],
-      formats: ['ai', 'eps', 'pdf'],
-      sizes: [],
-      usages: ['print'],
-      background: '#ffffff',
-      quality: 100,
-    },
+    id: 'print',
+    emoji: '🖨️',
+    label: 'Impression',
+    summary: 'PDF + EPS 300 ppp',
+    folder: 'Impression',
+    formats: ['pdf', 'eps'],
+    sizes: [],
+    resolution: 300,
+    usage: 'print',
+    variants: ['primary', 'horizontal', 'stacked'],
   },
   {
     id: 'social',
-    label: 'Réseaux sociaux',
-    description:
-      'Icônes carrées matricielles aux tailles attendues par les plateformes.',
-    config: {
-      naming: {
-        strategy: 'flat',
-        namingCase: 'kebab',
-        includeSize: true,
-        includeColorSpace: false,
-        packFolder: 'social',
-      },
-      variants: ['icon'],
-      colorModes: ['full-color', 'white'],
-      formats: ['png', 'jpg'],
-      sizes: [180, 400, 512, 1024],
-      usages: ['web'],
-      background: '#ffffff',
-      quality: 88,
-    },
+    emoji: '📱',
+    label: 'Social',
+    summary: 'PNG par plateforme',
+    folder: 'Social',
+    // Tailles carrées attendues par les principales plateformes.
+    formats: ['png'],
+    sizes: [400, 800, 1080, 1200],
+    resolution: 72,
+    usage: 'web',
+    variants: ['icon', 'horizontal'],
+  },
+  {
+    id: 'favicon',
+    emoji: '⭐',
+    label: 'Favicon',
+    summary: 'ICO + PNG multi-tailles',
+    folder: 'Favicon',
+    formats: ['ico', 'png'],
+    sizes: [16, 32, 48, 64, 180, 192, 512],
+    resolution: 72,
+    usage: 'web',
+    variants: ['icon'],
+  },
+  {
+    id: 'office',
+    emoji: '📄',
+    label: 'Bureautique',
+    summary: 'PNG 150 ppp',
+    folder: 'Bureautique',
+    formats: ['png'],
+    sizes: [],
+    resolution: 150,
+    usage: 'print',
+    variants: ['primary', 'horizontal'],
+  },
+  {
+    id: 'appIcons',
+    emoji: '📲',
+    label: 'Icônes App',
+    summary: 'PNG multi-tailles',
+    folder: 'Icones-App',
+    // Tailles iOS et Android usuelles.
+    formats: ['png'],
+    sizes: [60, 87, 120, 180, 512, 1024],
+    resolution: 72,
+    usage: 'web',
+    variants: ['icon'],
+  },
+  {
+    id: 'video',
+    emoji: '🎬',
+    label: 'Vidéo',
+    summary: 'PNG 1920 × 1080',
+    folder: 'Video',
+    formats: ['png'],
+    sizes: [1920],
+    resolution: 72,
+    usage: 'web',
+    variants: ['primary', 'horizontal'],
   },
 ]
 
-/** Configuration par défaut du panneau, dérivée du préréglage de livraison. */
-export const DEFAULT_CONFIG: ExportConfig = applyPreset(
-  PRESETS[0],
-  DEFAULT_NAMING.brand,
-)
+/** Préréglages actifs à l'ouverture du panneau. */
+export const DEFAULT_PRESET_IDS: readonly PresetId[] = ['sources', 'web']
 
-/** Instancie une configuration complète à partir d'un préréglage et d'une marque. */
-export function applyPreset(preset: Preset, brand: string): ExportConfig {
-  return {
-    ...preset.config,
-    variants: [...preset.config.variants],
-    colorModes: [...preset.config.colorModes],
-    formats: [...preset.config.formats],
-    sizes: [...preset.config.sizes],
-    usages: [...preset.config.usages],
-    naming: { ...preset.config.naming, brand },
-  }
-}
+const BY_ID = new Map(PRESETS.map((preset) => [preset.id, preset]))
 
 /** Retrouve un préréglage par identifiant. */
-export function getPreset(id: string): Preset | undefined {
-  return PRESETS.find((preset) => preset.id === id)
+export function getPreset(id: PresetId): ExportPreset | undefined {
+  return BY_ID.get(id)
+}
+
+/** Renvoie les préréglages correspondant aux identifiants donnés, dans l'ordre d'affichage. */
+export function resolvePresets(ids: readonly PresetId[]): ExportPreset[] {
+  const selected = new Set(ids)
+  return PRESETS.filter((preset) => selected.has(preset.id))
 }

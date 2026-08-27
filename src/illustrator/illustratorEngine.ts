@@ -679,10 +679,13 @@ export async function exportPlannedFile(
         quality,
       })
     case 'webp':
-      // Illustrator n'expose pas d'export WebP par script : le signaler
+    case 'ico':
+      // Illustrator n'expose ni le WebP ni l'ICO au script : le signaler
       // explicitement vaut mieux que de produire un fichier au mauvais format.
+      // Le planificateur en avertit déjà avant le lancement de l'export.
       throw new Error(
-        `Le format WebP n'est pas exportable depuis Illustrator par script (${outputPath}).`,
+        `Le format ${file.format.toUpperCase()} n'est pas exportable depuis ` +
+          `Illustrator par script (${outputPath}).`,
       )
   }
 }

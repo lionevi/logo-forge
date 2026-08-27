@@ -158,3 +158,34 @@ export function readActiveDocument(): ActiveDocumentInfo | null {
 export function isIllustratorReady(): boolean {
   return isIllustratorAvailable()
 }
+
+/* -------------------------------------------------------------------------- *
+ * Shell UXP
+ * -------------------------------------------------------------------------- */
+
+/** Sous-ensemble de `uxp.shell` utilisé pour révéler le pack exporté. */
+interface UxpShell {
+  openPath(path: string): Promise<void>
+}
+
+/**
+ * Ouvre un dossier dans le Finder ou l'Explorateur.
+ *
+ * @returns `true` si l'hôte a pris la demande, `false` sinon — l'échec n'est
+ * jamais fatal : le chemin reste affiché dans le panneau.
+ */
+export async function revealInFileManager(path: string): Promise<boolean> {
+  if (typeof require !== 'function') return false
+
+  try {
+    // UXP fournit ses modules par `require` à l'exécution : c'est le seul
+    // moyen d'y accéder, un import ES échouerait au build comme au runtime.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const uxp = require('uxp') as { shell?: UxpShell }
+    if (!uxp.shell) return false
+    await uxp.shell.openPath(path)
+    return true
+  } catch {
+    return false
+  }
+}

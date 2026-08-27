@@ -8,7 +8,6 @@ import {
   summarizePlan,
   validateConfig,
 } from '../src/core/planner'
-import { DEFAULT_CONFIG, PRESETS, applyPreset } from '../src/core/presets'
 import type { ExportConfig } from '../src/core/types'
 
 /** Configuration minimale et valide, servant de base aux variations. */
@@ -218,9 +217,18 @@ describe('planExport — métadonnées du plan', () => {
     ])
   })
 
-  it('garantit des chemins uniques', () => {
-    const plan = planExport(applyPreset(PRESETS[0], 'Ma Marque'))
+  it('garantit des chemins uniques sur un plan dense', () => {
+    const plan = planExport(
+      baseConfig({
+        variants: ['primary', 'horizontal', 'stacked', 'icon', 'wordmark'],
+        colorModes: ['full-color', 'black', 'white', 'grayscale'],
+        formats: ['ai', 'eps', 'pdf', 'svg', 'png', 'jpg'],
+        sizes: [256, 512, 1024],
+        usages: ['web', 'print'],
+      }),
+    )
     const paths = plan.files.map((file) => file.path)
+    expect(paths.length).toBeGreaterThan(100)
     expect(new Set(paths).size).toBe(paths.length)
   })
 })
@@ -297,29 +305,5 @@ describe('summarizePlan', () => {
     expect(summarizePlan(planExport(baseConfig({ formats: [] })))).toBe(
       'Aucun fichier à exporter.',
     )
-  })
-})
-
-describe('préréglages', () => {
-  it('produit un plan valide pour chaque préréglage livré', () => {
-    for (const preset of PRESETS) {
-      const plan = planExport(applyPreset(preset, 'Ma Marque'))
-      expect(plan.issues.filter((issue) => issue.level === 'error')).toEqual([])
-      expect(plan.totalFiles).toBeGreaterThan(0)
-    }
-  })
-
-  it('conserve le nom de marque en changeant de préréglage', () => {
-    expect(applyPreset(PRESETS[1], 'Atelier Nord').naming.brand).toBe('Atelier Nord')
-  })
-
-  it('ne partage aucun tableau avec le préréglage source', () => {
-    const config = applyPreset(PRESETS[0], 'Ma Marque')
-    config.formats.push('webp')
-    expect(PRESETS[0].config.formats).not.toContain('webp')
-  })
-
-  it('fournit une configuration par défaut exploitable', () => {
-    expect(planExport(DEFAULT_CONFIG).totalFiles).toBeGreaterThan(0)
   })
 })
