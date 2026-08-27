@@ -48,6 +48,11 @@
   --positive: var(--spectrum-semantic-positive-color);
   --notice: var(--spectrum-semantic-notice-color);
 
+  /* Hauteur de la bande d'en-tête, reprise par l'ancrage du corps. */
+  --header-height: 44px;
+  /* Marge basse du corps : dégage le pied, qui flotte au-dessus. */
+  --footer-clearance: 96px;
+
   --radius: 4px;
   --gap: 8px;
   --font-size: 12px;
@@ -59,13 +64,37 @@
   box-sizing: border-box;
 }
 
+/*
+ * Socle du panneau.
+ *
+ * `height: 100%` en cascade depuis `html` plutôt que `100vh` : dans le Chromium
+ * figé de CEP, l'unité `vh` ne se résout pas sur la fenêtre du panneau, ce qui
+ * laissait le corps hors du cadre visible — en-tête seul, reste gris.
+ */
+html,
 body {
+  width: 100%;
+  height: 100%;
   margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
   font-family: var(--font-family);
   font-size: var(--font-size);
   color: var(--text);
   background: var(--background);
   -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
 }
 
 /* Barre de défilement fine et discrète, façon Spectrum. */
@@ -91,31 +120,60 @@ body {
   background-clip: content-box;
 }
 
-/* Structure */
+/*
+ * Structure — trois bandes ancrées en positionnement absolu.
+ *
+ * Ni `vh`, ni flexbox pour la répartition verticale : les deux ont trahi dans
+ * CEP. Chaque bande est ancrée à ses bords, ce qui ne dépend que du
+ * positionnement absolu, acquis depuis toujours.
+ *
+ * Le pied flotte au-dessus du corps plutôt que de lui prendre sa place : sa
+ * hauteur varie avec son contenu (barre de progression, bandeau d'erreur), et
+ * une hauteur fixe l'aurait tronqué. Le corps réserve donc `--footer-clearance`
+ * en marge basse pour que son dernier élément reste atteignable au défilement.
+ */
 
 .panel {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   overflow: hidden;
+  background: var(--background);
+  color: var(--text);
 }
 
 .panel-header {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
   display: flex;
+  height: var(--header-height);
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
 
 .panel-body {
-  flex: 1;
-  padding: 12px;
+  position: absolute;
+  top: var(--header-height);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 12px 12px var(--footer-clearance);
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
 .panel-footer {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
   padding: 12px;
   border-top: 1px solid var(--border);
   background: var(--surface);
