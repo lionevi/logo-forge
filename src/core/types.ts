@@ -212,3 +212,89 @@ export interface Preset {
   /** Réglages appliqués par-dessus la configuration courante. */
   config: Omit<ExportConfig, 'naming'> & { naming: Omit<NamingOptions, 'brand'> }
 }
+
+/* ------------------------------------------------------------------------- *
+ * Pont Illustrator
+ *
+ * Le cœur métier ne parle jamais à Illustrator : il décrit ici le contrat que
+ * `src/illustrator/illustratorEngine.ts` implémente. C'est ce qui permet de
+ * tester le chef d'orchestre avec un moteur factice, sans Illustrator.
+ * ------------------------------------------------------------------------- */
+
+/** Déclinaison chromatique appliquée à un document dupliqué. */
+export type ColorScheme = 'original' | 'black' | 'white' | 'grayscale'
+
+/**
+ * Poignée opaque vers un document Illustrator.
+ *
+ * Le cœur ne l'inspecte ni ne la déréférence jamais : il la reçoit du moteur et
+ * la lui rend. `unknown` — et non `any` — pour que toute tentative d'usage
+ * accidentel soit rejetée à la compilation.
+ */
+export type DocumentHandle = unknown
+
+/** Signalement du document Illustrator actif. */
+export interface ActiveDocumentInfo {
+  /** Nom du document, extension comprise. */
+  name: string
+  /** Chemin natif complet, ou chaîne vide si le document n'a jamais été enregistré. */
+  path: string
+  /** Nombre de plans de travail. */
+  artboardCount: number
+  /**
+   * Largeur du premier plan de travail, en points PostScript (1 pt = 1/72").
+   * Elle sert à convertir une taille en pixels demandée par le plan en
+   * résolution à passer à Illustrator. Vaut 0 si l'hôte ne la fournit pas.
+   */
+  artboardWidthPoints: number
+}
+
+/** Réglages passés au moteur pour un fichier donné. */
+export interface RenderRequest {
+  /** Fichier planifié à produire. */
+  file: PlannedFile
+  /** Chemin natif absolu du fichier de sortie. */
+  outputPath: string
+  /** Index du plan de travail à exporter, base 0. */
+  artboardIndex: number
+  /** Résolution des formats matriciels, en points par pouce. */
+  resolution: number
+  /** Qualité JPEG / WebP, de 1 à 100. */
+  quality: number
+  /** Couleur de fond des formats opaques, au format `#rrggbb`. */
+  background: string
+}
+
+/**
+ * Contrat du moteur Illustrator, tel que le chef d'orchestre l'utilise.
+ *
+ * Toute implémentation doit être sûre à appeler en séquence : le chef
+ * d'orchestre duplique, teinte, exporte puis referme, un fichier à la fois.
+ */
+export interface IllustratorEngine {
+  /** Document actif, ou `null` si aucun n'est ouvert. */
+  getActiveDocument(): ActiveDocumentInfo | null
+  /** Duplique le document actif pour travailler sans modifier l'original. */
+  duplicateActiveDocument(): Promise<DocumentHandle>
+  /** Applique une déclinaison chromatique à un document dupliqué. */
+  applyColorScheme(document: DocumentHandle, scheme: ColorScheme): Promise<void>
+  /** Exporte un plan de travail vers `request.outputPath`. */
+  exportDocument(document: DocumentHandle, request: RenderRequest): Promise<void>
+  /** Referme un document dupliqué, sans enregistrer. */
+  closeDocument(document: DocumentHandle): Promise<void>
+}
+
+/** Bilan d'un export orchestré. */
+export interface ExportReport {
+  /** Document source, tel que lu au démarrage de l'export. */
+  document: ActiveDocumentInfo
+  /** Plan effectivement exécuté. */
+  plan: ExportPlan
+  /** Dossier de destination, en chemin natif. */
+  destination: string
+  written: PlannedFile[]
+  failures: ExportFailure[]
+  /** `true` si l'export a été interrompu avant la fin. */
+  cancelled: boolean
+  durationMs: number
+}

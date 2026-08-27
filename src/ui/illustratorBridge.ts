@@ -1,22 +1,29 @@
 /**
  * Pont entre le cœur métier et les API UXP / Illustrator.
  *
- * C'est le seul module de l'interface qui touche à `require('uxp')` et
- * `require('illustrator')`. Il implémente les interfaces `FileWriter` et
- * `DocumentRenderer` définies dans `core/types.ts`, ce qui permet de tester
- * planificateur et moteur d'export sans Illustrator.
+ * Il fournit à l'interface le `FileWriter` adossé au système de fichiers UXP,
+ * et lui donne accès au moteur Illustrator réel. Les deux sont décrits par des
+ * interfaces de `core/types.ts`, ce qui laisse le cœur métier testable sans
+ * Illustrator.
  */
 
-import type { DocumentRenderer, FileWriter, PlannedFile } from '../core/types'
+import type { ActiveDocumentInfo, FileWriter, IllustratorEngine } from '../core/types'
+import { isIllustratorAvailable } from '../illustrator/host'
+import {
+  createIllustratorEngine,
+  getActiveDocument,
+} from '../illustrator/illustratorEngine'
 
 /**
  * Sous-ensemble de l'API `uxp.storage` réellement utilisé ici.
  * Le typage local évite une dépendance de compilation aux types UXP, absents
  * de l'environnement de CI.
  */
-interface UxpEntry {
+export interface UxpEntry {
   isFolder: boolean
   name: string
+  /** Chemin natif complet de l'entrée, tel que le système de fichiers le voit. */
+  nativePath: string
   getEntry(name: string): Promise<UxpEntry>
   createFolder(name: string): Promise<UxpEntry>
   createFile(name: string, options?: { overwrite?: boolean }): Promise<UxpFileEntry>
@@ -24,7 +31,6 @@ interface UxpEntry {
 
 interface UxpFileEntry extends UxpEntry {
   write(data: Uint8Array | string, options?: { format?: unknown }): Promise<void>
-  nativePath: string
 }
 
 interface UxpFileSystem {
@@ -126,27 +132,29 @@ export function createUxpWriter(root: UxpEntry): FileWriter {
   }
 }
 
+/* -------------------------------------------------------------------------- *
+ * Moteur Illustrator
+ * -------------------------------------------------------------------------- */
+
 /**
- * `DocumentRenderer` de démonstration, utilisé hors Illustrator.
+ * Renvoie le moteur d'export réel.
  *
- * Il produit un contenu déterministe qui décrit le fichier attendu, ce qui rend
- * l'arborescence d'un pack inspectable sans lancer Illustrator.
+ * Le moteur est construit à chaque appel : il ne détient aucun état, et le
+ * document actif peut changer entre deux exports.
  */
-export function createStubRenderer(): DocumentRenderer {
-  return {
-    async render(file: PlannedFile) {
-      return [
-        `Logo Forge — fichier planifié`,
-        `chemin      : ${file.path}`,
-        `variante    : ${file.variant}`,
-        `déclinaison : ${file.colorMode}`,
-        `format      : ${file.format}`,
-        `espace      : ${file.colorSpace}`,
-        `usage       : ${file.usage}`,
-        `taille      : ${file.size === null ? 'vectoriel' : `${file.size} px`}`,
-        `transparent : ${file.transparent ? 'oui' : 'non'}`,
-        '',
-      ].join('\n')
-    },
-  }
+export function getIllustratorEngine(): IllustratorEngine {
+  return createIllustratorEngine()
+}
+
+/**
+ * Document Illustrator actif, ou `null` si aucun n'est ouvert — y compris hors
+ * d'Illustrator, où le panneau doit rester utilisable en lecture.
+ */
+export function readActiveDocument(): ActiveDocumentInfo | null {
+  return getActiveDocument()
+}
+
+/** Indique si l'API Illustrator répond, donc si un export est possible. */
+export function isIllustratorReady(): boolean {
+  return isIllustratorAvailable()
 }

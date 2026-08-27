@@ -5,10 +5,9 @@ En un clic, il produit toutes les déclinaisons d'une identité — variantes,
 couleurs, formats, tailles — dans une arborescence de dossiers propre et
 prévisible, prête à être livrée au client.
 
-> État : socle technique fonctionnel. Le cœur métier (planification, nommage,
-> couleur, moteur d'export) est complet et testé ; le rendu des fichiers depuis
-> Illustrator est branché sur un adaptateur de démonstration. Voir
-> [docs/ROADMAP.md](docs/ROADMAP.md).
+> État : le moteur d'export Illustrator est implémenté et branché sur le
+> panneau. Il n'a pas encore été exécuté dans Illustrator — l'API UXP n'est
+> joignable que depuis l'application. Voir [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Ce que fait le plugin
 
@@ -49,20 +48,26 @@ src/core/     Logique pure, testable en Node, sans aucune dépendance externe
   colorManager.ts   Conversions RVB/CMJN, contraste WCAG, déclinaisons
   folderManager.ts  Nommage des fichiers, arborescence, déduplication
   planner.ts        Calcul du pack complet + diagnostics
-  exporter.ts       Moteur d'export (FileWriter/DocumentRenderer injectés)
+  exporter.ts       Écriture générique (FileWriter/DocumentRenderer injectés)
+  exportOrchestrator.ts  Duplique, teinte, exporte, referme — moteur injecté
   presets.ts        Préréglages livrés
+
+src/illustrator/  Seuls modules qui parlent à Illustrator
+  host.ts             require('illustrator'), remplaçable en test
+  illustratorEngine.ts  Export SVG/PNG/PDF/EPS/AI/JPEG, duplication, teinte
 
 src/ui/       Interface React et pont UXP
   Panel.tsx              Panneau principal, détient l'état
   ExportSettings.tsx     Options d'export (composant contrôlé)
   PresetSelector.tsx     Sélecteur de préréglages
-  illustratorBridge.ts   Seul module qui touche à require('uxp')
+  illustratorBridge.ts   FileWriter UXP et accès au moteur
 ```
 
-`exporter.ts` reçoit un `FileWriter` et un `DocumentRenderer` par injection.
-En production ils s'adossent au système de fichiers UXP ; en test ils sont
-remplacés par des doublures en mémoire. C'est ce découplage qui permet de
-couvrir la totalité de la logique d'export sans lancer Illustrator.
+`exportOrchestrator.ts` reçoit un `IllustratorEngine` par injection : en
+production celui de `src/illustrator/`, en test une doublure qui enregistre ce
+qu'on lui demande. C'est ce découplage qui permet de couvrir la totalité de la
+logique d'export sans lancer Illustrator — et qui garde `src/core/` vierge de
+tout appel à l'API Illustrator.
 
 ## Préréglages livrés
 

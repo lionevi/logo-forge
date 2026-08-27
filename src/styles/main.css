@@ -385,3 +385,45 @@ body {
   opacity: 0.4;
   cursor: default;
 }
+
+/* Document Illustrator actif, dans l'en-tête du panneau */
+
+.document-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap);
+  margin-top: 6px;
+}
+
+.document-name {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-name.is-missing {
+  color: var(--spectrum-orange-500);
+}
+
+.link-button {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.link-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.link-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

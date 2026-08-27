@@ -12,25 +12,29 @@ Le socle est en place et vérifié par la CI.
 - [x] Quatre stratégies d'arborescence (usage/format, format, variante, à plat)
 - [x] Moteur d'export résilient, annulable, avec rapport de progression
 - [x] Diagnostics avant export (erreurs bloquantes et avertissements)
-- [x] Interface React : préréglages, options, aperçu du pack, progression
+- [x] Moteur Illustrator UXP : SVG, PNG24, JPEG, PDF, EPS, AI
+- [x] Duplication du document et déclinaisons chromatiques appliquées aux tracés
+- [x] Interface React : document actif, préréglages, aperçu du pack, progression
 - [x] Quatre préréglages livrés
 - [x] Build UXP en IIFE, manifest v5, packaging `.ccx` sans dépendance
-- [x] CI : format, lint, typecheck, 108 tests, build, packaging, artefact
+- [x] CI : format, lint, typecheck, 177 tests, build, packaging, artefact
 
 **Limite connue**
 
-Le `DocumentRenderer` branché sur le panneau est un adaptateur de démonstration :
-il écrit un descriptif texte de chaque fichier planifié plutôt que le fichier
-réel. Toute l'arborescence d'un pack est donc inspectable, mais les fichiers ne
-sont pas encore rendus par Illustrator. C'est le premier chantier ci-dessous.
+Le moteur n'a jamais tourné dans Illustrator : cet environnement de
+développement n'y a pas accès. Le code suit le modèle objet documenté et se
+protège des écarts de version (`assignIfSupported` n'écrit que les propriétés
+que l'hôte déclare), mais la première exécution réelle reste à faire.
 
-## v0.2 — Rendu Illustrator réel
+Le WebP est refusé explicitement : Illustrator ne l'expose pas au script.
 
-- [ ] `IllustratorRenderer` adossé à l'API document d'Illustrator
-- [ ] Export vectoriel : AI, EPS, PDF, avec profil colorimétrique du document
-- [ ] Export matriciel : PNG, JPEG, WebP, avec transparence et qualité
+## v0.2 — Validation dans Illustrator
+
+- [ ] Première exécution réelle dans Illustrator 2021 et 2024
+- [ ] Vérification des noms d'options d'export selon la version de l'hôte
 - [ ] Détection des calques de variantes dans le document ouvert
-- [ ] Application réelle des déclinaisons chromatiques aux nuances du document
+- [ ] Conversion des dégradés et motifs en niveaux de gris
+- [ ] Choix du plan de travail par variante, plutôt qu'un index global
 
 ## v0.3 — Qualité du pack livré
 

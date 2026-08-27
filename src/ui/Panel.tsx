@@ -8,17 +8,25 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react'
 
-import { runExport, summarizeResult } from '../core/exporter'
+import { runExport, summarizeReport } from '../core/exportOrchestrator'
 import { planExport, summarizePlan } from '../core/planner'
 import { DEFAULT_CONFIG, PRESETS, applyPreset } from '../core/presets'
-import type { ExportConfig, ExportProgress, ExportResult, Preset } from '../core/types'
+import type {
+  ActiveDocumentInfo,
+  ExportConfig,
+  ExportProgress,
+  ExportReport,
+  Preset,
+} from '../core/types'
 import { ExportSettings } from './ExportSettings'
 import { PresetSelector } from './PresetSelector'
 import {
-  createStubRenderer,
   createUxpWriter,
+  getIllustratorEngine,
+  isIllustratorReady,
   isUxpAvailable,
   pickDestinationFolder,
+  readActiveDocument,
 } from './illustratorBridge'
 
 /** Compare deux tableaux sans tenir compte de l'ordre des éléments. */
@@ -59,7 +67,12 @@ export function Panel() {
   const [config, setConfig] = useState<ExportConfig>(DEFAULT_CONFIG)
   const [sizesInput, setSizesInput] = useState(DEFAULT_CONFIG.sizes.join(', '))
   const [progress, setProgress] = useState<ExportProgress | null>(null)
-  const [result, setResult] = useState<ExportResult | null>(null)
+  const [report, setReport] = useState<ExportReport | null>(null)
+  // Le document actif est lu une fois au montage : Illustrator ne notifie pas
+  // le panneau d'un changement de document, d'où le bouton de rafraîchissement.
+  const [document, setDocument] = useState<ActiveDocumentInfo | null>(() =>
+    readActiveDocument(),
+  )
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const abortRef = useRef<{ aborted: boolean }>({ aborted: false })
@@ -73,49 +86,64 @@ export function Panel() {
       const next = applyPreset(preset, config.naming.brand)
       setConfig(next)
       setSizesInput(next.sizes.join(', '))
-      setResult(null)
+      setReport(null)
       setError(null)
     },
     [config.naming.brand],
   )
 
+  /** Relit le document actif, après un changement de document dans Illustrator. */
+  const handleRefreshDocument = useCallback(() => {
+    setDocument(readActiveDocument())
+    setError(null)
+  }, [])
+
   const handleExport = useCallback(async () => {
     setError(null)
-    setResult(null)
+    setReport(null)
 
-    if (!isUxpAvailable()) {
-      setError("Le panneau doit s'exécuter dans Illustrator pour écrire sur le disque.")
+    if (!isUxpAvailable() || !isIllustratorReady()) {
+      setError("Le panneau doit s'exécuter dans Illustrator pour lancer un export.")
       return
     }
 
-    let destination
+    const active = readActiveDocument()
+    setDocument(active)
+    if (!active) {
+      setError('Aucun document Illustrator ouvert : ouvrez le logo à exporter.')
+      return
+    }
+
+    let folder
     try {
-      destination = await pickDestinationFolder()
+      folder = await pickDestinationFolder()
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
       return
     }
-    if (!destination) return
+    if (!folder) return
 
     abortRef.current = { aborted: false }
     setExporting(true)
     setProgress({ completed: 0, total: plan.totalFiles, current: plan.files[0] })
 
     try {
-      const exportResult = await runExport(
-        plan,
-        createUxpWriter(destination),
-        createStubRenderer(),
-        { onProgress: setProgress, signal: abortRef.current },
-      )
-      setResult(exportResult)
+      const exportReport = await runExport({
+        config,
+        engine: getIllustratorEngine(),
+        writer: createUxpWriter(folder),
+        destination: folder.nativePath,
+        onProgress: setProgress,
+        signal: abortRef.current,
+      })
+      setReport(exportReport)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
       setExporting(false)
       setProgress(null)
     }
-  }, [plan])
+  }, [config, plan])
 
   const handleCancel = useCallback(() => {
     abortRef.current.aborted = true
@@ -126,6 +154,23 @@ export function Panel() {
       <header className="panel-header">
         <h1 className="panel-title">Logo Forge</h1>
         <p className="panel-subtitle">{summarizePlan(plan)}</p>
+        <div className="document-row">
+          <span className={`document-name${document ? '' : ' is-missing'}`}>
+            {document
+              ? `${document.name} · ${document.artboardCount} plan${
+                  document.artboardCount > 1 ? 's' : ''
+                } de travail`
+              : 'Aucun document Illustrator ouvert'}
+          </span>
+          <button
+            type="button"
+            className="link-button"
+            onClick={handleRefreshDocument}
+            disabled={exporting}
+          >
+            Actualiser
+          </button>
+        </div>
       </header>
 
       <div className="panel-body">
@@ -137,7 +182,7 @@ export function Panel() {
           onSizesInputChange={setSizesInput}
           onChange={(next) => {
             setConfig(next)
-            setResult(null)
+            setReport(null)
           }}
           disabled={exporting}
         />
@@ -195,13 +240,15 @@ export function Panel() {
         )}
 
         {error && <p className="banner is-error">{error}</p>}
-        {result && <p className="banner is-ok">{summarizeResult(result)}</p>}
+        {report && <p className="banner is-ok">{summarizeReport(report)}</p>}
 
         <div className="actions">
           <button
             type="button"
             className="button is-primary"
-            disabled={blocking || exporting || plan.totalFiles === 0}
+            disabled={
+              blocking || exporting || plan.totalFiles === 0 || document === null
+            }
             onClick={handleExport}
           >
             {exporting ? 'Export en cours…' : `Exporter ${plan.totalFiles} fichiers`}

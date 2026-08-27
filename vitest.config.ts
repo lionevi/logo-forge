@@ -9,7 +9,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      include: ['src/core/**/*.ts'],
+      include: ['src/core/**/*.ts', 'src/illustrator/**/*.ts'],
       thresholds: {
         statements: 85,
         branches: 80,
