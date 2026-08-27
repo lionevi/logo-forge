@@ -10,10 +10,14 @@ npm run verify   # lint + typecheck + tests + build
 
 ## Charger le plugin dans Illustrator
 
-1. Installer [UXP Developer Tools](https://developer.adobe.com/photoshop/uxp/devtool/) (UDT).
-2. `npm run build` — produit `dist/`, avec `manifest.json` à sa racine.
-3. Dans UDT : **Add Plugin** → `dist/manifest.json` → **Load**.
-4. Illustrator : _Fenêtre → Extensions → Logo Forge_.
+Marche à suivre détaillée, macOS et Windows :
+**[docs/LOADING-UXP.md](LOADING-UXP.md)**. En résumé :
+
+1. Installer UXP Developer Tool depuis l'application Creative Cloud.
+2. `npm run build` — produit `dist/`, manifest, bundle et icônes compris.
+3. Lancer Illustrator, **puis** UDT (UDT ne voit que les hôtes déjà ouverts).
+4. Dans UDT : **Add Plugin** → `dist/manifest.json` → **Load**.
+5. Illustrator : _Fenêtre → Extensions → Logo Forge_.
 
 Pendant le développement, `npm run dev` relance le build à chaque sauvegarde ;
 un **Reload** dans UDT recharge le panneau. UDT ouvre aussi une console de
@@ -65,14 +69,15 @@ Conventions :
 
 ## Contraintes UXP à connaître
 
-| Contrainte                            | Conséquence                                                       |
-| ------------------------------------- | ----------------------------------------------------------------- |
-| Pas de modules ES                     | Build IIFE unique, `inlineDynamicImports: true`                   |
-| Pas de `process`                      | `process.env.NODE_ENV` est remplacé à la compilation par `define` |
-| `manifest.json` à la racine du plugin | Copié de `src/` vers `dist/` par un plugin Vite                   |
-| Pas de `<script type="module">`       | `src/index.html` est écrit à la main et copié tel quel            |
-| Système de fichiers permissionné      | `requiredPermissions.localFileSystem: "fullAccess"`               |
-| Pas d'`eval`                          | `allowCodeGenerationFromStrings: false`                           |
+| Contrainte                                       | Conséquence                                                       |
+| ------------------------------------------------ | ----------------------------------------------------------------- |
+| Pas de modules ES                                | Build IIFE unique (`dist/index.js`), `inlineDynamicImports: true` |
+| Pas de `process`                                 | `process.env.NODE_ENV` est remplacé à la compilation par `define` |
+| `manifest.json` à la racine du plugin            | Copié de `src/` vers `dist/` par un plugin Vite                   |
+| Pas de `<script type="module">`                  | `src/index.html` est écrit à la main et copié tel quel            |
+| Système de fichiers permissionné                 | `requiredPermissions.localFileSystem: "fullAccess"`               |
+| Pas d'`eval`                                     | `allowCodeGenerationFromStrings: false`                           |
+| Icône déclarée introuvable = échec du chargement | `scripts/generate-icons.ts`, enchaîné par `npm run build`         |
 
 ## Style
 
@@ -85,6 +90,21 @@ Prettier et ESLint font foi ; `npm run format` corrige, `npm run lint:fix`
 - `@typescript-eslint/no-explicit-any` est une **erreur** dans `src/` — préférer
   une interface locale décrivant le sous-ensemble d'API réellement utilisé,
   comme le fait `illustratorBridge.ts` pour les types UXP.
+
+## Icônes
+
+`scripts/generate-icons.ts` encode les PNG à la main avec le seul `node:zlib` —
+signature, IHDR, IDAT, IEND, en RGBA 8 bits — et trace le monogramme depuis une
+fonte bitmap 5x7 intégrée. Le module `canvas` aurait imposé une compilation
+native, contraire à l'exigence « zéro dépendance externe » et fragile en CI.
+
+Le script est enchaîné par `npm run build` ; `npm run icons` le rejoue seul. Il
+produit les six fichiers déclarés par le manifest, variantes `@2x` comprises,
+car `scale: [1, 2]` fait chercher les deux à UXP.
+
+Node exécute ce script directement (`node scripts/generate-icons.ts`) grâce au
+retrait natif des types, disponible depuis Node 22.18. C'est aussi la raison
+pour laquelle `package.json` déclare `"type": "module"`.
 
 ## Packaging
 

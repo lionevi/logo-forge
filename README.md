@@ -75,7 +75,7 @@ couvrir la totalité de la logique d'export sans lancer Illustrator.
 
 ## Installation en développement
 
-Prérequis : Node 22 (voir `.nvmrc`), Adobe Illustrator 2023 (27.0) ou plus
+Prérequis : Node 22 (voir `.nvmrc`), Adobe Illustrator 2021 (25.0) ou plus
 récent, et [UXP Developer Tools](https://developer.adobe.com/photoshop/uxp/devtool/).
 
 ```bash
@@ -107,7 +107,7 @@ Developer Tools suffit alors à recharger le panneau.
 ## Contraintes techniques
 
 **UXP ne charge pas de modules ES.** Le build produit donc un IIFE unique
-(`dist/main.js`), sans import dynamique ni découpage de chunks. `src/index.html`
+(`dist/index.js`), sans import dynamique ni découpage de chunks. `src/index.html`
 est écrit à la main et copié tel quel : Vite ne bundle un HTML que si son script
 porte `type="module"`, ce que UXP refuse.
 
@@ -118,6 +118,7 @@ dépendances d'exécution sont React et React DOM.
 
 ## Documentation
 
+- [docs/LOADING-UXP.md](docs/LOADING-UXP.md) — charger le plugin dans Illustrator, pas à pas (macOS et Windows)
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — mise en place, conventions, débogage
 - [docs/ROADMAP.md](docs/ROADMAP.md) — état actuel et suite des travaux
 

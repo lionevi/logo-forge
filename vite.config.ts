@@ -4,8 +4,8 @@ import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
 
-const root = resolve(__dirname, 'src')
-const outDir = resolve(__dirname, 'dist')
+const root = resolve(import.meta.dirname, 'src')
+const outDir = resolve(import.meta.dirname, 'dist')
 
 /**
  * Copie `manifest.json` et `index.html` à la racine de `dist/`.
@@ -44,8 +44,8 @@ export default defineConfig({
       output: {
         // UXP ne charge pas de modules ES : le bundle doit être un IIFE unique.
         format: 'iife',
-        entryFileNames: 'main.js',
-        chunkFileNames: 'main.js',
+        entryFileNames: 'index.js',
+        chunkFileNames: 'index.js',
         assetFileNames: 'assets/[name][extname]',
         // Un découpage produirait des imports dynamiques, que UXP ne résout pas.
         inlineDynamicImports: true,

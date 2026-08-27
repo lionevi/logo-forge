@@ -52,8 +52,11 @@ jobs:
         run: |
           set -euo pipefail
           test -f dist/manifest.json || { echo "manifest.json absent de dist/"; exit 1; }
-          test -f dist/main.js || { echo "main.js absent de dist/"; exit 1; }
-          if grep -qE '^\s*(import|export)\s' dist/main.js; then
+          test -f dist/index.js || { echo "index.js absent de dist/"; exit 1; }
+          for icon in panel-light panel-light@2x panel-dark panel-dark@2x plugin plugin@2x; do
+            test -f "dist/icons/$icon.png" || { echo "icone manquante : $icon.png"; exit 1; }
+          done
+          if grep -qE '^\s*(import|export)\s' dist/index.js; then
             echo "Le bundle contient des modules ES, que UXP ne sait pas charger."
             exit 1
           fi

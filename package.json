@@ -2,6 +2,7 @@
   "name": "logo-forge",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "description": "Plugin Adobe Illustrator (UXP) d'export automatisé de packs de logo.",
   "license": "MIT",
   "repository": {
@@ -13,7 +14,7 @@
   },
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build",
+    "build": "vite build && node scripts/generate-icons.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
@@ -23,7 +24,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "package": "npm run build && tsx scripts/package-ccx.ts",
-    "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "icons": "node scripts/generate-icons.ts"
   },
   "dependencies": {
     "react": "^18.3.1",
