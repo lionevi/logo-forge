@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Lint · Typecheck · Tests · Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Vérifier le formatage
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm run test
+
+      - name: Build du bundle UXP
+        run: npm run build
+
+      - name: Vérifier le bundle IIFE
+        run: |
+          set -euo pipefail
+          test -f dist/manifest.json || { echo "manifest.json absent de dist/"; exit 1; }
+          test -f dist/main.js || { echo "main.js absent de dist/"; exit 1; }
+          if grep -qE '^\s*(import|export)\s' dist/main.js; then
+            echo "Le bundle contient des modules ES, que UXP ne sait pas charger."
+            exit 1
+          fi
+          echo "Bundle IIFE conforme."
+
+      - name: Packager le .ccx
+        run: npx tsx scripts/package-ccx.ts
+
+      - name: Publier le plugin construit
+        uses: actions/upload-artifact@v4
+        with:
+          name: logo-forge-ccx
+          path: build/*.ccx
+          if-no-files-found: error
+          retention-days: 14
