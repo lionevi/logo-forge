@@ -5,6 +5,14 @@
  * cette palette plutôt que d'imposer la sienne. Les valeurs sont celles des
  * jetons Spectrum, reprises telles quelles pour que le panneau se fonde dans
  * l'application.
+ *
+ * Compatibilité CEP : le Chromium de CEP est figé (61 en CEP 9, ~74 en CEP 10).
+ * Les couleurs restent donc en `rgba()` plutôt qu'en `rgb(r g b / a%)`
+ * (Chrome 65+), et les positions absolues sont écrites côté par côté plutôt
+ * qu'avec `inset` (Chrome 87+) : une déclaration que le moteur ne comprend pas
+ * est ignorée en silence, et un panneau à moitié stylé est indiscernable d'un
+ * panneau cassé. `gap` (Chrome 84 en flexbox) subsiste : son absence resserre
+ * l'espacement sans rien masquer.
  */
 
 :root {
@@ -153,12 +161,12 @@ body {
 
 .status-dot.is-on {
   background: var(--positive);
-  box-shadow: 0 0 0 3px rgb(45 157 120 / 20%);
+  box-shadow: 0 0 0 3px rgba(45, 157, 120, 0.2);
 }
 
 .status-dot.is-off {
   background: var(--negative);
-  box-shadow: 0 0 0 3px rgb(227 72 80 / 20%);
+  box-shadow: 0 0 0 3px rgba(227, 72, 80, 0.2);
 }
 
 /* Sections */
@@ -286,7 +294,7 @@ body {
 
 .preset-tile.is-on {
   border-color: var(--accent);
-  background: rgb(38 128 235 / 10%);
+  background: rgba(38, 128, 235, 0.1);
 }
 
 .preset-tile:disabled {
@@ -534,7 +542,10 @@ body {
 
 .progress-label {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
   align-items: center;
   padding: 0 8px;
@@ -554,7 +565,7 @@ body {
 }
 
 .banner.is-error {
-  background: rgb(227 72 80 / 16%);
+  background: rgba(227, 72, 80, 0.16);
   color: var(--negative);
 }
 
@@ -623,7 +634,7 @@ body {
 .spinner {
   width: 12px;
   height: 12px;
-  border: 2px solid rgb(255 255 255 / 35%);
+  border: 2px solid rgba(255, 255, 255, 0.35);
   border-top-color: var(--spectrum-global-color-gray-900);
   border-radius: 50%;
   animation: spin 700ms linear infinite;
@@ -651,5 +662,5 @@ body {
 
 .status-dot.is-partial {
   background: var(--notice);
-  box-shadow: 0 0 0 3px rgb(230 134 25 / 20%);
+  box-shadow: 0 0 0 3px rgba(230, 134, 25, 0.2);
 }

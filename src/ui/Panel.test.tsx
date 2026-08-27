@@ -33,6 +33,11 @@ vi.mock('./illustratorBridge', () => ({
   pickDestinationFolder: vi.fn(async () => null),
   createUxpWriter: vi.fn(),
   revealInFileManager: vi.fn(async () => true),
+  folderPath: (entry: { nativePath?: string } | null) => entry?.nativePath ?? null,
+  POLL_FAILURE_LIMIT: 3,
+  // Sondage inerte : la relecture périodique est couverte par
+  // tests/documentPoller.test.ts, elle n'a rien à faire ici.
+  createDocumentPoller: () => ({ stop: () => {} }),
 }))
 
 const { Panel } = await import('./Panel')

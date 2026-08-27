@@ -20,13 +20,17 @@ import type {
   PresetId,
 } from '../core/types'
 import { ColorSchemes } from './ColorSchemes'
+import { ErrorBoundary } from './ErrorBoundary'
 import { DocumentSection } from './DocumentSection'
 import { ExportResults } from './ExportResults'
 import { Header } from './Header'
 import { OutputSection } from './OutputSection'
 import { PresetGrid } from './PresetGrid'
 import {
+  POLL_FAILURE_LIMIT,
+  createDocumentPoller,
   createUxpWriter,
+  folderPath,
   getIllustratorEngine,
   getPanelEnvironment,
   isIllustratorReady,
@@ -75,6 +79,8 @@ export function Panel() {
   const [report, setReport] = useState<ExportReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [revealError, setRevealError] = useState<string | null>(null)
+  /** Message affiché quand le sondage a renoncé, cas typique de CEP. */
+  const [pollingNotice, setPollingNotice] = useState<string | null>(null)
   const abortRef = useRef<{ aborted: boolean }>({ aborted: false })
 
   const environment = getPanelEnvironment()
@@ -84,17 +90,23 @@ export function Panel() {
   useEffect(() => {
     if (exporting) return undefined
 
-    const timer = setInterval(() => {
-      setDocument((previous) => {
-        const next = readActiveDocument()
-        if (previous?.name === next?.name && previous?.path === next?.path) {
-          return previous
-        }
-        return next
-      })
-    }, DOCUMENT_POLL_MS)
+    const poller = createDocumentPoller({
+      intervalMs: DOCUMENT_POLL_MS,
+      onDocument: (next) => {
+        setDocument((previous) =>
+          previous?.name === next?.name && previous?.path === next?.path
+            ? previous
+            : next,
+        )
+      },
+      onDisabled: (reason) => {
+        setPollingNotice(
+          `Relecture automatique du document désactivée après ${POLL_FAILURE_LIMIT} échecs : ${reason}`,
+        )
+      },
+    })
 
-    return () => clearInterval(timer)
+    return () => poller.stop()
   }, [exporting])
 
   // Le nom du package suit celui du document tant que l'utilisateur n'a rien saisi.
@@ -213,34 +225,44 @@ export function Panel() {
       <Header environment={environment} />
 
       <div className="panel-body">
-        <DocumentSection
-          document={document}
-          onRefresh={handleRefreshDocument}
-          disabled={exporting}
-        />
+        <ErrorBoundary label="document">
+          <DocumentSection
+            document={document}
+            onRefresh={handleRefreshDocument}
+            disabled={exporting}
+          />
+        </ErrorBoundary>
 
-        <PresetGrid
-          selected={presetIds}
-          onToggle={(id) => setPresetIds((current) => toggle(current, id))}
-          disabled={exporting}
-        />
+        <ErrorBoundary label="préréglages">
+          <PresetGrid
+            selected={presetIds}
+            onToggle={(id) => setPresetIds((current) => toggle(current, id))}
+            disabled={exporting}
+          />
+        </ErrorBoundary>
 
-        <ColorSchemes
-          selected={colorModes}
-          onToggle={(mode) => setColorModes((current) => toggle(current, mode))}
-          disabled={exporting}
-        />
+        <ErrorBoundary label="déclinaisons">
+          <ColorSchemes
+            selected={colorModes}
+            onToggle={(mode) => setColorModes((current) => toggle(current, mode))}
+            disabled={exporting}
+          />
+        </ErrorBoundary>
 
-        <OutputSection
-          packageName={packageName}
-          onPackageNameChange={(value) => {
-            setNameEdited(true)
-            setPackageName(value)
-          }}
-          destination={folder?.nativePath ?? null}
-          onChooseFolder={handleChooseFolder}
-          disabled={exporting}
-        />
+        <ErrorBoundary label="destination">
+          <OutputSection
+            packageName={packageName}
+            onPackageNameChange={(value) => {
+              setNameEdited(true)
+              setPackageName(value)
+            }}
+            destination={folderPath(folder)}
+            onChooseFolder={handleChooseFolder}
+            disabled={exporting}
+          />
+        </ErrorBoundary>
+
+        {pollingNotice && <p className="hint is-warning">{pollingNotice}</p>}
 
         {plan.totalFiles > 0 && <p className="plan-summary">{summarizePlan(plan)}</p>}
 

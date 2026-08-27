@@ -150,22 +150,45 @@ export function getIllustratorEngine(): IllustratorEngine {
   return createIllustratorEngine()
 }
 
+/** Chemin natif d'un dossier UXP, sans jamais lever. */
+export function folderPath(entry: UxpEntry | null): string | null {
+  try {
+    return entry?.nativePath ?? null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Document Illustrator actif, ou `null` si aucun n'est ouvert — y compris hors
  * d'Illustrator, où le panneau doit rester utilisable en lecture.
  */
 export function readActiveDocument(): ActiveDocumentInfo | null {
-  return getActiveDocument()
+  try {
+    return getActiveDocument()
+  } catch {
+    // `getActiveDocument` se protège déjà, mais le panneau l'appelle pendant le
+    // rendu : une erreur imprévue y démonterait tout l'arbre React.
+    return null
+  }
 }
 
 /** Indique si l'API Illustrator répond, donc si un export est possible. */
 export function isIllustratorReady(): boolean {
-  return isIllustratorAvailable()
+  try {
+    return isIllustratorAvailable()
+  } catch {
+    return false
+  }
 }
 
 /** Environnement d'exécution du panneau : `uxp`, `cep` ou `none`. */
 export function getPanelEnvironment(): HostEnvironment {
-  return getHostEnvironment()
+  try {
+    return getHostEnvironment()
+  } catch {
+    return 'none'
+  }
 }
 
 /* -------------------------------------------------------------------------- *
@@ -197,4 +220,88 @@ export async function revealInFileManager(path: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/* -------------------------------------------------------------------------- *
+ * Sondage du document actif
+ * -------------------------------------------------------------------------- */
+
+/** Nombre d'échecs consécutifs au-delà duquel le sondage s'arrête. */
+export const POLL_FAILURE_LIMIT = 3
+
+export interface DocumentPollerOptions {
+  /** Période du sondage, en millisecondes. */
+  intervalMs: number
+  /** Appelé à chaque relecture réussie. */
+  onDocument: (document: ActiveDocumentInfo | null) => void
+  /** Appelé une seule fois, quand le sondage renonce. */
+  onDisabled?: (reason: string) => void
+  /** Minuteur injectable, pour les tests. */
+  schedule?: (callback: () => void, delayMs: number) => number
+  /** Annulation du minuteur, pour les tests. */
+  cancel?: (handle: number) => void
+}
+
+export interface DocumentPoller {
+  /** Arrête le sondage ; appelable plusieurs fois sans effet de bord. */
+  stop(): void
+}
+
+/**
+ * Relit périodiquement le document actif.
+ *
+ * Illustrator ne prévient pas un panneau qu'on a changé de document : le
+ * sondage est la seule voie. Il est ici blindé de bout en bout — une erreur
+ * n'interrompt jamais le minuteur, et au bout de {@link POLL_FAILURE_LIMIT}
+ * échecs consécutifs le sondage s'arrête plutôt que de s'acharner, cas typique
+ * d'un hôte CEP où l'API Illustrator n'existe pas.
+ */
+export function createDocumentPoller(options: DocumentPollerOptions): DocumentPoller {
+  const {
+    intervalMs,
+    onDocument,
+    onDisabled,
+    schedule = (callback, delay) => setInterval(callback, delay) as unknown as number,
+    cancel = (handle) => clearInterval(handle),
+  } = options
+
+  let failures = 0
+  let stopped = false
+  let handle: number | null = null
+
+  const stop = () => {
+    if (stopped) return
+    stopped = true
+    if (handle !== null) cancel(handle)
+    handle = null
+  }
+
+  handle = schedule(() => {
+    if (stopped) return
+
+    try {
+      onDocument(readActiveDocument())
+      failures = 0
+    } catch (error) {
+      failures += 1
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(
+        `[Logo Forge] échec de relecture du document (${failures}/${POLL_FAILURE_LIMIT}) : ${message}`,
+      )
+
+      if (failures >= POLL_FAILURE_LIMIT) {
+        stop()
+        console.warn('[Logo Forge] CEP mode - polling disabled')
+        // Le rappel est lui aussi protégé : une erreur d'interface ne doit pas
+        // remonter dans le minuteur, où plus personne ne l'intercepterait.
+        try {
+          onDisabled?.(message)
+        } catch {
+          /* ignoré volontairement */
+        }
+      }
+    }
+  }, intervalMs)
+
+  return { stop }
 }
