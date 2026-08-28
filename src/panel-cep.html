@@ -477,6 +477,17 @@
         margin-top: 3px;
         padding: 2px 8px;
       }
+      textarea {
+        width: 100%;
+        padding: 5px 6px;
+        border: 1px solid #3e3e3e;
+        border-radius: 4px;
+        background: #383838;
+        color: #e3e3e3;
+        font-family: inherit;
+        font-size: 11px;
+        resize: vertical;
+      }
       /* Variables du gabarit : cliquables, pour éviter la faute de frappe. */
       .var-chip {
         float: left;
@@ -1103,6 +1114,7 @@
             <button class="tab" data-sub="padding">Padding</button>
             <button class="tab" data-sub="grid">Grid</button>
             <button class="tab" data-sub="folders">Dossiers</button>
+            <button class="tab" data-sub="doc">Documentation</button>
           </div>
 
           <div class="pane on" id="sub-files">
@@ -1284,6 +1296,57 @@
             <div class="section">
               <h2 class="section-title">Aperçu</h2>
               <pre class="tree" id="folder-preview"></pre>
+            </div>
+          </div>
+
+          <div class="pane" id="sub-doc">
+            <div class="section">
+              <h2 class="section-title">Documentation du pack</h2>
+              <label class="check-row">
+                <input type="checkbox" id="doc-enabled" checked />
+                <span class="check-label" style="width: auto"
+                  >Joindre une documentation au pack</span
+                >
+              </label>
+              <label class="field-label" for="doc-language">Langue</label>
+              <select id="doc-language">
+                <option value="fr">Français</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+
+            <div class="section">
+              <h2 class="section-title">Studio</h2>
+              <div class="row">
+                <div class="col">
+                  <label for="studio-name">Studio</label>
+                  <input type="text" id="studio-name" placeholder="Atelier Nord" />
+                </div>
+                <div class="col">
+                  <label for="designer-name">Designer</label>
+                  <input type="text" id="designer-name" placeholder="Léa Martin" />
+                </div>
+              </div>
+              <div class="row">
+                <div class="col">
+                  <label for="studio-email">Courriel</label>
+                  <input type="text" id="studio-email" placeholder="lea@…" />
+                </div>
+                <div class="col">
+                  <label for="studio-website">Site</label>
+                  <input type="text" id="studio-website" placeholder="atelier-nord.fr" />
+                </div>
+              </div>
+            </div>
+
+            <div class="section">
+              <h2 class="section-title">Message au client</h2>
+              <textarea id="doc-message" rows="3"></textarea>
+              <div id="doc-variables"></div>
+              <p class="summary">
+                Sans message, la documentation reste complète : elle explique
+                le contenu du pack et l'usage de chaque format.
+              </p>
             </div>
           </div>
 
@@ -1554,6 +1617,10 @@
           nameTemplate: '',
           collision: 'overwrite',
           folderTemplate: 'client',
+          documentation: true,
+          docLanguage: 'fr',
+          docMessage: '',
+          studio: { name: '', designer: '', email: '', website: '' },
           preflight: null,
           preflightMode: 'print',
           blockOnPreflight: false,
@@ -1894,6 +1961,21 @@
           return out
         }
 
+        /** Variables insérables dans le message au client. */
+        function renderDocVariables() {
+          var chips = ''
+          for (var i = 0; i < engine.DOC_VARIABLES.length; i += 1) {
+            var token = engine.DOC_VARIABLES[i]
+            chips +=
+              '<button class="var-chip" data-doc-variable="' +
+              token +
+              '">{{' +
+              token +
+              '}}</button>'
+          }
+          byId('doc-variables').innerHTML = chips
+        }
+
         function renderCollisionPolicy() {
           var html = ''
           for (var i = 0; i < engine.COLLISION_POLICIES.length; i += 1) {
@@ -1963,6 +2045,10 @@
             nameTemplate: state.nameTemplate,
             collision: state.collision,
             folderTemplate: state.folderTemplate,
+            documentation: state.documentation,
+            docLanguage: state.docLanguage,
+            docMessage: state.docMessage,
+            studio: state.studio,
             padding: state.padding,
             threshold: state.threshold,
             grid: state.grid,
@@ -3038,6 +3124,7 @@
           renderFormats()
           renderScales()
           renderCollisionPolicy()
+          renderDocVariables()
           renderPreflight()
           renderDerived()
         }
@@ -3521,6 +3608,42 @@
           renderDestination()
         }
 
+        byId('doc-enabled').onchange = function () {
+          state.documentation = this.checked
+        }
+
+        byId('doc-language').onchange = function () {
+          state.docLanguage = this.value
+        }
+
+        byId('doc-message').oninput = function () {
+          state.docMessage = this.value
+        }
+
+        byId('doc-variables').onclick = function (event) {
+          var token = event.target.getAttribute('data-doc-variable')
+          if (token === null) return
+          var field = byId('doc-message')
+          field.value = field.value + '{{' + token + '}}'
+          state.docMessage = field.value
+        }
+
+        byId('studio-name').oninput = function () {
+          state.studio.name = this.value
+        }
+
+        byId('designer-name').oninput = function () {
+          state.studio.designer = this.value
+        }
+
+        byId('studio-email').oninput = function () {
+          state.studio.email = this.value
+        }
+
+        byId('studio-website').oninput = function () {
+          state.studio.website = this.value
+        }
+
         byId('folder-template').onchange = function () {
           state.folderTemplate = this.value
           renderFolderTemplate()
@@ -3770,20 +3893,46 @@
                 byId('done-count').innerHTML =
                   result.written.length + ' fichiers'
                 byId('done-detail').innerHTML =
-                  'Écrits en ' + engine.formatDuration(result.durationMs)
+                  'Écrits en ' +
+                  engine.formatDuration(result.durationMs) +
+                  ' · ' +
+                  engine.formatBytes(engine.totalBytes(result.written))
 
                 var html = ''
-                if (result.failures.length > 0) {
+                var reserves = engine.countWarnings(result.written)
+                var errors = engine.countFailures(result.failures)
+                var ignored = (result.skipped || []).length
+
+                if (errors > 0) {
                   html +=
                     '<p class="notice error">' +
-                    result.failures.length +
-                    ' échecs — détail dans le rapport.</p>'
+                    errors +
+                    ' échec(s) — détail dans le rapport.</p>'
+                }
+                if (reserves > 0) {
+                  html +=
+                    '<p class="notice">' +
+                    reserves +
+                    ' fichier(s) écrits avec réserve.</p>'
+                }
+                if (ignored > 0) {
+                  html +=
+                    '<p class="notice">' +
+                    ignored +
+                    ' fichier(s) déjà présents, laissés en place.</p>'
                 }
                 if (result.reportPath) {
+                  var folder = engine.folderTemplate(state.folderTemplate)
                   html +=
-                    '<p class="notice ok">Rapport : ' +
-                    escapeHtml(engine.FOLDERS.report) +
+                    '<p class="notice done">Rapport : ' +
+                    escapeHtml(folder.report) +
                     '/export-rapport.html</p>'
+                }
+                if (result.documents && result.documents.length > 0) {
+                  html +=
+                    '<p class="notice done">Documentation : ' +
+                    escapeHtml(result.documents.join(', ')) +
+                    '</p>'
                 }
                 byId('done-messages').innerHTML = html
               },

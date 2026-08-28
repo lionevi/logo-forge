@@ -649,6 +649,12 @@ var LogoForgeEngine = (function () {
   }
 
   /** Dossiers distincts d'un plan, parents d'abord. */
+  /** Dossier parent d'un chemin. */
+  function dirname(path) {
+    var cut = String(path).lastIndexOf('/')
+    return cut <= 0 ? path : String(path).substring(0, cut)
+  }
+
   /**
    * Dossiers à créer avant d'écrire.
    *
@@ -1081,6 +1087,56 @@ var LogoForgeEngine = (function () {
       setTimeout(step, 0)
     }
 
+    /**
+     * Écrit la documentation destinée au client.
+     *
+     * Elle décrit le pack réellement livré : elle ne peut donc être composée
+     * qu'une fois les fichiers écrits et vérifiés.
+     */
+    function writeDocumentation(result) {
+      if (config.documentation === false) {
+        handlers.onDone(result)
+        return
+      }
+
+      var documents = buildDocumentation(config, result)
+      result.documents = []
+      var position = 0
+
+      function next() {
+        if (position >= documents.length) {
+          handlers.onDone(result)
+          return
+        }
+
+        var document = documents[position]
+        position += 1
+        var path = joinPath(root, document.path.split('/'))
+
+        call('lfCreateFolder', [dirname(path)], function () {
+          call('lfWriteTextFile', [path, document.contents], function (write) {
+            if (write.ok) {
+              result.documents.push(document.path)
+            } else {
+              failures.push({
+                task: {
+                  component: { name: 'Documentation' },
+                  scheme: { id: 'fullColor' },
+                  format: 'txt',
+                  folder: template.documentation,
+                  fileName: document.path.split('/').pop(),
+                },
+                message: write.value,
+              })
+            }
+            next()
+          })
+        })
+      }
+
+      next()
+    }
+
     function finish() {
       call('lfEndSession', [], function () {
         var result = {
@@ -1115,7 +1171,7 @@ var LogoForgeEngine = (function () {
                 message: write.value,
               })
             }
-            handlers.onDone(result)
+            writeDocumentation(result)
           }
         )
       })
@@ -1331,6 +1387,263 @@ var LogoForgeEngine = (function () {
         cancelled = true
       },
     }
+  }
+
+  /* ---------------------------------------------------------------------- *
+   * Documentation du pack
+   *
+   * Le client final n'est pas designer. Il ne sait pas ce qu'est un vectoriel,
+   * il sait qu'il doit envoyer un logo à un imprimeur ou le donner à son
+   * webmestre. La documentation est écrite pour lui, et décrit le pack
+   * réellement livré — pas un pack idéal.
+   * ---------------------------------------------------------------------- */
+
+  /** Ce que chaque format sert à faire, en langage de destinataire. */
+  var FORMAT_USE = {
+    fr: {
+      ai: 'Fichier de travail Illustrator. À transmettre à un graphiste qui doit modifier le logo.',
+      eps: 'Format d échange pour l impression. À donner à un imprimeur qui le demande.',
+      pdf: 'Pour l impression et pour joindre le logo à un courrier ou un devis.',
+      svg: 'Pour votre site internet. Reste net à toutes les tailles.',
+      png: 'Pour un écran, une présentation, un réseau social. Fond transparent.',
+      jpg: 'Pour un écran, quand un fond blanc convient. Ne gère pas la transparence.',
+    },
+    en: {
+      ai: 'Illustrator working file. Hand it to a designer who needs to edit the logo.',
+      eps: 'Print interchange format. Give it to a printer who asks for it.',
+      pdf: 'For printing, and for attaching the logo to a letter or a quote.',
+      svg: 'For your website. Stays sharp at any size.',
+      png: 'For screens, slides and social media. Transparent background.',
+      jpg: 'For screens when a white background is fine. No transparency.',
+    },
+  }
+
+  /** Libellés de la documentation, par langue. */
+  var DOC_STRINGS = {
+    fr: {
+      readme: 'LISEZ-MOI.md',
+      guide: 'GUIDE_DES_FICHIERS.txt',
+      title: 'Votre logo',
+      intro:
+        'Ce dossier contient votre logo dans tous les formats dont vous aurez ' +
+        'besoin. Vous n avez rien à installer : chaque fichier est prêt à être ' +
+        'envoyé ou utilisé tel quel.',
+      contentTitle: 'Ce que contient ce dossier',
+      whichTitle: 'Quel fichier utiliser',
+      formatTitle: 'À quoi sert chaque format',
+      backgroundTitle: 'Fond transparent ou fond plein',
+      backgroundBody:
+        'Les fichiers PNG et SVG ont un fond transparent : posés sur une ' +
+        'couleur, ils la laissent apparaître. Les fichiers JPG ont un fond ' +
+        'plein, généralement blanc.',
+      variantTitle: 'Pourquoi plusieurs versions',
+      variantBody:
+        'Une version couleur pour la plupart des usages, une version noire et ' +
+        'une version blanche pour les fonds qui ne s accordent pas à la ' +
+        'couleur, et parfois une version inversée pour les fonds sombres.',
+      contactTitle: 'Une question',
+      print: 'Pour un imprimeur',
+      web: 'Pour votre site internet',
+      social: 'Pour les réseaux sociaux',
+      edit: 'Pour faire modifier le logo',
+      generated: 'Document produit automatiquement avec le pack.',
+      files: 'fichiers',
+      none: 'Aucun fichier de ce type dans ce pack.',
+    },
+    en: {
+      readme: 'README.md',
+      guide: 'FILE_GUIDE.txt',
+      title: 'Your logo',
+      intro:
+        'This folder holds your logo in every format you are likely to need. ' +
+        'Nothing to install: each file is ready to send or use as it is.',
+      contentTitle: 'What is in this folder',
+      whichTitle: 'Which file to use',
+      formatTitle: 'What each format is for',
+      backgroundTitle: 'Transparent or solid background',
+      backgroundBody:
+        'PNG and SVG files have a transparent background: placed on a colour, ' +
+        'they let it show through. JPG files have a solid background, usually ' +
+        'white.',
+      variantTitle: 'Why several versions',
+      variantBody:
+        'A colour version for most uses, a black and a white version for ' +
+        'backgrounds the colour does not suit, and sometimes an inverted ' +
+        'version for dark backgrounds.',
+      contactTitle: 'Any question',
+      print: 'For a printer',
+      web: 'For your website',
+      social: 'For social media',
+      edit: 'To have the logo edited',
+      generated: 'Document generated automatically with the package.',
+      files: 'files',
+      none: 'No file of this kind in this package.',
+    },
+  }
+
+  /** Variables du texte personnalisable du designer. */
+  var DOC_VARIABLES = [
+    'CLIENT_NAME',
+    'BRAND_NAME',
+    'PROJECT_NAME',
+    'DESIGNER_NAME',
+    'STUDIO_NAME',
+    'EMAIL',
+    'WEBSITE',
+    'DELIVERY_DATE',
+  ]
+
+  /** Remplace les variables d'un texte libre, en majuscules à double accolade. */
+  function fillDocumentVariables(text, values) {
+    return String(text || '').replace(
+      /\{\{\s*([A-Z_]+)\s*\}\}/g,
+      function (match, token) {
+        var value = values[token]
+        return value === undefined || value === null ? '' : String(value)
+      }
+    )
+  }
+
+  /** Valeurs des variables du texte libre. */
+  function documentValues(config) {
+    var studio = config.studio || {}
+    return {
+      CLIENT_NAME: config.clientName || '',
+      BRAND_NAME: config.brandName || config.clientName || '',
+      PROJECT_NAME: config.projectName || '',
+      DESIGNER_NAME: studio.designer || '',
+      STUDIO_NAME: studio.name || '',
+      EMAIL: studio.email || '',
+      WEBSITE: studio.website || '',
+      DELIVERY_DATE: deliveryDate(),
+    }
+  }
+
+  /** Premier fichier livré dans un format donné, ou `null`. */
+  function firstOfFormat(written, format) {
+    for (var i = 0; i < written.length; i += 1) {
+      if (written[i].format === format) {
+        return written[i].folder + '/' + written[i].fileName
+      }
+    }
+    return null
+  }
+
+  /** Formats effectivement présents dans le pack, dans l'ordre d'usage. */
+  function deliveredFormats(written) {
+    var order = ['ai', 'eps', 'pdf', 'svg', 'png', 'jpg']
+    var seen = {}
+    var list = []
+    for (var i = 0; i < written.length; i += 1) seen[written[i].format] = true
+    for (var f = 0; f < order.length; f += 1) {
+      if (seen[order[f]]) list.push(order[f])
+    }
+    return list
+  }
+
+  /**
+   * Compose la documentation destinée au client.
+   *
+   * @returns une liste de `{path, contents}`, relative à la racine du pack.
+   */
+  function buildDocumentation(config, result) {
+    var language = config.docLanguage === 'en' ? 'en' : 'fr'
+    var words = DOC_STRINGS[language]
+    var uses = FORMAT_USE[language]
+    var values = documentValues(config)
+    var template = folderTemplate(config.folderTemplate)
+    var written = result.written || []
+
+    var lines = []
+    function line(text) {
+      lines.push(text === undefined ? '' : text)
+    }
+
+    line('# ' + words.title + (values.BRAND_NAME ? ' — ' + values.BRAND_NAME : ''))
+    line()
+    line(words.intro)
+    line()
+
+    var message = fillDocumentVariables(config.docMessage, values)
+    if (message) {
+      line(message)
+      line()
+    }
+
+    line('## ' + words.contentTitle)
+    line()
+    var folders = planDirectories(written, template.report)
+    folders.sort()
+    for (var d = 0; d < folders.length; d += 1) {
+      line('- `' + folders[d] + '`')
+    }
+    line()
+    line(written.length + ' ' + words.files + '.')
+    line()
+
+    line('## ' + words.whichTitle)
+    line()
+    var recommendations = [
+      [words.print, firstOfFormat(written, 'pdf') || firstOfFormat(written, 'eps')],
+      [words.web, firstOfFormat(written, 'svg') || firstOfFormat(written, 'png')],
+      [words.social, firstOfFormat(written, 'png') || firstOfFormat(written, 'jpg')],
+      [words.edit, firstOfFormat(written, 'ai')],
+    ]
+    for (var r = 0; r < recommendations.length; r += 1) {
+      line(
+        '- **' +
+          recommendations[r][0] +
+          '** : ' +
+          (recommendations[r][1]
+            ? '`' + recommendations[r][1] + '`'
+            : words.none)
+      )
+    }
+    line()
+
+    line('## ' + words.formatTitle)
+    line()
+    var formats = deliveredFormats(written)
+    for (var k = 0; k < formats.length; k += 1) {
+      line('- **' + formats[k].toUpperCase() + '** — ' + uses[formats[k]])
+    }
+    line()
+
+    line('## ' + words.backgroundTitle)
+    line()
+    line(words.backgroundBody)
+    line()
+    line('## ' + words.variantTitle)
+    line()
+    line(words.variantBody)
+    line()
+
+    if (values.STUDIO_NAME || values.EMAIL || values.WEBSITE) {
+      line('## ' + words.contactTitle)
+      line()
+      if (values.DESIGNER_NAME) line('- ' + values.DESIGNER_NAME)
+      if (values.STUDIO_NAME) line('- ' + values.STUDIO_NAME)
+      if (values.EMAIL) line('- ' + values.EMAIL)
+      if (values.WEBSITE) line('- ' + values.WEBSITE)
+      line()
+    }
+
+    line('---')
+    line(words.generated + ' ' + values.DELIVERY_DATE)
+
+    var readme = lines.join('\n')
+
+    // La version texte reprend le même contenu, sans balisage : elle s'ouvre
+    // d'un double-clic sur n'importe quelle machine.
+    var plain = readme
+      .replace(/^#+\s*/gm, '')
+      .replace(/\*\*/g, '')
+      .replace(/`/g, '')
+
+    return [
+      { path: joinFolder([template.documentation, words.readme]), contents: readme },
+      { path: joinFolder([template.documentation, words.guide]), contents: plain },
+    ]
   }
 
   /* ---------------------------------------------------------------------- *
@@ -2035,6 +2348,11 @@ var LogoForgeEngine = (function () {
   return {
     FOLDERS: FOLDERS,
     FOLDER_TEMPLATES: FOLDER_TEMPLATES,
+    DOC_VARIABLES: DOC_VARIABLES,
+    fillDocumentVariables: fillDocumentVariables,
+    documentValues: documentValues,
+    deliveredFormats: deliveredFormats,
+    buildDocumentation: buildDocumentation,
     folderTemplate: folderTemplate,
     FAVICON_SIZES: FAVICON_SIZES,
     PRINT_FORMATS: PRINT_FORMATS,

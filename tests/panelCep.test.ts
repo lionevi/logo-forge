@@ -378,6 +378,44 @@ describe('planche de revue', () => {
   })
 })
 
+describe('documentation du pack', () => {
+  it('laisse activer, traduire et personnaliser la documentation', () => {
+    expect(HTML).toContain('data-sub="doc"')
+    for (const id of [
+      'doc-enabled',
+      'doc-language',
+      'doc-message',
+      'doc-variables',
+      'studio-name',
+      'designer-name',
+      'studio-email',
+      'studio-website',
+    ]) {
+      expect(HTML, id).toContain(`id="${id}"`)
+    }
+  })
+
+  it('transmet studio et message au moteur', () => {
+    expect(SCRIPT).toContain('docLanguage: state.docLanguage')
+    expect(SCRIPT).toContain('docMessage: state.docMessage')
+    expect(SCRIPT).toContain('studio: state.studio')
+    expect(SCRIPT).toContain('engine.DOC_VARIABLES')
+  })
+
+  it("annonce les documents et le poids à la fin de l'export", () => {
+    expect(SCRIPT).toContain('result.documents')
+    expect(SCRIPT).toContain('engine.totalBytes(')
+    expect(SCRIPT).toContain('engine.countFailures(')
+    expect(SCRIPT).toContain('engine.countWarnings(')
+  })
+
+  it('nomme le dossier de rapport selon le modèle retenu', () => {
+    // Le chemin annoncé doit être celui où le fichier a été écrit.
+    expect(SCRIPT).toContain('engine.folderTemplate(state.folderTemplate)')
+    expect(SCRIPT).not.toContain('engine.FOLDERS.report')
+  })
+})
+
 describe('arborescence livrée', () => {
   it('laisse choisir un modèle et le décrit', () => {
     expect(HTML).toContain('data-sub="folders"')
