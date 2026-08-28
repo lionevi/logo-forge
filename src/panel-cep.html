@@ -2542,6 +2542,55 @@
         }
 
         /* ---------------------------------------------------------------- *
+         * Contrôle du pack livré
+         * ---------------------------------------------------------------- */
+
+        /**
+         * Verdict du contrôle du pack.
+         *
+         * Il relit le dossier écrit : c'est la seule affirmation de réussite
+         * qui repose sur autre chose que la parole de l'export.
+         */
+        function renderAudit(result) {
+          if (result.auditError) {
+            return (
+              '<p class="notice">Contrôle du pack impossible : ' +
+              escapeHtml(result.auditError) +
+              '</p>'
+            )
+          }
+          if (!result.audit) return ''
+
+          var audit = result.audit
+          var html =
+            '<p class="notice ' +
+            (audit.ready ? 'done' : 'error') +
+            '">Contrôle du pack : ' +
+            escapeHtml(
+              audit.ready
+                ? audit.actual + ' fichiers vérifiés sur le disque.'
+                : 'anomalies détectées.'
+            ) +
+            '</p>'
+
+          for (var i = 0; i < audit.checks.length; i += 1) {
+            var check = audit.checks[i]
+            if (check.ok) continue
+            html +=
+              '<p class="summary">' +
+              escapeHtml(check.label + ' : ' + check.detail) +
+              '</p>'
+          }
+          if (audit.extra.length > 0) {
+            html +=
+              '<p class="summary">' +
+              audit.extra.length +
+              ' fichier(s) déjà présents dans le dossier, hors de ce lot.</p>'
+          }
+          return html
+        }
+
+        /* ---------------------------------------------------------------- *
          * Contrôle de production
          * ---------------------------------------------------------------- */
 
@@ -3934,6 +3983,7 @@
                     escapeHtml(result.documents.join(', ')) +
                     '</p>'
                 }
+                html += renderAudit(result)
                 byId('done-messages').innerHTML = html
               },
               onError: function (message) {

@@ -144,6 +144,54 @@ var LogoForge = (function () {
     }
   }
 
+  /**
+   * Liste les fichiers d'un dossier, récursivement.
+   *
+   * Le contrôle du pack a besoin de ce que le disque contient réellement, pas
+   * de ce que l'export croit avoir écrit : c'est toute la différence entre
+   * vérifier et se fier.
+   *
+   * Charge utile : « chemin relatif:octets », un par ligne.
+   */
+  function listFiles(root, limit) {
+    try {
+      var base = new Folder(root)
+      if (!base.exists) return err('dossier introuvable : ' + root)
+
+      var max = parseInt(limit, 10)
+      if (isNaN(max) || max <= 0) max = 2000
+
+      var found = []
+      var queue = [{ folder: base, prefix: '' }]
+
+      while (queue.length > 0 && found.length < max) {
+        var current = queue.shift()
+        var entries
+        try {
+          entries = current.folder.getFiles()
+        } catch (readError) {
+          continue
+        }
+
+        for (var i = 0; i < entries.length && found.length < max; i += 1) {
+          var entry = entries[i]
+          var name = decodeURI(entry.name)
+          var relative = current.prefix ? current.prefix + '/' + name : name
+
+          if (entry instanceof Folder) {
+            queue.push({ folder: entry, prefix: relative })
+            continue
+          }
+          found.push(relative + ':' + entry.length)
+        }
+      }
+
+      return ok(found.join(UNIT))
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
   /** Écrit un fichier texte en UTF-8. */
   function writeTextFile(path, contents) {
     try {
@@ -1887,6 +1935,7 @@ var LogoForge = (function () {
     createFolder: createFolder,
     pathExists: pathExists,
     writeTextFile: writeTextFile,
+    listFiles: listFiles,
     beginSession: beginSession,
     endSession: endSession,
     resetSession: resetSession,
@@ -1942,6 +1991,10 @@ function lfCreateFolder(path) {
 function lfPathExists(path) {
   return LogoForge.pathExists(path)
 }
+function lfListFiles(root, limit) {
+  return LogoForge.listFiles(root, limit)
+}
+
 function lfWriteTextFile(path, contents) {
   return LogoForge.writeTextFile(path, contents)
 }

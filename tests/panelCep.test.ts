@@ -378,6 +378,25 @@ describe('planche de revue', () => {
   })
 })
 
+describe('contrôle du pack livré', () => {
+  it('affiche un verdict fondé sur la relecture du disque', () => {
+    expect(SCRIPT).toContain('function renderAudit(')
+    expect(SCRIPT).toContain('result.audit')
+    expect(SCRIPT).toContain('vérifiés sur le disque')
+  })
+
+  it("dit quand le contrôle lui-même n'a pas pu avoir lieu", () => {
+    // Un contrôle impossible n'est pas un contrôle réussi.
+    expect(SCRIPT).toContain('result.auditError')
+    expect(SCRIPT).toContain('Contrôle du pack impossible')
+  })
+
+  it('détaille chaque anomalie, sans noyer les contrôles satisfaits', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function renderAudit('))
+    expect(block.slice(0, 1400)).toContain('if (check.ok) continue')
+  })
+})
+
 describe('documentation du pack', () => {
   it('laisse activer, traduire et personnaliser la documentation', () => {
     expect(HTML).toContain('data-sub="doc"')

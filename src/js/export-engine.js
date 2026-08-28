@@ -1095,7 +1095,8 @@ var LogoForgeEngine = (function () {
      */
     function writeDocumentation(result) {
       if (config.documentation === false) {
-        handlers.onDone(result)
+        result.documents = []
+        writeManifest(result)
         return
       }
 
@@ -1105,7 +1106,7 @@ var LogoForgeEngine = (function () {
 
       function next() {
         if (position >= documents.length) {
-          handlers.onDone(result)
+          writeManifest(result)
           return
         }
 
@@ -1135,6 +1136,74 @@ var LogoForgeEngine = (function () {
       }
 
       next()
+    }
+
+    /** Écrit le manifeste, destiné à l'audit plutôt qu'au client. */
+    function writeManifest(result) {
+      var manifest = buildManifest(config, result)
+      var path = joinPath(root, [template.report, MANIFEST_NAME])
+
+      call(
+        'lfWriteTextFile',
+        [path, JSON.stringify(manifest, null, 2)],
+        function (write) {
+          result.manifestPath = write.ok ? template.report + '/' + MANIFEST_NAME : null
+          if (!write.ok) {
+            failures.push({
+              task: {
+                component: { name: 'Manifeste' },
+                scheme: { id: 'fullColor' },
+                format: 'json',
+                folder: template.report,
+                fileName: MANIFEST_NAME,
+              },
+              message: write.value,
+            })
+          }
+          auditWrittenPackage(result)
+        }
+      )
+    }
+
+    /**
+     * Contrôle le pack livré, en relisant le disque.
+     *
+     * Un export qui se contenterait de son propre décompte ne prouverait rien :
+     * c'est le contenu du dossier qui fait foi.
+     */
+    function auditWrittenPackage(result) {
+      call('lfListFiles', [root, 2000], function (listing) {
+        if (!listing.ok) {
+          result.audit = null
+          result.auditError = listing.value
+          handlers.onDone(result)
+          return
+        }
+
+        var expected = []
+        for (var i = 0; i < result.written.length; i += 1) {
+          expected.push(
+            result.written[i].folder + '/' + result.written[i].fileName
+          )
+        }
+
+        var service = {}
+        if (result.reportPath) {
+          service[template.report + '/export-rapport.html'] = true
+        }
+        service[template.report + '/' + MANIFEST_NAME] = true
+        var documents = result.documents || []
+        for (var d = 0; d < documents.length; d += 1) service[documents[d]] = true
+
+        var actual = parseFileListing(listing.value)
+        result.audit = auditPackage(expected, actual, {
+          service: service,
+          expectDocumentation: config.documentation !== false,
+          documentationPresent: documents.length > 0,
+          manifestPresent: !!result.manifestPath,
+        })
+        handlers.onDone(result)
+      })
     }
 
     function finish() {
@@ -1644,6 +1713,201 @@ var LogoForgeEngine = (function () {
       { path: joinFolder([template.documentation, words.readme]), contents: readme },
       { path: joinFolder([template.documentation, words.guide]), contents: plain },
     ]
+  }
+
+  /* ---------------------------------------------------------------------- *
+   * Manifeste et contrôle du pack
+   *
+   * L'export sait ce qu'il a cru écrire ; le disque sait ce qu'il contient.
+   * Le contrôle confronte les deux. Sans lui, « export réussi » resterait une
+   * affirmation invérifiable.
+   * ---------------------------------------------------------------------- */
+
+  /** Nom du manifeste, destiné à l'audit et au diagnostic. */
+  var MANIFEST_NAME = 'PACKAGE_MANIFEST.json'
+
+  /** Compose le manifeste du pack. */
+  function buildManifest(config, result) {
+    var components = []
+    for (var c = 0; c < config.components.length; c += 1) {
+      components.push({
+        name: config.components[c].name,
+        type: config.components[c].type || 'custom',
+      })
+    }
+
+    var schemes = []
+    for (var s = 0; s < config.colorSchemes.length; s += 1) {
+      schemes.push(schemeTitle(config.colorSchemes[s]))
+    }
+
+    var files = []
+    for (var w = 0; w < result.written.length; w += 1) {
+      var task = result.written[w]
+      files.push({
+        path: task.folder + '/' + task.fileName,
+        format: task.format,
+        component: task.component.name,
+        scheme: schemeTitle(task.scheme),
+        pass: task.pass,
+        bytes: task.bytes || 0,
+        status: task.status,
+      })
+    }
+
+    var warnings = []
+    var errors = []
+    for (var f = 0; f < result.failures.length; f += 1) {
+      var failure = result.failures[f]
+      var entry = {
+        file: failure.task.folder + '/' + failure.task.fileName,
+        message: failure.message,
+      }
+      if (failure.warning) warnings.push(entry)
+      else errors.push(entry)
+    }
+
+    var skipped = []
+    var ignored = result.skipped || []
+    for (var k = 0; k < ignored.length; k += 1) {
+      skipped.push(ignored[k].folder + '/' + ignored[k].fileName)
+    }
+
+    return {
+      generator: 'Logo Forge',
+      client: config.clientName || '',
+      brand: config.brandName || '',
+      project: config.projectName || '',
+      version: config.version || '',
+      createdAt: deliveryDate(),
+      sourceDocument: result.documentName || '',
+      folderTemplate: folderTemplate(config.folderTemplate).id,
+      components: components,
+      colorSchemes: schemes,
+      formats: deliveredFormats(result.written),
+      files: files,
+      skipped: skipped,
+      warnings: warnings,
+      errors: errors,
+    }
+  }
+
+  /** Relit la charge utile de `lfListFiles`. */
+  function parseFileListing(payload) {
+    var files = []
+    var lines = String(payload || '').split(UNIT)
+    for (var i = 0; i < lines.length; i += 1) {
+      if (!lines[i]) continue
+      var cut = lines[i].lastIndexOf(':')
+      if (cut <= 0) continue
+      files.push({
+        path: lines[i].substring(0, cut),
+        bytes: parseInt(lines[i].substring(cut + 1), 10) || 0,
+      })
+    }
+    return files
+  }
+
+  /**
+   * Confronte le pack attendu au pack présent sur le disque.
+   *
+   * @param expected chemins que l'export dit avoir écrits.
+   * @param actual contenu réel du dossier, `lfListFiles` à l'appui.
+   */
+  function auditPackage(expected, actual, options) {
+    var settings = options || {}
+    var present = {}
+    var duplicates = []
+    var empty = []
+    var seenNames = {}
+
+    for (var a = 0; a < actual.length; a += 1) {
+      var file = actual[a]
+      present[file.path] = file.bytes
+      if (!file.bytes) empty.push(file.path)
+
+      var name = file.path.split('/').pop()
+      if (seenNames[name]) {
+        duplicates.push(name)
+      } else {
+        seenNames[name] = true
+      }
+    }
+
+    var missing = []
+    for (var e = 0; e < expected.length; e += 1) {
+      if (present[expected[e]] === undefined) missing.push(expected[e])
+    }
+
+    var extra = []
+    var known = {}
+    for (var k = 0; k < expected.length; k += 1) known[expected[k]] = true
+    for (var x = 0; x < actual.length; x += 1) {
+      // Rapport, documentation et manifeste sont attendus sans figurer dans le
+      // plan d'export : ils ne sont pas des fichiers en trop.
+      if (known[actual[x].path]) continue
+      if (settings.service && settings.service[actual[x].path]) continue
+      extra.push(actual[x].path)
+    }
+
+    var checks = [
+      {
+        id: 'count',
+        label: 'Nombre de fichiers',
+        ok: missing.length === 0,
+        detail: actual.length + ' présents pour ' + expected.length + ' attendus',
+      },
+      {
+        id: 'missing',
+        label: 'Fichiers manquants',
+        ok: missing.length === 0,
+        detail: missing.length ? missing.join(', ') : 'aucun',
+      },
+      {
+        id: 'empty',
+        label: 'Fichiers vides',
+        ok: empty.length === 0,
+        detail: empty.length ? empty.join(', ') : 'aucun',
+      },
+      {
+        id: 'duplicates',
+        label: 'Noms en double',
+        ok: duplicates.length === 0,
+        detail: duplicates.length ? duplicates.join(', ') : 'aucun',
+      },
+      {
+        id: 'documentation',
+        label: 'Documentation',
+        ok: !settings.expectDocumentation || !!settings.documentationPresent,
+        detail: settings.expectDocumentation
+          ? settings.documentationPresent
+            ? 'présente'
+            : 'absente'
+          : 'non demandée',
+      },
+      {
+        id: 'manifest',
+        label: 'Manifeste',
+        ok: !!settings.manifestPresent,
+        detail: settings.manifestPresent ? 'présent' : 'absent',
+      },
+    ]
+
+    var failed = 0
+    for (var i = 0; i < checks.length; i += 1) {
+      if (!checks[i].ok) failed += 1
+    }
+
+    return {
+      checks: checks,
+      missing: missing,
+      empty: empty,
+      duplicates: duplicates,
+      extra: extra,
+      expected: expected.length,
+      actual: actual.length,
+      ready: failed === 0,
+    }
   }
 
   /* ---------------------------------------------------------------------- *
@@ -2353,6 +2617,10 @@ var LogoForgeEngine = (function () {
     documentValues: documentValues,
     deliveredFormats: deliveredFormats,
     buildDocumentation: buildDocumentation,
+    MANIFEST_NAME: MANIFEST_NAME,
+    buildManifest: buildManifest,
+    parseFileListing: parseFileListing,
+    auditPackage: auditPackage,
     folderTemplate: folderTemplate,
     FAVICON_SIZES: FAVICON_SIZES,
     PRINT_FORMATS: PRINT_FORMATS,
