@@ -391,16 +391,25 @@ describe('rapport HTML', () => {
  * -------------------------------------------------------------------------- */
 
 /** Doublure d'ExtendScript : répond à chaque appel et note ce qu'on lui demande. */
-function installHost(options: { failOn?: RegExp } = {}) {
+const UNIT = String.fromCharCode(31)
+
+function installHost(options: { failOn?: RegExp; emptyOn?: RegExp } = {}) {
   const calls: string[] = []
 
   ;(globalThis as Record<string, unknown>).__adobe_cep__ = {
     evalScript(expression: string, callback: (raw: string) => void) {
       calls.push(expression)
-      const answer =
-        options.failOn && options.failOn.test(expression)
-          ? 'ERR|disque plein'
-          : 'OK|done'
+      let answer = 'OK|done'
+
+      if (options.failOn && options.failOn.test(expression)) {
+        answer = 'ERR|disque plein'
+      } else if (expression.indexOf('lfExport') === 0) {
+        // Un export répond « chemin | octets » : c'est cette taille qui
+        // prouve qu'un fichier existe réellement.
+        const bytes = options.emptyOn && options.emptyOn.test(expression) ? 0 : 4096
+        answer = 'OK|' + ['/tmp/sortie', bytes].join(UNIT)
+      }
+
       // evalScript est asynchrone : la doublure l'est aussi, sans quoi les
       // tests valideraient un enchaînement que CEP n'accepterait pas.
       setTimeout(() => callback(answer), 0)
@@ -501,6 +510,70 @@ describe('runFullExport', () => {
 
     const recolor = calls.find((c) => c.indexOf('lfApplyColorScheme') === 0)
     expect(recolor).toContain('100')
+  })
+
+  it('sépare les réserves des échecs dans le décompte', () => {
+    const written = [
+      { status: 'success', bytes: 1024 },
+      { status: 'warning', bytes: 2048 },
+    ]
+    const failures = [{ warning: true }, {}, {}]
+
+    expect(engine.countWarnings(written as never)).toBe(1)
+    expect(engine.countFailures(failures as never)).toBe(2)
+    expect(engine.totalBytes(written as never)).toBe(3072)
+  })
+
+  it('exprime les tailles en unités lisibles', () => {
+    expect(engine.formatBytes(0 as never)).toBe('')
+    expect(engine.formatBytes(512 as never)).toBe('512 o')
+    expect(engine.formatBytes(2048 as never)).toBe('2 Ko')
+    expect(engine.formatBytes((3 * 1024 * 1024) as never)).toBe('3.0 Mo')
+  })
+
+  it('ne planifie aucun favicon sans déclinaison retenue', () => {
+    // Une tâche sans déclinaison partirait avec une couleur indéfinie.
+    const plan = engine.planExport(
+      config({ favicon: true, colorSchemes: [] }),
+    ) as unknown as unknown[]
+
+    expect(plan).toHaveLength(0)
+  })
+
+  it('refuse de compter un fichier vide parmi les réussites', async () => {
+    // Illustrator peut répondre OK sans rien avoir écrit : seule la taille
+    // du fichier prouve la livraison.
+    installHost({ emptyOn: /lfExportSVG/ })
+    const { result } = await runExport(engine)
+
+    expect((result!.written as unknown[]).length).toBe(1)
+    const failures = result!.failures as Array<{ message: string }>
+    expect(failures).toHaveLength(1)
+    expect(failures[0].message).toContain('vide')
+  })
+
+  it('marque en avertissement un mode colorimétrique non appliqué', async () => {
+    // Le fichier existe, mais dans le mauvais espace : ni réussite franche,
+    // ni fichier perdu.
+    installHost({ failOn: /lfSetColorMode/ })
+    const { result } = await runExport(engine)
+
+    const written = result!.written as Array<{ status: string }>
+    expect(written.length).toBeGreaterThan(0)
+    expect(written[0].status).toBe('warning')
+
+    const failures = result!.failures as Array<{ warning?: boolean }>
+    expect(failures.some((entry) => entry.warning)).toBe(true)
+  })
+
+  it('donne un état final à chaque tâche', async () => {
+    installHost()
+    const { result } = await runExport(engine)
+
+    for (const task of result!.written as Array<{ status: string; bytes: number }>) {
+      expect(['success', 'warning']).toContain(task.status)
+      expect(task.bytes).toBeGreaterThan(0)
+    }
   })
 
   it('poursuit le lot après un échec de fichier', async () => {

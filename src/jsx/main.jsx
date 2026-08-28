@@ -637,12 +637,47 @@ var LogoForge = (function () {
   }
 
   /**
+   * Vérifie qu'un fichier a bien été écrit, et renvoie sa taille.
+   *
+   * Un export « réussi » qui n'a rien produit, ou produit un fichier vide, est
+   * un échec : sans cette vérification, le décompte final compterait des
+   * intentions plutôt que des livrables.
+   */
+  function verifyWritten(path, extension) {
+    var file = new File(path)
+    if (!file.exists) {
+      throw new Error('aucun fichier ' + extension + ' écrit : ' + path)
+    }
+    var size = file.length
+    if (!size) {
+      throw new Error('fichier ' + extension + ' vide : ' + path)
+    }
+    return size
+  }
+
+  /**
+   * Un document à plan de travail unique s'écrit directement.
+   *
+   * Illustrator ne suffixe les noms que lorsque `saveMultipleArtboards` est
+   * actif, ce qui n'a aucun sens sur un document qui n'en compte qu'un. Écrire
+   * directement évite le dossier d'attente — et surtout évite que `saveAs`
+   * relie le document de travail à un fichier que le nettoyage vient de
+   * détruire.
+   */
+  function isSingleArtboard(doc) {
+    try {
+      return doc.artboards.length === 1
+    } catch (e) {
+      return false
+    }
+  }
+
+  /**
    * Exécute une exportation dans un dossier temporaire, puis déplace l'unique
    * fichier produit vers `targetPath`.
    *
-   * Illustrator suffixe le nom des fichiers quand `saveMultipleArtboards` est
-   * actif, et ce suffixe varie selon la version. Passer par un dossier vide
-   * rend le nom final déterministe.
+   * Réservé aux documents à plusieurs plans de travail, où le suffixage
+   * d'Illustrator varie selon la version et rend le nom final imprévisible.
    */
   function exportThenRename(targetPath, extension, writer) {
     var target = new File(targetPath)
@@ -679,45 +714,76 @@ var LogoForge = (function () {
   }
 
   /**
-   * Exporte un plan de travail en PNG.
+   * Écrit un fichier d'export, puis en vérifie la présence et la taille.
    *
-   * Illustrator raisonne en pourcentage d'échelle, 100 % valant 72 ppp. La
-   * largeur voulue est donc traduite en échelle depuis celle du plan.
+   * @param writer reçoit le fichier de destination et un indicateur disant si
+   *   plusieurs plans de travail doivent être gérés.
+   * @returns « chemin | octets ».
    */
+  function writeExport(doc, targetPath, extension, writer) {
+    var written
+    if (isSingleArtboard(doc)) {
+      writer(new File(targetPath), false)
+      written = targetPath
+    } else {
+      written = exportThenRename(targetPath, extension, function (stageFile) {
+        writer(stageFile, true)
+      })
+    }
+    return written + UNIT + verifyWritten(written, extension)
+  }
+
+  /**
+   * Échelle d'export, en pourcentage.
+   *
+   * Illustrator raisonne en pourcentage, 100 % valant 72 ppp. Une largeur
+   * voulue se traduit donc depuis la largeur du plan de travail.
+   */
+  function exportScale(boardWidth, width, resolution) {
+    if (!boardWidth) throw new Error('plan de travail de largeur nulle')
+
+    var targetWidth = parseFloat(width)
+    var scale =
+      targetWidth > 0
+        ? (targetWidth / boardWidth) * 100
+        : (parseFloat(resolution) / 72) * 100
+
+    if (!isFinite(scale) || scale <= 0) throw new Error('echelle invalide')
+    // Illustrator refuse au-delà de 776,19 % dans certaines versions.
+    return scale > 7761 ? 7761 : scale
+  }
+
+  /** Largeur du plan de travail visé, après validation de son index. */
+  function boardWidthAt(doc, index) {
+    selectArtboard(doc, index)
+    var rect = doc.artboards[index].artboardRect
+    return Math.abs(rect[2] - rect[0])
+  }
+
+  /** Exporte un plan de travail en PNG. */
   function exportArtboardAsPNG(artboardIndex, outputPath, width, resolution) {
     try {
       var doc = workingDocument()
       if (!doc) return err('aucun document de travail')
 
       var index = parseInt(artboardIndex, 10)
-      selectArtboard(doc, index)
+      var scale = exportScale(boardWidthAt(doc, index), width, resolution)
 
-      var rect = doc.artboards[index].artboardRect
-      var artboardWidth = Math.abs(rect[2] - rect[0])
-      if (!artboardWidth) return err('plan de travail de largeur nulle')
-
-      var targetWidth = parseFloat(width)
-      var scale
-      if (targetWidth > 0) {
-        scale = (targetWidth / artboardWidth) * 100
-      } else {
-        scale = (parseFloat(resolution) / 72) * 100
-      }
-      if (!isFinite(scale) || scale <= 0) return err('echelle invalide')
-      // Illustrator refuse au-delà de 776,19 % dans certaines versions.
-      if (scale > 7761) scale = 7761
-
-      var options = new ExportOptionsPNG24()
-      options.antiAliasing = true
-      options.transparency = true
-      options.artBoardClipping = true
-      options.horizontalScale = scale
-      options.verticalScale = scale
-
-      var file = new File(outputPath)
-      doc.exportFile(file, ExportType.PNG24, options)
-      if (!file.exists) return err('PNG non produit : ' + outputPath)
-      return ok(outputPath)
+      return ok(
+        writeExport(doc, outputPath, 'png', function (file, multiple) {
+          var options = new ExportOptionsPNG24()
+          assignIfSupported(options, 'antiAliasing', true)
+          assignIfSupported(options, 'transparency', true)
+          assignIfSupported(options, 'artBoardClipping', true)
+          assignIfSupported(options, 'horizontalScale', scale)
+          assignIfSupported(options, 'verticalScale', scale)
+          assignIfSupported(options, 'saveMultipleArtboards', multiple)
+          if (multiple) {
+            assignIfSupported(options, 'artboardRange', String(index + 1))
+          }
+          doc.exportFile(file, ExportType.PNG24, options)
+        })
+      )
     } catch (e) {
       return err(describe(e))
     }
@@ -730,31 +796,23 @@ var LogoForge = (function () {
       if (!doc) return err('aucun document de travail')
 
       var index = parseInt(artboardIndex, 10)
-      selectArtboard(doc, index)
+      var scale = exportScale(boardWidthAt(doc, index), width, resolution)
 
-      var rect = doc.artboards[index].artboardRect
-      var artboardWidth = Math.abs(rect[2] - rect[0])
-      if (!artboardWidth) return err('plan de travail de largeur nulle')
-
-      var targetWidth = parseFloat(width)
-      var scale =
-        targetWidth > 0
-          ? (targetWidth / artboardWidth) * 100
-          : (parseFloat(resolution) / 72) * 100
-      if (!isFinite(scale) || scale <= 0) return err('echelle invalide')
-      if (scale > 7761) scale = 7761
-
-      var options = new ExportOptionsJPEG()
-      options.antiAliasing = true
-      options.artBoardClipping = true
-      options.qualitySetting = 90
-      options.horizontalScale = scale
-      options.verticalScale = scale
-
-      var file = new File(outputPath)
-      doc.exportFile(file, ExportType.JPEG, options)
-      if (!file.exists) return err('JPEG non produit : ' + outputPath)
-      return ok(outputPath)
+      return ok(
+        writeExport(doc, outputPath, 'jpg', function (file, multiple) {
+          var options = new ExportOptionsJPEG()
+          assignIfSupported(options, 'antiAliasing', true)
+          assignIfSupported(options, 'artBoardClipping', true)
+          assignIfSupported(options, 'qualitySetting', 90)
+          assignIfSupported(options, 'horizontalScale', scale)
+          assignIfSupported(options, 'verticalScale', scale)
+          assignIfSupported(options, 'saveMultipleArtboards', multiple)
+          if (multiple) {
+            assignIfSupported(options, 'artboardRange', String(index + 1))
+          }
+          doc.exportFile(file, ExportType.JPEG, options)
+        })
+      )
     } catch (e) {
       return err(describe(e))
     }
@@ -769,19 +827,22 @@ var LogoForge = (function () {
       var index = parseInt(artboardIndex, 10)
       selectArtboard(doc, index)
 
-      var written = exportThenRename(outputPath, 'svg', function (stageFile) {
-        var options = new ExportOptionsSVG()
-        options.embedRasterImages = true
-        options.preserveEditability = false
-        // Les polices sont vectorisées : le logo doit s'afficher à l'identique
-        // sans que la police soit installée chez le destinataire.
-        options.fontType = SVGFontType.OUTLINEFONT
-        options.coordinatePrecision = 4
-        options.saveMultipleArtboards = true
-        options.artboardRange = String(index + 1)
-        doc.exportFile(stageFile, ExportType.SVG, options)
-      })
-      return ok(written)
+      return ok(
+        writeExport(doc, outputPath, 'svg', function (file, multiple) {
+          var options = new ExportOptionsSVG()
+          assignIfSupported(options, 'embedRasterImages', true)
+          assignIfSupported(options, 'preserveEditability', false)
+          // Les polices sont vectorisées : le logo doit s'afficher à
+          // l'identique sans que la police soit installée chez le destinataire.
+          assignIfSupported(options, 'fontType', SVGFontType.OUTLINEFONT)
+          assignIfSupported(options, 'coordinatePrecision', 4)
+          assignIfSupported(options, 'saveMultipleArtboards', multiple)
+          if (multiple) {
+            assignIfSupported(options, 'artboardRange', String(index + 1))
+          }
+          doc.exportFile(file, ExportType.SVG, options)
+        })
+      )
     } catch (e) {
       return err(describe(e))
     }
@@ -796,15 +857,18 @@ var LogoForge = (function () {
       var index = parseInt(artboardIndex, 10)
       selectArtboard(doc, index)
 
-      var written = exportThenRename(outputPath, 'pdf', function (stageFile) {
-        var options = new PDFSaveOptions()
-        options.preserveEditability = true
-        options.viewAfterSaving = false
-        options.saveMultipleArtboards = true
-        options.artboardRange = String(index + 1)
-        doc.saveAs(stageFile, options)
-      })
-      return ok(written)
+      return ok(
+        writeExport(doc, outputPath, 'pdf', function (file, multiple) {
+          var options = new PDFSaveOptions()
+          assignIfSupported(options, 'preserveEditability', true)
+          assignIfSupported(options, 'viewAfterSaving', false)
+          assignIfSupported(options, 'saveMultipleArtboards', multiple)
+          if (multiple) {
+            assignIfSupported(options, 'artboardRange', String(index + 1))
+          }
+          doc.saveAs(file, options)
+        })
+      )
     } catch (e) {
       return err(describe(e))
     }
@@ -819,15 +883,18 @@ var LogoForge = (function () {
       var index = parseInt(artboardIndex, 10)
       selectArtboard(doc, index)
 
-      var written = exportThenRename(outputPath, 'eps', function (stageFile) {
-        var options = new EPSSaveOptions()
-        options.embedAllFonts = true
-        options.includeDocumentThumbnails = true
-        options.saveMultipleArtboards = true
-        options.artboardRange = String(index + 1)
-        doc.saveAs(stageFile, options)
-      })
-      return ok(written)
+      return ok(
+        writeExport(doc, outputPath, 'eps', function (file, multiple) {
+          var options = new EPSSaveOptions()
+          assignIfSupported(options, 'embedAllFonts', true)
+          assignIfSupported(options, 'includeDocumentThumbnails', true)
+          assignIfSupported(options, 'saveMultipleArtboards', multiple)
+          if (multiple) {
+            assignIfSupported(options, 'artboardRange', String(index + 1))
+          }
+          doc.saveAs(file, options)
+        })
+      )
     } catch (e) {
       return err(describe(e))
     }
@@ -839,12 +906,14 @@ var LogoForge = (function () {
       var doc = workingDocument()
       if (!doc) return err('aucun document de travail')
 
-      var written = exportThenRename(outputPath, 'ai', function (stageFile) {
-        var options = new IllustratorSaveOptions()
-        options.pdfCompatible = true
-        doc.saveAs(stageFile, options)
-      })
-      return ok(written)
+      // `saveAs` en .ai ne suffixe jamais : l'écriture est directe, quel que
+      // soit le nombre de plans de travail.
+      var file = new File(outputPath)
+      var options = new IllustratorSaveOptions()
+      assignIfSupported(options, 'pdfCompatible', true)
+      doc.saveAs(file, options)
+
+      return ok(outputPath + UNIT + verifyWritten(outputPath, 'ai'))
     } catch (e) {
       return err(describe(e))
     }

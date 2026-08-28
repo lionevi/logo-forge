@@ -402,7 +402,15 @@ var LogoForgeEngine = (function () {
 
     // Favicons : le premier composant, première couleur, aux tailles attendues
     // par les navigateurs. Ils vivent dans la passe web.
-    if (config.favicon && config.components.length > 0 && passes.indexOf('web') !== -1) {
+    // Un favicon porte une déclinaison comme n'importe quel autre fichier :
+    // sans déclinaison retenue, il n'y a rien à produire — et la tâche
+    // partirait avec une couleur indéfinie.
+    if (
+      config.favicon &&
+      config.components.length > 0 &&
+      config.colorSchemes.length > 0 &&
+      passes.indexOf('web') !== -1
+    ) {
       var first = config.components[0]
       if (first.path) {
         for (var v = 0; v < FAVICON_SIZES.length; v += 1) {
@@ -490,24 +498,64 @@ var LogoForgeEngine = (function () {
    * Le rapport est autonome : il accompagne le pack chez le client, et doit
    * rester lisible sans réseau ni feuille de style externe.
    */
+  /** Poids cumulé des fichiers réellement écrits. */
+  function totalBytes(written) {
+    var total = 0
+    for (var i = 0; i < written.length; i += 1) total += written[i].bytes || 0
+    return total
+  }
+
+  /** Fichiers écrits mais assortis d'une réserve. */
+  function countWarnings(written) {
+    var count = 0
+    for (var i = 0; i < written.length; i += 1) {
+      if (written[i].status === 'warning') count += 1
+    }
+    return count
+  }
+
+  /** Échecs véritables : un avertissement n'est pas un fichier perdu. */
+  function countFailures(failures) {
+    var count = 0
+    for (var i = 0; i < failures.length; i += 1) {
+      if (!failures[i].warning) count += 1
+    }
+    return count
+  }
+
+  /** Taille de fichier lisible, en unités décimales. */
+  function formatBytes(bytes) {
+    if (!bytes) return ''
+    if (bytes < 1024) return bytes + ' o'
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' Ko'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' Mo'
+  }
+
   function buildReport(config, result) {
     var rows = ''
     var i
 
     for (i = 0; i < result.written.length; i += 1) {
       var task = result.written[i]
+      var warned = task.status === 'warning'
       rows += reportRow(
-        'OK',
-        'ok',
+        warned ? 'Reserve' : 'OK',
+        warned ? 'warn' : 'ok',
         task.component.name,
         schemeLabel(task.scheme),
         task.format,
-        task.folder + '/' + task.fileName
+        task.folder +
+          '/' +
+          task.fileName +
+          (warned ? ' — ' + task.warnings.join(' ; ') : '') +
+          (task.bytes ? ' (' + formatBytes(task.bytes) + ')' : '')
       )
     }
 
     for (i = 0; i < result.failures.length; i += 1) {
       var failure = result.failures[i]
+      // Un avertissement accompagne déjà la ligne du fichier écrit.
+      if (failure.warning) continue
       rows += reportRow(
         'Echec',
         'ko',
@@ -535,6 +583,7 @@ var LogoForgeEngine = (function () {
       'tr:hover td{background:#2f2f2f}',
       '.ok{color:#2d9d78;font-weight:700}',
       '.ko{color:#e34850;font-weight:700}',
+      '.warn{color:#e68619;font-weight:700}',
       '.tag{padding:2px 6px;border-radius:3px;background:#3e3e3e;',
       'font-size:10px;font-weight:700}',
       ".path{color:#909090;font-family:'Source Code Pro',monospace;font-size:11px}",
@@ -564,9 +613,11 @@ var LogoForgeEngine = (function () {
         '</p>',
       '<ul class="stats">',
       stat(result.written.length, 'fichiers'),
+      stat(formatBytes(totalBytes(result.written)), 'poids'),
       stat(config.components.length, 'composants'),
       stat(config.colorSchemes.length, 'declinaisons'),
-      stat(result.failures.length, 'echecs'),
+      stat(countWarnings(result.written), 'reserves'),
+      stat(countFailures(result.failures), 'echecs'),
       stat(formatDuration(result.durationMs), 'duree'),
       '</ul>',
       '<table><thead><tr><th>Etat</th><th>Composant</th><th>Declinaison</th>',
@@ -660,10 +711,35 @@ var LogoForgeEngine = (function () {
    * @param handlers `{onProgress(done,total,label), onDone(result), onError(msg)}`
    * @returns un objet portant `cancel()`.
    */
+  /**
+   * États d'une tâche d'export.
+   *
+   * `warning` distingue le fichier écrit mais douteux — un mode colorimétrique
+   * qui n'a pas pris, par exemple — du fichier absent.
+   */
+  var JOB_STATUS = {
+    pending: 'pending',
+    processing: 'processing',
+    success: 'success',
+    warning: 'warning',
+    failed: 'failed',
+    skipped: 'skipped',
+  }
+
   function runFullExport(config, handlers) {
     var startedAt = new Date().getTime()
     var tasks = planExport(config)
     var root = joinPath(config.outputFolder, [sanitize(config.clientName)])
+
+    // Une tâche porte son état et sa trace : le rapport final décrit ce qui
+    // s'est passé, pas ce qu'on avait prévu.
+    var jobs = []
+    for (var j = 0; j < tasks.length; j += 1) {
+      tasks[j].status = JOB_STATUS.pending
+      tasks[j].bytes = 0
+      tasks[j].warnings = []
+      jobs.push(tasks[j])
+    }
 
     var written = []
     var failures = []
@@ -673,7 +749,25 @@ var LogoForgeEngine = (function () {
     /** Contexte courant, pour n'agir que sur les changements. */
     var current = { pass: null, component: null, scheme: null }
 
+    /**
+     * Consigne un échec de conversion colorimétrique.
+     *
+     * Le fichier sera bien écrit, mais dans le mauvais espace : le compter
+     * parmi les réussites serait mentir, l'écarter du lot ferait perdre un
+     * fichier utilisable. Il part donc en avertissement.
+     */
+    function noteColorMode(task, result) {
+      if (result.ok) return
+      task.warnings.push('mode colorimétrique : ' + result.value)
+      failures.push({
+        task: task,
+        message: 'mode colorimétrique : ' + result.value,
+        warning: true,
+      })
+    }
+
     function fail(task, message) {
+      task.status = JOB_STATUS.failed
       failures.push({ task: task, message: message })
       setTimeout(step, 0)
     }
@@ -715,9 +809,34 @@ var LogoForgeEngine = (function () {
     }
 
     function runTask(task) {
+      task.status = JOB_STATUS.processing
       exportTask(root, task, function (result) {
-        if (result.ok) written.push(task)
-        else failures.push({ task: task, message: result.value })
+        if (!result.ok) {
+          task.status = JOB_STATUS.failed
+          failures.push({ task: task, message: result.value })
+          setTimeout(step, 0)
+          return
+        }
+
+        // La couche ExtendScript renvoie « chemin | octets » : un fichier de
+        // taille nulle est un échec, quel que soit le statut de l'appel.
+        var parts = String(result.value).split(UNIT)
+        var bytes = parseInt(parts[1], 10) || 0
+        if (!bytes) {
+          task.status = JOB_STATUS.failed
+          failures.push({
+            task: task,
+            message: 'fichier vide ou absent : ' + (parts[0] || task.fileName),
+          })
+          setTimeout(step, 0)
+          return
+        }
+
+        task.bytes = bytes
+        task.status = task.warnings.length
+          ? JOB_STATUS.warning
+          : JOB_STATUS.success
+        written.push(task)
         // `setTimeout` rend la main au navigateur : sans lui, la barre de
         // progression resterait figée pendant tout le lot.
         setTimeout(step, 0)
@@ -787,12 +906,7 @@ var LogoForgeEngine = (function () {
           'lfSetColorMode',
           [task.pass === 'print' ? 'cmyk' : 'rgb'],
           function (mode) {
-            if (!mode.ok) {
-              failures.push({
-                task: task,
-                message: 'mode colorimetrique : ' + mode.value,
-              })
-            }
+            noteColorMode(task, mode)
             applyPadding(task, function () {
               recolorThenRun(task)
             })
@@ -834,7 +948,8 @@ var LogoForgeEngine = (function () {
           call(
             'lfSetColorMode',
             [task.pass === 'print' ? 'cmyk' : 'rgb'],
-            function () {
+            function (mode) {
+              noteColorMode(task, mode)
               applyPadding(task, function () {
                 recolorThenRun(task)
               })
@@ -1587,6 +1702,11 @@ var LogoForgeEngine = (function () {
     planDirectories: planDirectories,
     buildReport: buildReport,
     formatDuration: formatDuration,
+    formatBytes: formatBytes,
+    totalBytes: totalBytes,
+    countWarnings: countWarnings,
+    countFailures: countFailures,
+    JOB_STATUS: JOB_STATUS,
     readDocumentInfo: readDocumentInfo,
     readArtboardNames: readArtboardNames,
     runFullExport: runFullExport,

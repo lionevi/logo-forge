@@ -477,6 +477,24 @@
         margin-top: 3px;
         padding: 2px 8px;
       }
+      .scope-title {
+        margin: 10px 0 4px;
+        color: #909090;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .link {
+        margin-left: 6px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: #2680eb;
+        font-size: 10px;
+        text-transform: none;
+        cursor: pointer;
+      }
       .contrast-row {
         margin-bottom: 4px;
         overflow: hidden;
@@ -1213,6 +1231,21 @@
             <input type="checkbox" id="pass-web" checked />
             <span class="check-label" style="width: auto">Web</span>
           </label>
+
+          <h4 class="scope-title">
+            Composants
+            <button class="link" data-scope-all="components">Tout</button>
+            <button class="link" data-scope-none="components">Aucun</button>
+          </h4>
+          <div id="scope-components"></div>
+
+          <h4 class="scope-title">
+            Déclinaisons
+            <button class="link" data-scope-all="schemes">Tout</button>
+            <button class="link" data-scope-none="schemes">Aucun</button>
+          </h4>
+          <div id="scope-schemes"></div>
+
           <p class="summary" id="export-summary"></p>
           <div id="export-error"></div>
           <div class="row">
@@ -1436,6 +1469,7 @@
           threshold: 50,
           grid: {},
           documentColors: [],
+          scope: { components: {}, schemes: {} },
           preflight: null,
           preflightMode: 'print',
           blockOnPreflight: false,
@@ -1643,6 +1677,111 @@
           return list
         }
 
+        /* ---------------------------------------------------------------- *
+         * Portée d'export
+         *
+         * Le plan complet reste la valeur par défaut ; la portée permet d'en
+         * retirer ce qu'on ne veut pas relivrer, sans avoir à décocher des
+         * réglages globaux dont on aura besoin au prochain lot.
+         * ---------------------------------------------------------------- */
+
+        /** Clé stable d'une déclinaison, personnalisée comprise. */
+        function schemeKey(scheme) {
+          return scheme.id === 'custom'
+            ? 'custom:' + (scheme.name || '')
+            : scheme.id
+        }
+
+        /** Une entrée absente de la portée est retenue : le défaut est « tout ». */
+        function inScope(kind, key) {
+          return state.scope[kind][key] !== false
+        }
+
+        function setScope(kind, key, value) {
+          state.scope[kind][key] = value
+        }
+
+        /** Composants retenus pour l'export. */
+        function scopedComponents() {
+          var list = []
+          var defined = definedComponents()
+          for (var i = 0; i < defined.length; i += 1) {
+            if (inScope('components', defined[i].id)) list.push(defined[i])
+          }
+          return list
+        }
+
+        /** Déclinaisons retenues pour l'export. */
+        function scopedSchemes() {
+          var list = []
+          var active = activeSchemes()
+          for (var i = 0; i < active.length; i += 1) {
+            if (inScope('schemes', schemeKey(active[i]))) list.push(active[i])
+          }
+          return list
+        }
+
+        /** Configuration de l'export, portée appliquée. */
+        function exportConfig() {
+          var config = buildConfig()
+          config.components = scopedComponents()
+          config.colorSchemes = scopedSchemes()
+          return config
+        }
+
+        /** Identifiants des composants capturés. */
+        function componentScopeKeys() {
+          var keys = []
+          var defined = definedComponents()
+          for (var i = 0; i < defined.length; i += 1) keys.push(defined[i].id)
+          return keys
+        }
+
+        /** Clés des déclinaisons cochées. */
+        function schemeScopeKeys() {
+          var keys = []
+          var active = activeSchemes()
+          for (var i = 0; i < active.length; i += 1) {
+            keys.push(schemeKey(active[i]))
+          }
+          return keys
+        }
+
+        function renderScope() {
+          var defined = definedComponents()
+          var html = ''
+          for (var i = 0; i < defined.length; i += 1) {
+            html +=
+              '<label class="check-row"><input type="checkbox" ' +
+              'data-scope-component="' +
+              escapeHtml(defined[i].id) +
+              '"' +
+              (inScope('components', defined[i].id) ? ' checked' : '') +
+              ' /><span class="check-label" style="width:auto">' +
+              escapeHtml(defined[i].name) +
+              '</span></label>'
+          }
+          byId('scope-components').innerHTML =
+            html || '<p class="summary">Aucun composant capturé.</p>'
+
+          var active = activeSchemes()
+          var schemes = ''
+          for (var j = 0; j < active.length; j += 1) {
+            var key = schemeKey(active[j])
+            schemes +=
+              '<label class="check-row"><input type="checkbox" ' +
+              'data-scope-scheme="' +
+              escapeHtml(key) +
+              '"' +
+              (inScope('schemes', key) ? ' checked' : '') +
+              ' /><span class="check-label" style="width:auto">' +
+              escapeHtml(engine.schemeTitle(active[j])) +
+              '</span></label>'
+          }
+          byId('scope-schemes').innerHTML =
+            schemes || '<p class="summary">Aucune déclinaison cochée.</p>'
+        }
+
         function buildConfig() {
           return {
             clientName: state.clientName,
@@ -1663,7 +1802,7 @@
 
         function plannedCount() {
           try {
-            return engine.planExport(buildConfig()).length
+            return engine.planExport(exportConfig()).length
           } catch (error) {
             return 0
           }
@@ -3137,6 +3276,38 @@
           }
         }
 
+        byId('export-veil').onclick = function (event) {
+          var target = event.target
+
+          var component = target.getAttribute('data-scope-component')
+          if (component !== null) {
+            setScope('components', component, target.checked)
+            renderDestination()
+            return
+          }
+
+          var scheme = target.getAttribute('data-scope-scheme')
+          if (scheme !== null) {
+            setScope('schemes', scheme, target.checked)
+            renderDestination()
+            return
+          }
+
+          var all = target.getAttribute('data-scope-all')
+          var none = target.getAttribute('data-scope-none')
+          if (all === null && none === null) return
+
+          var kind = all !== null ? all : none
+          var value = all !== null
+          var keys =
+            kind === 'components'
+              ? componentScopeKeys()
+              : schemeScopeKeys()
+          for (var i = 0; i < keys.length; i += 1) setScope(kind, keys[i], value)
+          renderScope()
+          renderDestination()
+        }
+
         byId('run-preflight').onclick = function () {
           guard('contrôle', runPreflight)
         }
@@ -3256,6 +3427,7 @@
         }
 
         byId('open-export').onclick = function () {
+          renderScope()
           byId('export-error').innerHTML = ''
           renderDestination()
           byId('export-veil').className = 'veil on'
@@ -3316,7 +3488,7 @@
             byId('abort-export').style.display = 'block'
             byId('progress-bar').style.width = '0'
 
-            state.running = engine.runFullExport(buildConfig(), {
+            state.running = engine.runFullExport(exportConfig(), {
               onProgress: function (done, total, label) {
                 byId('progress-bar').style.width =
                   Math.round((done / total) * 100) + '%'

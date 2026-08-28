@@ -378,6 +378,35 @@ describe('planche de revue', () => {
   })
 })
 
+describe("portée d'export", () => {
+  it('laisse choisir composants et déclinaisons du lot', () => {
+    for (const id of ['scope-components', 'scope-schemes']) {
+      expect(HTML, id).toContain(`id="${id}"`)
+    }
+    expect(HTML).toContain('data-scope-all="components"')
+    expect(HTML).toContain('data-scope-none="schemes"')
+  })
+
+  it('retient tout par défaut', () => {
+    // Une portée vide au premier lancement ferait croire à un plugin cassé.
+    const block = SCRIPT.slice(SCRIPT.indexOf('function inScope('))
+    expect(block.slice(0, 200)).toContain('!== false')
+  })
+
+  it('applique la portée au plan, pas aux réglages globaux', () => {
+    expect(SCRIPT).toContain('function exportConfig(')
+    expect(SCRIPT).toContain('engine.planExport(exportConfig())')
+    expect(SCRIPT).toContain('engine.runFullExport(exportConfig()')
+    // La planche de revue reste hors portée : elle montre tout le projet.
+    expect(SCRIPT).toContain('engine.runPackageBuild(buildConfig()')
+  })
+
+  it('distingue une couleur personnalisée par son nom', () => {
+    expect(SCRIPT).toContain('function schemeKey(')
+    expect(SCRIPT).toContain("'custom:'")
+  })
+})
+
 describe('contrôle de production', () => {
   it('expose un onglet dédié et sa commande', () => {
     expect(HTML).toContain('data-tab="preflight"')
