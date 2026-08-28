@@ -498,6 +498,20 @@
         overflow: hidden;
         margin: 6px 0 4px;
       }
+      /* Aperçu d'arborescence : une police fixe rend l'indentation lisible. */
+      .tree {
+        margin: 0;
+        padding: 8px;
+        border: 1px solid #3e3e3e;
+        border-radius: 4px;
+        background: #252525;
+        color: #b9b9b9;
+        font-family: monospace;
+        font-size: 10px;
+        line-height: 1.5;
+        white-space: pre;
+        overflow-x: auto;
+      }
       .scope-title {
         margin: 10px 0 4px;
         color: #909090;
@@ -1088,6 +1102,7 @@
             <button class="tab" data-sub="scales">Scales</button>
             <button class="tab" data-sub="padding">Padding</button>
             <button class="tab" data-sub="grid">Grid</button>
+            <button class="tab" data-sub="folders">Dossiers</button>
           </div>
 
           <div class="pane on" id="sub-files">
@@ -1257,6 +1272,18 @@
                   >Refuser l'export tant que le contrôle échoue</span
                 >
               </label>
+            </div>
+          </div>
+
+          <div class="pane" id="sub-folders">
+            <div class="section">
+              <h2 class="section-title">Arborescence livrée</h2>
+              <select id="folder-template"></select>
+              <p class="summary" id="folder-description"></p>
+            </div>
+            <div class="section">
+              <h2 class="section-title">Aperçu</h2>
+              <pre class="tree" id="folder-preview"></pre>
             </div>
           </div>
 
@@ -1526,6 +1553,7 @@
           version: '',
           nameTemplate: '',
           collision: 'overwrite',
+          folderTemplate: 'client',
           preflight: null,
           preflightMode: 'print',
           blockOnPreflight: false,
@@ -1803,6 +1831,69 @@
           return keys
         }
 
+        /**
+         * Aperçu de l'arborescence.
+         *
+         * L'aperçu est construit depuis le plan réel : montrer une
+         * arborescence idéale plutôt que celle qui sera écrite serait le genre
+         * de promesse qu'on découvre fausse en ouvrant le dossier.
+         */
+        function renderFolderTemplate() {
+          var options = ''
+          var chosen = engine.folderTemplate(state.folderTemplate)
+          for (var i = 0; i < engine.FOLDER_TEMPLATES.length; i += 1) {
+            var template = engine.FOLDER_TEMPLATES[i]
+            options +=
+              '<option value="' +
+              template.id +
+              '"' +
+              (template.id === chosen.id ? ' selected' : '') +
+              '>' +
+              escapeHtml(template.label) +
+              '</option>'
+          }
+          byId('folder-template').innerHTML = options
+          byId('folder-description').innerHTML = escapeHtml(chosen.description)
+
+          var folders = []
+          try {
+            var plan = engine.planExport(exportConfig())
+            folders = engine.planDirectories(plan, chosen.report)
+          } catch (error) {
+            folders = []
+          }
+
+          if (folders.length === 0) {
+            byId('folder-preview').innerHTML =
+              'Définissez un composant pour voir l arborescence.'
+            return
+          }
+
+          folders.sort()
+          var lines = [escapeHtml(pascalClient()) + '/']
+          for (var f = 0; f < folders.length && f < 40; f += 1) {
+            var depth = folders[f].split('/').length
+            var name = folders[f].split('/').pop()
+            lines.push(repeat('  ', depth) + escapeHtml(name) + '/')
+          }
+          if (folders.length > 40) {
+            lines.push('  … ' + (folders.length - 40) + ' dossiers de plus')
+          }
+          byId('folder-preview').innerHTML = lines.join('\n')
+        }
+
+        /** Nom du dossier racine, tel que l'export le créera. */
+        function pascalClient() {
+          return engine.sanitize(state.clientName) || 'Client'
+        }
+
+        /** Répète un motif : `String.repeat` n'existe pas dans Chromium 61. */
+        function repeat(pattern, times) {
+          var out = ''
+          for (var i = 0; i < times; i += 1) out += pattern
+          return out
+        }
+
         function renderCollisionPolicy() {
           var html = ''
           for (var i = 0; i < engine.COLLISION_POLICIES.length; i += 1) {
@@ -1871,6 +1962,7 @@
             version: state.version,
             nameTemplate: state.nameTemplate,
             collision: state.collision,
+            folderTemplate: state.folderTemplate,
             padding: state.padding,
             threshold: state.threshold,
             grid: state.grid,
@@ -2933,6 +3025,8 @@
           renderExportButton()
           renderPackage()
           renderGridSettings()
+          renderNamePreview()
+          renderFolderTemplate()
         }
 
         function renderAll() {
@@ -2943,7 +3037,6 @@
           renderInversion()
           renderFormats()
           renderScales()
-          renderNamePreview()
           renderCollisionPolicy()
           renderPreflight()
           renderDerived()
@@ -3426,6 +3519,11 @@
           for (var i = 0; i < keys.length; i += 1) setScope(kind, keys[i], value)
           renderScope()
           renderDestination()
+        }
+
+        byId('folder-template').onchange = function () {
+          state.folderTemplate = this.value
+          renderFolderTemplate()
         }
 
         byId('name-template').oninput = function () {

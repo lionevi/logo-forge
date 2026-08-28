@@ -538,6 +538,46 @@ describe('runFullExport', () => {
     expect(engine.formatBytes((3 * 1024 * 1024) as never)).toBe('3.0 Mo')
   })
 
+  it("range les fichiers selon le modèle d'arborescence", () => {
+    const plan = (template: string) =>
+      (
+        engine.planExport(
+          config({
+            folderTemplate: template,
+            formats: {
+              print: { ai: true, pdf: true, eps: false, jpeg: false },
+              web: { svg: true, png: false, jpeg: false, ai: false },
+            },
+          }),
+        ) as unknown as Array<{ folder: string; format: string }>
+      ).map((task) => task.folder + '/' + task.format)
+
+    // Le client cherche un usage, le designer un format, l'agence une étape.
+    expect(plan('client')).toContain('Pour_Impression/Logo/FullColor/pdf')
+    expect(plan('technical')).toContain('Print/PDF/Logo/pdf')
+    expect(plan('agency')).toContain('01_Sources/Logo/ai')
+    expect(plan('agency')).toContain('02_Impression/Logo/FullColor/pdf')
+  })
+
+  it("retombe sur le modèle client quand celui demandé n'existe pas", () => {
+    const template = engine.folderTemplate('inexistant') as unknown as {
+      id: string
+    }
+    expect(template.id).toBe('client')
+  })
+
+  it('crée le dossier de service du modèle, même vide', () => {
+    const tasks = engine.planExport(
+      config({ folderTemplate: 'agency' }),
+    ) as unknown as unknown[]
+    const directories = engine.planDirectories(
+      tasks as never,
+      '05_Rapport' as never,
+    ) as unknown as string[]
+
+    expect(directories).toContain('05_Rapport')
+  })
+
   it('ne planifie aucun favicon sans déclinaison retenue', () => {
     // Une tâche sans déclinaison partirait avec une couleur indéfinie.
     const plan = engine.planExport(

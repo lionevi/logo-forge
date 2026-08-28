@@ -38,6 +38,81 @@ var LogoForgeEngine = (function () {
     report: 'Rapport',
   }
 
+  /**
+   * Modèles d'arborescence.
+   *
+   * Une seule structure ne convient pas à tout le monde : le client cherche
+   * « pour l'impression », le designer cherche un PDF, l'agence classe par
+   * étapes numérotées. Chaque modèle décrit où va un fichier et comment se
+   * nomment les dossiers de service.
+   *
+   * `folder` reçoit le contexte d'une tâche et renvoie un chemin relatif.
+   */
+  var FOLDER_TEMPLATES = [
+    {
+      id: 'client',
+      label: 'Client — dossiers en clair',
+      description:
+        'Pour_Impression et Pour_Web, puis un dossier par composant et par ' +
+        'couleur. Le client trouve sans rien connaître au métier.',
+      report: 'Rapport',
+      documentation: 'Documentation',
+      folder: function (context) {
+        if (context.favicon) return joinFolder([FOLDERS.web, 'Favicon'])
+        return joinFolder([
+          context.pass === 'print' ? FOLDERS.print : FOLDERS.web,
+          pascal(context.component.name),
+          schemeLabel(context.scheme),
+        ])
+      },
+    },
+    {
+      id: 'technical',
+      label: 'Designer — par usage puis format',
+      description:
+        'Print et Web, puis un dossier par format. On y cherche un PDF, pas ' +
+        'une couleur.',
+      report: 'Rapport',
+      documentation: 'Documentation',
+      folder: function (context) {
+        if (context.favicon) return joinFolder(['Web', 'Favicon'])
+        return joinFolder([
+          context.pass === 'print' ? 'Print' : 'Web',
+          String(context.format).toUpperCase(),
+          pascal(context.component.name),
+        ])
+      },
+    },
+    {
+      id: 'agency',
+      label: 'Agence — étapes numérotées',
+      description:
+        'Dossiers numérotés, dans l ordre de lecture d une livraison : ' +
+        'sources, impression, web, favicons, documentation.',
+      report: '05_Rapport',
+      documentation: '04_Documentation',
+      folder: function (context) {
+        if (context.favicon) return '03_Favicons'
+        if (context.format === 'ai') {
+          return joinFolder(['01_Sources', pascal(context.component.name)])
+        }
+        return joinFolder([
+          context.pass === 'print' ? '02_Impression' : '03_Web',
+          pascal(context.component.name),
+          schemeLabel(context.scheme),
+        ])
+      },
+    },
+  ]
+
+  /** Modèle d'arborescence retenu, celui du client par défaut. */
+  function folderTemplate(id) {
+    for (var i = 0; i < FOLDER_TEMPLATES.length; i += 1) {
+      if (FOLDER_TEMPLATES[i].id === id) return FOLDER_TEMPLATES[i]
+    }
+    return FOLDER_TEMPLATES[0]
+  }
+
   /** Formats de la passe print, produits en CMJN à 300 ppp. */
   var PRINT_FORMATS = ['ai', 'pdf', 'eps', 'jpeg']
 
@@ -433,6 +508,7 @@ var LogoForgeEngine = (function () {
    */
   function planExport(config) {
     var tasks = []
+    var template = folderTemplate(config.folderTemplate)
     var separator = config.separator || '_'
     var passes = []
 
@@ -478,14 +554,17 @@ var LogoForgeEngine = (function () {
 
         for (var s = 0; s < config.colorSchemes.length; s += 1) {
           var scheme = config.colorSchemes[s]
-          var folder = joinFolder([
-            FOLDERS[pass],
-            pascal(component.name),
-            schemeLabel(scheme),
-          ])
-
           for (var f = 0; f < formats.length; f += 1) {
             var format = formats[f]
+            // Le dossier dépend du format dans certains modèles : il se
+            // calcule donc par fichier, pas par déclinaison.
+            var folder = template.folder({
+              pass: pass,
+              component: component,
+              scheme: scheme,
+              format: format === 'jpeg' ? 'jpg' : format,
+              favicon: false,
+            })
 
             // Le fichier source natif n'a de sens qu'en pleine couleur : un .ai
             // recoloré ne serait plus une source.
@@ -550,7 +629,13 @@ var LogoForgeEngine = (function () {
             scheme: config.colorSchemes[0],
             component: first,
             format: 'png',
-            folder: joinFolder([FOLDERS.web, 'Favicon']),
+            folder: template.folder({
+              pass: 'web',
+              component: first,
+              scheme: config.colorSchemes[0],
+              format: 'png',
+              favicon: true,
+            }),
             fileName:
               'favicon' + separator + FAVICON_SIZES[v] + 'px.png',
             width: FAVICON_SIZES[v],
@@ -564,7 +649,14 @@ var LogoForgeEngine = (function () {
   }
 
   /** Dossiers distincts d'un plan, parents d'abord. */
-  function planDirectories(tasks) {
+  /**
+   * Dossiers à créer avant d'écrire.
+   *
+   * @param reportFolder dossier de service du modèle retenu, qui doit exister
+   *   même quand aucun fichier n'y va.
+   */
+  function planDirectories(tasks, reportFolder) {
+    var service = reportFolder || FOLDERS.report
     var seen = {}
     var list = []
     for (var i = 0; i < tasks.length; i += 1) {
@@ -578,7 +670,7 @@ var LogoForgeEngine = (function () {
         }
       }
     }
-    if (!seen[FOLDERS.report]) list.push(FOLDERS.report)
+    if (!seen[service]) list.push(service)
     return list
   }
 
@@ -943,6 +1035,7 @@ var LogoForgeEngine = (function () {
 
   function runFullExport(config, handlers) {
     var startedAt = new Date().getTime()
+    var template = folderTemplate(config.folderTemplate)
     var tasks = planExport(config)
     var root = joinPath(config.outputFolder, [sanitize(config.clientName)])
 
@@ -1001,7 +1094,10 @@ var LogoForgeEngine = (function () {
           total: tasks.length,
         }
 
-        var reportPath = joinPath(root, [FOLDERS.report, 'export-rapport.html'])
+        var reportPath = joinPath(root, [
+          template.report,
+          'export-rapport.html',
+        ])
         call(
           'lfWriteTextFile',
           [reportPath, buildReport(config, result)],
@@ -1013,7 +1109,7 @@ var LogoForgeEngine = (function () {
                   component: { name: 'Rapport' },
                   scheme: { id: 'fullColor' },
                   format: 'html',
-                  folder: FOLDERS.report,
+                  folder: template.report,
                   fileName: 'export-rapport.html',
                 },
                 message: write.value,
@@ -1218,13 +1314,17 @@ var LogoForgeEngine = (function () {
       return { cancel: function () {} }
     }
 
-    createDirectories(root, planDirectories(tasks), function (folderError) {
-      if (folderError) {
-        handlers.onError(folderError)
-        return
+    createDirectories(
+      root,
+      planDirectories(tasks, template.report),
+      function (folderError) {
+        if (folderError) {
+          handlers.onError(folderError)
+          return
+        }
+        step()
       }
-      step()
-    })
+    )
 
     return {
       cancel: function () {
@@ -1934,6 +2034,8 @@ var LogoForgeEngine = (function () {
 
   return {
     FOLDERS: FOLDERS,
+    FOLDER_TEMPLATES: FOLDER_TEMPLATES,
+    folderTemplate: folderTemplate,
     FAVICON_SIZES: FAVICON_SIZES,
     PRINT_FORMATS: PRINT_FORMATS,
     WEB_FORMATS: WEB_FORMATS,

@@ -378,6 +378,37 @@ describe('planche de revue', () => {
   })
 })
 
+describe('arborescence livrée', () => {
+  it('laisse choisir un modèle et le décrit', () => {
+    expect(HTML).toContain('data-sub="folders"')
+    for (const id of ['folder-template', 'folder-description', 'folder-preview']) {
+      expect(HTML, id).toContain(`id="${id}"`)
+    }
+  })
+
+  it("construit l'aperçu depuis le plan réel", () => {
+    // Montrer une arborescence idéale se découvrirait faux en ouvrant le
+    // dossier livré.
+    expect(SCRIPT).toContain('engine.planDirectories(')
+    expect(SCRIPT).toContain('engine.FOLDER_TEMPLATES')
+    expect(SCRIPT).toContain('folderTemplate: state.folderTemplate')
+  })
+
+  it('rafraîchit l aperçu avec les composants et les déclinaisons', () => {
+    const block = SCRIPT.slice(
+      SCRIPT.indexOf('function renderDerived('),
+      SCRIPT.indexOf('function renderAll('),
+    )
+    expect(block).toContain('renderFolderTemplate()')
+    expect(block).toContain('renderNamePreview()')
+  })
+
+  it('répète sans String.repeat, absent de Chromium 61', () => {
+    expect(SCRIPT).toContain('function repeat(')
+    expect(SCRIPT).not.toMatch(/\.repeat\(/)
+  })
+})
+
 describe('nommage', () => {
   it('expose le gabarit, ses variables et sa remise à zéro', () => {
     for (const id of [
