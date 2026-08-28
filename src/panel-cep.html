@@ -275,11 +275,56 @@
       }
       .comp-placeholder {
         color: #909090;
-        font-size: 20px;
         line-height: 58px;
         text-align: center;
       }
-      .comp-contrast {
+      /* Vignette exportée depuis Illustrator : l'artwork réel du composant. */
+      .comp-thumb {
+        display: block;
+        width: 100%;
+        height: 58px;
+        object-fit: contain;
+      }
+      /* Le dessin de substitution ne doit jamais passer pour le logo. */
+      .comp-badge {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        padding: 1px 4px;
+        border-radius: 2px;
+        background: rgba(29, 29, 29, 0.72);
+        color: #ffffff;
+        font-size: 9px;
+        letter-spacing: 0.02em;
+      }
+      /* Les pictogrammes héritent de la couleur et de la taille du contrôle. */
+      .icon {
+        width: 14px;
+        height: 14px;
+        vertical-align: middle;
+        pointer-events: none;
+      }
+      .comp-placeholder .icon {
+        width: 20px;
+        height: 20px;
+      }
+      .comp-tool .icon,
+      .comp-remove .icon {
+        width: 12px;
+        height: 12px;
+      }
+      /* `:focus-visible` n'existe qu'à partir de Chrome 86 : le Chromium de
+         CEP ignorerait la règle entière, et le focus resterait invisible. */
+      button:focus,
+      input:focus,
+      select:focus {
+        outline: 2px solid #2680eb;
+        outline-offset: 1px;
+      }
+      /* Les outils flottent au-dessus de l'aperçu : la hauteur des cartes
+         reste identique qu'un composant soit défini ou non, sinon la grille
+         flottante se désaligne dès la première capture. */
+      .comp-tool {
         position: absolute;
         right: 3px;
         bottom: 3px;
@@ -290,11 +335,14 @@
         border-radius: 3px;
         background: #ffffff;
         color: #1d1d1d;
-        font-size: 10px;
         line-height: 1;
         cursor: pointer;
       }
-      .comp-preview.dark .comp-contrast {
+      .comp-tool.left {
+        right: auto;
+        left: 3px;
+      }
+      .comp-preview.dark .comp-tool {
         background: #1d1d1d;
         color: #ffffff;
       }
@@ -315,12 +363,14 @@
         outline: none;
       }
       .comp-meta {
+        /* Deux lignes réservées : le décompte d'objets est la preuve qu'une
+           capture a abouti, le tronquer reviendrait à la masquer. */
+        height: 22px;
         margin: 2px 0 5px;
         overflow: hidden;
         font-size: 9px;
+        line-height: 11px;
         color: #6e6e6e;
-        white-space: nowrap;
-        text-overflow: ellipsis;
       }
       .comp-remove {
         position: absolute;
@@ -648,12 +698,18 @@
           <span class="brand-version">v0.1.0</span>
         </div>
         <div class="header-tools">
-          <button class="icon-button" id="open-settings" title="Réglages">
-            &#9881;
-          </button>
-          <button class="icon-button" id="refresh" title="Re-détecter">
-            &#8635;
-          </button>
+          <button
+            class="icon-button"
+            id="open-settings"
+            title="Réglages"
+            aria-label="Réglages"
+          ></button>
+          <button
+            class="icon-button"
+            id="refresh"
+            title="Re-détecter le document"
+            aria-label="Re-détecter le document"
+          ></button>
           <span class="status-dot" id="status-dot" title="État"></span>
         </div>
       </div>
@@ -999,6 +1055,39 @@
          * Données
          * ---------------------------------------------------------------- */
 
+        /**
+         * Jeu d'icônes du panneau.
+         *
+         * Les glyphes typographiques (U+2699, U+21BB, U+00D7) dépendent des
+         * polices installées et ne portent aucune signification accessible. Ces
+         * pictogrammes sont dessinés au trait sur une grille de 24, épaisseur
+         * 2, et héritent de la couleur du texte par `currentColor`.
+         */
+        function svg(body) {
+          return (
+            '<svg class="icon" viewBox="0 0 24 24" fill="none" ' +
+            'stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
+            'stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+            body +
+            '</svg>'
+          )
+        }
+
+        var ICONS = {
+          settings: svg(
+            '<path d="M20 7h-8" /><path d="M8 7H4" />' +
+              '<circle cx="10" cy="7" r="2.4" />' +
+              '<path d="M20 17h-4" /><path d="M12 17H4" />' +
+              '<circle cx="14" cy="17" r="2.4" />'
+          ),
+          refresh: svg(
+            '<path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v4h-4" />'
+          ),
+          contrast: svg('<circle cx="12" cy="12" r="9" /><path d="M12 3v18" />'),
+          empty: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="2.5" />'),
+          remove: svg('<path d="M6 6l12 12" /><path d="M18 6L6 18" />'),
+        }
+
         var SCHEMES = [
           { id: 'fullColor', label: 'Full Color' },
           { id: 'black', label: 'Black' },
@@ -1046,6 +1135,7 @@
           padding: { mode: 'square', top: 0, right: 0, bottom: 0, left: 0 },
           passes: { print: true, web: true },
           clientName: '',
+          lastError: '',
           destination: null,
           running: null,
           lastResult: null,
@@ -1298,6 +1388,43 @@
           }
         }
 
+        /**
+         * Aperçu d'une carte.
+         *
+         * Une vignette exportée depuis Illustrator est la seule preuve visuelle
+         * qu'un composant contient bien l'artwork attendu. À défaut, le dessin
+         * de substitution est explicitement annoncé comme tel : il ne doit
+         * jamais passer pour le logo.
+         */
+        function componentPreview(component, index) {
+          if (component.thumbnail) {
+            return (
+              '<img class="comp-thumb" alt="Aperçu du composant" src="' +
+              component.thumbnail +
+              '" />'
+            )
+          }
+          if (component.path) {
+            return (
+              '<canvas data-canvas="' +
+              index +
+              '" width="150" height="58"></canvas>' +
+              '<span class="comp-badge">aperçu indisponible</span>'
+            )
+          }
+          return '<div class="comp-placeholder">' + ICONS.empty + '</div>'
+        }
+
+        /** Résumé chiffré d'un composant capturé. */
+        function componentSummary(component) {
+          var parts = [
+            Math.round(component.width) + ' × ' + Math.round(component.height) + ' pt',
+          ]
+          if (component.copied) parts.push(component.copied + ' objets')
+          if (component.refused) parts.push(component.refused + ' refusés')
+          return parts.join(' · ')
+        }
+
         function renderComponents() {
           var html = ''
           for (var i = 0; i < state.components.length; i += 1) {
@@ -1309,16 +1436,26 @@
               '">' +
               '<button class="comp-remove" data-remove="' +
               i +
-              '" title="Supprimer">&times;</button>' +
+              '" title="Supprimer" aria-label="Supprimer le composant">' +
+              ICONS.remove +
+              '</button>' +
               '<div class="comp-preview' +
               (comp.dark ? ' dark' : '') +
               '">' +
+              componentPreview(comp, i) +
               (isSet
-                ? '<canvas data-canvas="' + i + '" width="150" height="58"></canvas>'
-                : '<div class="comp-placeholder">&#9633;</div>') +
-              '<button class="comp-contrast" data-contrast="' +
+                ? '<button class="comp-tool left" data-refresh="' +
+                  i +
+                  '" title="Régénérer la vignette" ' +
+                  'aria-label="Régénérer la vignette">' +
+                  ICONS.refresh +
+                  '</button>'
+                : '') +
+              '<button class="comp-tool" data-contrast="' +
               i +
-              '" title="Fond clair / sombre">&#9681;</button>' +
+              '" title="Fond clair / sombre" aria-label="Fond clair ou sombre">' +
+              ICONS.contrast +
+              '</button>' +
               '</div>' +
               '<input class="comp-name" type="text" data-name="' +
               i +
@@ -1326,9 +1463,7 @@
               escapeHtml(comp.name) +
               '" />' +
               '<p class="comp-meta">' +
-              (isSet
-                ? Math.round(comp.width) + ' × ' + Math.round(comp.height) + ' pt'
-                : 'non défini') +
+              (isSet ? componentSummary(comp) : 'non défini') +
               '</p>' +
               '<button class="button small" data-set="' +
               i +
@@ -1386,7 +1521,9 @@
               escapeHtml(state.customs[j].name) +
               '</span><button class="kill" data-custom="' +
               j +
-              '">&times;</button></div>'
+              '" aria-label="Supprimer">' +
+              ICONS.remove +
+              '</button></div>'
           }
           byId('custom-list').innerHTML =
             customs || '<p class="summary">Aucune couleur personnalisée.</p>'
@@ -1432,7 +1569,9 @@
               scale.resolution +
               ' ppp</span><button class="kill" data-scale="' +
               i +
-              '">&times;</button></div>'
+              '" aria-label="Supprimer">' +
+              ICONS.remove +
+              '</button></div>'
           }
           byId('scale-list').innerHTML =
             html || '<p class="summary">Aucune échelle : pas de matriciel.</p>'
@@ -1448,6 +1587,13 @@
         function renderMessages() {
           var html = ''
           var defined = definedComponents()
+
+          // Une erreur remontée par Illustrator prime sur toute autre
+          // indication : c'est elle qui dit au designer quoi corriger.
+          if (state.lastError) {
+            html +=
+              '<p class="notice error">' + escapeHtml(state.lastError) + '</p>'
+          }
 
           if (defined.length === 0) {
             html +=
@@ -1542,27 +1688,114 @@
             height: 0,
             colorMode: '',
             dark: false,
+            thumbnail: '',
+            copied: 0,
+            refused: 0,
+            bytes: 0,
           }
         }
 
         /** Promeut la sélection Illustrator en composant. */
+        /**
+         * Lit une image locale et la renvoie en URI de données.
+         *
+         * Le panneau CEP ne peut pas afficher un chemin absolu dans un <img> :
+         * l'image est donc relue en Base64 par l'API fichier de CEP.
+         */
+        function readImageAsDataUri(path) {
+          try {
+            if (!path) return ''
+            if (!window.cep || !cep.fs || !cep.fs.readFile) return ''
+            var encoding = cep.encoding ? cep.encoding.Base64 : 'Base64'
+            var read = cep.fs.readFile(path, encoding)
+            if (read.err !== 0 || !read.data) return ''
+            return 'data:image/png;base64,' + read.data
+          } catch (error) {
+            return ''
+          }
+        }
+
+        /** Marque une carte comme occupée pendant un appel à Illustrator. */
+        function setComponentBusy(index, busy) {
+          var button = byId('comp-grid').querySelector
+            ? byId('comp-grid').querySelector('[data-set="' + index + '"]')
+            : null
+          if (!button) return
+          button.disabled = !!busy
+          if (busy) {
+            button.setAttribute('data-label', button.innerHTML)
+            button.innerHTML = 'Capture…'
+          } else if (button.getAttribute('data-label')) {
+            button.innerHTML = button.getAttribute('data-label')
+          }
+        }
+
+        /**
+         * Promeut la sélection Illustrator en composant.
+         *
+         * Le moteur renvoie ce qu'il a réellement fait — objets copiés, objets
+         * refusés, octets écrits — et la carte affiche ce décompte : c'est le
+         * seul moyen pour le designer de constater qu'une capture a abouti.
+         */
         function setComponent(index) {
           var component = state.components[index]
+          setComponentBusy(index, true)
+
           engine.call('lfSetComponent', ['c' + index], function (result) {
+            setComponentBusy(index, false)
+
             if (!result.ok) {
-              byId('messages').innerHTML =
-                '<p class="notice error">' + escapeHtml(result.value) + '</p>'
+              state.lastError = result.value
+              renderMessages()
               return
             }
+
             var fields = result.value.split(String.fromCharCode(31))
             component.path = fields[1] || ''
             component.width = parseFloat(fields[2]) || 0
             component.height = parseFloat(fields[3]) || 0
             component.colorMode = fields[4] || ''
+            component.copied = parseInt(fields[5], 10) || 0
+            component.refused = parseInt(fields[6], 10) || 0
+            component.bytes = parseInt(fields[7], 10) || 0
+            component.thumbnail = readImageAsDataUri(fields[8] || '')
+
+            state.lastError = component.refused
+              ? component.refused +
+                ' objet(s) n ont pas pu être copiés — ils sont probablement ' +
+                'verrouillés dans Illustrator.'
+              : ''
+
             renderComponents()
             renderMessages()
             renderExportButton()
           })
+        }
+
+        /** Régénère la vignette d'un composant depuis son fichier. */
+        function refreshThumbnail(index) {
+          var component = state.components[index]
+          if (!component.path) return
+
+          var target = component.path.replace(/\.ai$/, '') + '-vignette.png'
+          engine.call(
+            'lfRenderThumbnail',
+            [component.path, target],
+            function (result) {
+              if (!result.ok) {
+                state.lastError = result.value
+                component.path = ''
+                component.thumbnail = ''
+              } else {
+                var fields = result.value.split(String.fromCharCode(31))
+                component.thumbnail = readImageAsDataUri(fields[0] || '')
+                component.copied = parseInt(fields[1], 10) || component.copied
+              }
+              renderComponents()
+              renderMessages()
+              renderExportButton()
+            }
+          )
         }
 
         byId('comp-grid').onclick = function (event) {
@@ -1585,6 +1818,14 @@
             var c = state.components[parseInt(contrast, 10)]
             c.dark = !c.dark
             renderComponents()
+            return
+          }
+
+          var refresh = target.getAttribute('data-refresh')
+          if (refresh !== null) {
+            guard('vignette', function () {
+              refreshThumbnail(parseInt(refresh, 10))
+            })
             return
           }
 
@@ -2006,6 +2247,8 @@
         }
 
         guard('démarrage', function () {
+          byId('open-settings').innerHTML = ICONS.settings
+          byId('refresh').innerHTML = ICONS.refresh
           restoreSchemes()
           state.components = [
             newComponent('Logo'),

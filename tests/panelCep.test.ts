@@ -70,6 +70,11 @@ describe('compatibilité Chromium 61', () => {
     expect(STYLE).not.toMatch(/[\s;{]gap:/)
     expect(STYLE).not.toMatch(/[\s;{]inset:/)
     expect(STYLE).not.toMatch(/rgb\(\s*\d+\s+\d+\s+\d+/)
+    // `:focus-visible` demande Chrome 86, `accent-color` Chrome 93 : un
+    // sélecteur inconnu fait ignorer la règle entière, en silence.
+    expect(STYLE).not.toMatch(/:focus-visible/)
+    expect(STYLE).not.toMatch(/accent-color/)
+    expect(STYLE).not.toMatch(/aspect-ratio\s*:/)
   })
 
   it('ancre la mise en page en positionnement absolu', () => {
@@ -166,6 +171,31 @@ describe('éléments attendus par le script', () => {
   })
 })
 
+describe('iconographie', () => {
+  it("n'utilise aucun glyphe pictographique comme icône", () => {
+    // Un glyphe dépend des polices installées et ne porte aucune
+    // signification accessible : les icônes sont des SVG au trait.
+    for (const glyph of ['&#9881;', '&#8635;', '&#9681;', '&#9633;', '&times;']) {
+      expect(HTML, glyph).not.toContain(glyph)
+    }
+    expect(HTML).not.toMatch(/[\u2190-\u2BFF\u{1F300}-\u{1FAFF}]/u)
+  })
+
+  it('dessine les icônes en SVG héritant de la couleur du texte', () => {
+    expect(SCRIPT).toContain('var ICONS = {')
+    expect(SCRIPT).toContain('stroke="currentColor"')
+    expect(SCRIPT).toContain('aria-hidden="true"')
+  })
+
+  it('donne un nom accessible aux boutons purement iconographiques', () => {
+    const iconButtons = HTML.match(/<button[^>]*class="icon-button"[^>]*>/g) ?? []
+    expect(iconButtons.length).toBeGreaterThan(0)
+    for (const button of iconButtons) {
+      expect(button, button).toContain('aria-label=')
+    }
+  })
+})
+
 describe('flux Logo Package Express', () => {
   it('affecte un composant depuis la sélection', () => {
     expect(SCRIPT).toContain("'lfSetComponent'")
@@ -201,6 +231,41 @@ describe('flux Logo Package Express', () => {
     expect(HTML).toContain('Package terminé')
     expect(HTML).toContain('Ouvrir le dossier')
     expect(HTML).toContain('Réinitialiser')
+  })
+})
+
+describe('Set Component', () => {
+  it('affiche une vignette exportée par Illustrator, pas un dessin', () => {
+    // La vignette est la seule preuve visuelle qu'un composant contient bien
+    // l'artwork attendu.
+    expect(SCRIPT).toContain("'lfRenderThumbnail'")
+    expect(SCRIPT).toContain('data:image/png;base64,')
+    expect(SCRIPT).toContain('class="comp-thumb"')
+  })
+
+  it('annonce explicitement un aperçu de substitution', () => {
+    expect(SCRIPT).toContain('aperçu indisponible')
+  })
+
+  it('relit la vignette par l API fichier de CEP', () => {
+    expect(SCRIPT).toContain('cep.fs.readFile')
+    expect(SCRIPT).toContain('cep.encoding')
+  })
+
+  it('affiche le décompte réel des objets capturés', () => {
+    expect(SCRIPT).toContain('function componentSummary(')
+    expect(SCRIPT).toContain("' objets'")
+    expect(SCRIPT).toContain("' refusés'")
+  })
+
+  it('remonte les erreurs et les refus au lieu de les avaler', () => {
+    expect(SCRIPT).toContain('state.lastError')
+    expect(SCRIPT).toMatch(/notice error/)
+  })
+
+  it('désactive la carte pendant la capture', () => {
+    expect(SCRIPT).toContain('function setComponentBusy(')
+    expect(SCRIPT).toContain("'Capture…'")
   })
 })
 

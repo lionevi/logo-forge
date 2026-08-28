@@ -25,6 +25,9 @@ var LogoForge = (function () {
    */
   var UNIT = String.fromCharCode(31)
 
+  /** Largeur en pixels des vignettes de composant affichées par le panneau. */
+  var THUMBNAIL_WIDTH = 320
+
   /** Marque un succès, avec sa charge utile éventuelle. */
   function ok(payload) {
     return 'OK' + SEP + (payload === undefined ? '' : String(payload))
@@ -40,6 +43,22 @@ var LogoForge = (function () {
     var text = e && e.message ? e.message : String(e)
     if (e && e.line) text += ' (ligne ' + e.line + ')'
     return text
+  }
+
+  /**
+   * Affecte une propriété d'options seulement si l'hôte la déclare.
+   *
+   * Les jeux d'options varient d'une version d'Illustrator à l'autre : une
+   * affectation refusée ne doit pas faire échouer tout un export.
+   */
+  function assignIfSupported(target, name, value) {
+    try {
+      if (!(name in target)) return false
+      target[name] = value
+      return true
+    } catch (e) {
+      return false
+    }
   }
 
   /* ---------------------------------------------------------------------- *
@@ -711,7 +730,7 @@ var LogoForge = (function () {
    * ainsi son propre cadrage, indépendant de la mise en page du fichier source.
    * ---------------------------------------------------------------------- */
 
-  /** Union des boîtes englobantes visibles d'une sélection. */
+  /** Union des boîtes englobantes visibles d'une liste d'objets. */
   function selectionBounds(items) {
     var left = null
     var top = null
@@ -730,23 +749,173 @@ var LogoForge = (function () {
   }
 
   /**
+   * Indique si un objet peut être cadré, donc copié dans un composant.
+   *
+   * En mode édition de texte, `selection` contient des TextRange, dépourvus de
+   * boîte englobante : les écarter ici donne un message utile plutôt qu'une
+   * exception opaque.
+   */
+  function isPlaceable(item) {
+    try {
+      var b = item.visibleBounds
+      return !!b && b.length === 4
+    } catch (e) {
+      return false
+    }
+  }
+
+  /**
+   * Décrit la sélection courante sans rien modifier.
+   *
+   * Sonde de diagnostic : c'est elle qui permet de savoir, depuis le panneau,
+   * ce qu'Illustrator considère réellement comme sélectionné.
+   *
+   * Charge utile : total, cadrables, masqués, verrouillés, puis les types
+   * rencontrés, séparés par des virgules.
+   */
+  function describeSelection() {
+    try {
+      if (app.documents.length === 0) return err('aucun document ouvert')
+      var selection = app.activeDocument.selection
+      if (!selection) return ok([0, 0, 0, 0, ''].join(UNIT))
+
+      var placeable = 0
+      var hidden = 0
+      var locked = 0
+      var types = []
+
+      for (var i = 0; i < selection.length; i += 1) {
+        var item = selection[i]
+        if (isPlaceable(item)) placeable += 1
+
+        var kind = 'inconnu'
+        try {
+          kind = String(item.typename)
+        } catch (typeError) {
+          /* objet sans typename : on le compte sous « inconnu » */
+        }
+        var seen = false
+        for (var t = 0; t < types.length; t += 1) {
+          if (types[t] === kind) seen = true
+        }
+        if (!seen) types.push(kind)
+
+        try {
+          if (item.hidden) hidden += 1
+        } catch (hiddenError) {
+          /* propriété absente sur certains types */
+        }
+        try {
+          if (item.locked) locked += 1
+        } catch (lockedError) {
+          /* idem */
+        }
+      }
+
+      return ok(
+        [selection.length, placeable, hidden, locked, types.join(',')].join(UNIT)
+      )
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
+  /**
+   * Rend une copie visible et modifiable.
+   *
+   * Un objet masqué dupliqué reste masqué : le composant contiendrait alors
+   * des objets bien réels et un plan de travail visuellement vide. On ne
+   * touche jamais à l'original, uniquement à la copie.
+   */
+  function reveal(item) {
+    assignIfSupported(item, 'hidden', false)
+    assignIfSupported(item, 'locked', false)
+  }
+
+  /**
+   * Écrit une vignette PNG du premier plan de travail d'un document.
+   *
+   * La miniature du panneau doit montrer l'artwork réel : c'est le seul
+   * contrôle visuel dont dispose le designer pour constater qu'un composant a
+   * bien été capturé.
+   */
+  function writeThumbnail(doc, outputPath, targetWidth) {
+    var rect = doc.artboards[0].artboardRect
+    var boardWidth = Math.abs(rect[2] - rect[0])
+    if (!boardWidth) throw new Error('plan de travail de largeur nulle')
+
+    var scale = (parseFloat(targetWidth) / boardWidth) * 100
+    if (!isFinite(scale) || scale <= 0) scale = 100
+    if (scale > 7761) scale = 7761
+
+    var options = new ExportOptionsPNG24()
+    assignIfSupported(options, 'antiAliasing', true)
+    assignIfSupported(options, 'transparency', true)
+    assignIfSupported(options, 'artBoardClipping', true)
+    assignIfSupported(options, 'saveMultipleArtboards', false)
+    assignIfSupported(options, 'horizontalScale', scale)
+    assignIfSupported(options, 'verticalScale', scale)
+
+    doc.exportFile(new File(outputPath), ExportType.PNG24, options)
+
+    var produced = new File(outputPath)
+    if (!produced.exists) throw new Error('vignette non produite')
+    if (!produced.length) throw new Error('vignette vide')
+    return produced.fsName
+  }
+
+  /** Chemin temporaire dérivé d'un identifiant de composant. */
+  function componentTempPath(componentId, extension) {
+    return (
+      Folder.temp.fsName +
+      '/logo-forge-component-' +
+      String(componentId).replace(/[^a-zA-Z0-9]/g, '') +
+      '-' +
+      new Date().getTime() +
+      '.' +
+      extension
+    )
+  }
+
+  /**
    * Promeut la sélection courante en document autonome.
    *
+   * Chaque étape est vérifiée et comptée : un composant n'est déclaré défini
+   * que si des objets ont réellement été copiés, que le plan de travail les
+   * encadre et que le fichier écrit n'est pas vide.
+   *
    * @param componentId identifiant du composant, qui nomme le fichier temporaire.
-   * @returns nom, chemin, largeur, hauteur et mode colorimétrique.
+   * @returns nom, chemin, largeur, hauteur, mode, copiés, refusés, octets,
+   *   chemin de la vignette.
    */
   function setComponent(componentId) {
     var created = null
+    var source = null
     try {
       if (app.documents.length === 0) return err('aucun document ouvert')
 
-      var source = app.activeDocument
+      source = app.activeDocument
       var selection = source.selection
       if (!selection || selection.length === 0) {
-        return err('selectionnez un objet dans Illustrator avant de definir le composant')
+        return err(
+          'selectionnez un objet dans Illustrator avant de definir le composant'
+        )
       }
 
-      var bounds = selectionBounds(selection)
+      // Les TextRange et autres objets sans boîte englobante sont écartés ici :
+      // les garder ferait lever le calcul de cadrage sans rien expliquer.
+      var items = []
+      for (var s = 0; s < selection.length; s += 1) {
+        if (isPlaceable(selection[s])) items.push(selection[s])
+      }
+      if (items.length === 0) {
+        return err(
+          'la selection ne contient aucun objet cadrable — sortez du mode ' +
+            'edition de texte, puis selectionnez l objet entier'
+        )
+      }
+
+      var bounds = selectionBounds(items)
       var width = Math.abs(bounds[2] - bounds[0])
       var height = Math.abs(bounds[1] - bounds[3])
       if (!width || !height) return err('selection de taille nulle')
@@ -755,36 +924,71 @@ var LogoForge = (function () {
       // conversion à ce stade fausserait toutes les couleurs en aval.
       created = app.documents.add(source.documentColorSpace, width, height)
       var layer = created.layers[0]
+      assignIfSupported(layer, 'locked', false)
+      assignIfSupported(layer, 'visible', true)
 
-      // Parcours à rebours : dupliquer en tête décale les index restants.
-      for (var i = selection.length - 1; i >= 0; i -= 1) {
-        selection[i].duplicate(layer, ElementPlacement.PLACEATEND)
+      // `documents.add` a rendu le nouveau document actif. Plusieurs versions
+      // d'Illustrator exigent que le document source le soit pour dupliquer
+      // depuis lui : on le rétablit avant la copie.
+      app.activeDocument = source
+
+      // Parcours dans l'ordre de la sélection : PLACEATEND ajoute en fin de
+      // calque, donc au-dessous. Parcourir à rebours inverserait la pile et
+      // ferait passer un aplat de fond devant le logo.
+      var copies = []
+      var refusals = []
+      for (var i = 0; i < items.length; i += 1) {
+        try {
+          copies.push(items[i].duplicate(layer, ElementPlacement.PLACEATEND))
+        } catch (dupError) {
+          if (refusals.length < 3) refusals.push(describe(dupError))
+        }
       }
 
-      if (created.pageItems.length === 0) {
-        return err('aucun objet n a pu etre copie')
+      var refused = items.length - copies.length
+      if (copies.length === 0) {
+        return err(
+          'aucun objet n a pu etre copie' +
+            (refusals.length ? ' : ' + refusals.join(' ; ') : '')
+        )
       }
+
+      for (var r = 0; r < copies.length; r += 1) reveal(copies[r])
 
       // Les doublons gardent leurs coordonnées d'origine : on cadre le plan de
       // travail sur elles plutôt que de déplacer l'artwork.
-      var copied = []
-      for (var j = 0; j < created.pageItems.length; j += 1) {
-        copied.push(created.pageItems[j])
+      var frame = selectionBounds(copies)
+      var frameWidth = Math.abs(frame[2] - frame[0])
+      var frameHeight = Math.abs(frame[1] - frame[3])
+      if (!frameWidth || !frameHeight) {
+        return err('les objets copies n ont aucune etendue visible')
       }
-      created.artboards[0].artboardRect = selectionBounds(copied)
+      created.artboards[0].artboardRect = frame
 
-      var stamp = new Date().getTime()
-      var temp = new File(
-        Folder.temp.fsName +
-          '/logo-forge-component-' +
-          String(componentId).replace(/[^a-zA-Z0-9]/g, '') +
-          '-' +
-          stamp +
-          '.ai'
-      )
+      app.activeDocument = created
+
+      var thumbnail = ''
+      try {
+        thumbnail = writeThumbnail(
+          created,
+          componentTempPath(componentId, 'png'),
+          THUMBNAIL_WIDTH
+        )
+      } catch (thumbError) {
+        // Une vignette manquante n'invalide pas le composant : le panneau
+        // affiche alors un aperçu explicitement marqué comme indisponible.
+        thumbnail = ''
+      }
+
+      var temp = new File(componentTempPath(componentId, 'ai'))
       var saveOptions = new IllustratorSaveOptions()
       saveOptions.pdfCompatible = true
       created.saveAs(temp, saveOptions)
+
+      var written = new File(temp.fsName)
+      if (!written.exists) return err('fichier du composant non ecrit')
+      var bytes = written.length
+      if (!bytes) return err('fichier du composant vide')
 
       var colorMode =
         created.documentColorSpace === DocumentColorSpace.CMYK ? 'cmyk' : 'rgb'
@@ -796,11 +1000,70 @@ var LogoForge = (function () {
       // Rend la main au document de l'utilisateur, jamais laissé en arrière-plan.
       app.activeDocument = source
 
-      return ok([name, temp.fsName, width, height, colorMode].join(UNIT))
+      return ok(
+        [
+          name,
+          written.fsName,
+          frameWidth,
+          frameHeight,
+          colorMode,
+          copies.length,
+          refused,
+          bytes,
+          thumbnail,
+        ].join(UNIT)
+      )
     } catch (e) {
       if (created) {
         try {
           created.close(SaveOptions.DONOTSAVECHANGES)
+        } catch (closeError) {
+          /* déjà refermé */
+        }
+      }
+      if (source) {
+        try {
+          app.activeDocument = source
+        } catch (restoreError) {
+          /* le document source a pu être fermé entre-temps */
+        }
+      }
+      return err(describe(e))
+    }
+  }
+
+  /**
+   * Régénère la vignette d'un composant depuis son fichier.
+   *
+   * Sert au bouton de rafraîchissement d'une carte, et vérifie au passage que
+   * le fichier du composant contient toujours quelque chose.
+   */
+  function renderComponentThumbnail(path, outputPath) {
+    var opened = null
+    var previous = null
+    try {
+      var file = new File(path)
+      if (!file.exists) return err('composant introuvable : ' + path)
+
+      if (app.documents.length > 0) previous = app.activeDocument
+      opened = app.open(file)
+
+      if (opened.pageItems.length === 0) {
+        return err('le fichier du composant ne contient aucun objet')
+      }
+
+      var thumbnail = writeThumbnail(opened, outputPath, THUMBNAIL_WIDTH)
+      var count = opened.pageItems.length
+
+      opened.close(SaveOptions.DONOTSAVECHANGES)
+      opened = null
+      if (previous) app.activeDocument = previous
+
+      return ok([thumbnail, count].join(UNIT))
+    } catch (e) {
+      if (opened) {
+        try {
+          opened.close(SaveOptions.DONOTSAVECHANGES)
         } catch (closeError) {
           /* déjà refermé */
         }
@@ -877,7 +1140,9 @@ var LogoForge = (function () {
     endSession: endSession,
     resetSession: resetSession,
     applyColorScheme: applyColorScheme,
+    describeSelection: describeSelection,
     setComponent: setComponent,
+    renderComponentThumbnail: renderComponentThumbnail,
     openComponent: openComponent,
     setDocumentColorMode: setDocumentColorMode,
     removeComponentFile: removeComponentFile,
@@ -931,6 +1196,14 @@ function lfResetSession() {
 function lfApplyColorScheme(scheme, hex, threshold) {
   return LogoForge.applyColorScheme(scheme, hex, threshold)
 }
+function lfDescribeSelection() {
+  return LogoForge.describeSelection()
+}
+
+function lfRenderThumbnail(path, outputPath) {
+  return LogoForge.renderComponentThumbnail(path, outputPath)
+}
+
 function lfSetComponent(componentId) {
   return LogoForge.setComponent(componentId)
 }
