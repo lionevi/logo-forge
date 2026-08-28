@@ -88,7 +88,6 @@ describe('compatibilité Chromium 61', () => {
 describe('éléments attendus par le script', () => {
   const IDS = [
     'status-dot',
-    'status-label',
     'document-card',
     'refresh',
     'tabs',
@@ -99,7 +98,8 @@ describe('éléments attendus par le script', () => {
     'scheme-list',
     'custom-list',
     'add-custom',
-    'format-list',
+    'print-formats',
+    'web-formats',
     'scale-list',
     'add-scale',
     'separator',
@@ -117,6 +117,18 @@ describe('éléments attendus par le script', () => {
     'progress-title',
     'export-veil',
     'progress-veil',
+    'open-settings',
+    'settings-veil',
+    'threshold',
+    'remember-schemes',
+    'done-panel',
+    'done-count',
+    'open-folder',
+    'reset-all',
+    'invert-before',
+    'invert-after',
+    'pass-print',
+    'pass-web',
   ]
 
   it.each(IDS)('déclare #%s dans le balisage', (id) => {
@@ -135,26 +147,60 @@ describe('éléments attendus par le script', () => {
     }
   })
 
-  it('propose les six composants par défaut', () => {
-    for (const name of [
-      'Logo',
-      'Logo Mark',
-      'Logotype',
-      'Stacked Logo',
-      'Vertical Logo',
-      'Centered Logo',
-    ]) {
-      expect(SCRIPT, name).toContain(`'${name}'`)
+  it('propose quatre composants par défaut', () => {
+    for (const name of ['Logo', 'Logo Mark', 'Logotype', 'Stacked Logo']) {
+      expect(SCRIPT, name).toContain(`newComponent('${name}')`)
     }
   })
 
-  it('déclare les trois onglets et les quatre sous-onglets de réglages', () => {
-    for (const tab of ['components', 'colors', 'settings']) {
+  it('déclare les deux onglets et les quatre sous-onglets de réglages', () => {
+    // Les réglages sont une fenêtre modale ouverte par l'engrenage, pas un
+    // onglet : ils ne doivent pas voler la place aux composants.
+    for (const tab of ['components', 'colors']) {
       expect(HTML, tab).toContain(`data-tab="${tab}"`)
     }
+    expect(HTML).not.toContain('data-tab="settings"')
     for (const sub of ['files', 'names', 'scales', 'padding']) {
       expect(HTML, sub).toContain(`data-sub="${sub}"`)
     }
+  })
+})
+
+describe('flux Logo Package Express', () => {
+  it('affecte un composant depuis la sélection', () => {
+    expect(SCRIPT).toContain("'lfSetComponent'")
+  })
+
+  it('transmet le seuil d inversion au moteur', () => {
+    expect(SCRIPT).toMatch(/threshold: state\.threshold/)
+  })
+
+  it('prévisualise les couleurs sans passer par Illustrator', () => {
+    expect(SCRIPT).toContain('function previewColor(')
+    expect(SCRIPT).toContain("getContext('2d')")
+  })
+
+  it('laisse le seuil agir sur la prévisualisation inversée', () => {
+    // Les deux branches doivent différer : un seuil sans effet visible
+    // rendrait le curseur mensonger.
+    const block = SCRIPT.slice(
+      SCRIPT.indexOf("if (schemeId === 'inverted')"),
+      SCRIPT.indexOf("if (schemeId === 'inverted')") + 400,
+    )
+    expect(block).toMatch(/luminance\(rgb\) >= \(threshold \/ 100\) \* 255/)
+    expect(block).toContain('return hex')
+    expect(block).toContain('255 - rgb[0]')
+  })
+
+  it('propose les deux passes d export', () => {
+    expect(HTML).toContain('id="pass-print"')
+    expect(HTML).toContain('id="pass-web"')
+  })
+
+  it('affiche un écran de fin actionnable', () => {
+    expect(HTML).toContain('Package terminé')
+    expect(HTML).toContain('Ouvrir le dossier')
+    expect(HTML).toContain('Réinitialiser')
   })
 })
 
@@ -163,8 +209,11 @@ describe('pont Illustrator', () => {
     expect(SCRIPT).toContain('__adobe_cep__')
   })
 
-  it('fournit un repli quand CSInterface est absent', () => {
-    expect(SCRIPT).toMatch(/typeof CSInterface === 'undefined'/)
+  it("n'embarque aucune bibliothèque tierce", () => {
+    // Charger CSInterface sans le livrer ne donnerait qu'un 404 rouge dans la
+    // console de l'extension : __adobe_cep__ suffit.
+    expect(HTML).not.toContain('CSInterface.js')
+    expect(HTML).not.toMatch(/<script src="(?!\.\/js\/export-engine\.js)/)
   })
 
   it('arrête la relecture après trois échecs consécutifs', () => {

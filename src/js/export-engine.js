@@ -25,14 +25,27 @@ var LogoForgeEngine = (function () {
    */
   var UNIT = String.fromCharCode(31)
 
-  /** Dossiers du pack, dans l'ordre où ils apparaissent à la livraison. */
+  /**
+   * Racines du pack.
+   *
+   * L'export se fait en deux passes, parce que le mode colorimétrique d'un
+   * document est global : basculer entre CMJN et RVB à chaque fichier serait
+   * lent et instable. Chaque passe a donc sa racine.
+   */
   var FOLDERS = {
-    sources: '01_Sources',
-    web: '02_Web',
-    print: '03_Print',
-    favicon: '04_Favicon',
-    report: '05_Rapport',
+    print: 'Pour_Impression',
+    web: 'Pour_Web',
+    report: 'Rapport',
   }
+
+  /** Formats de la passe print, produits en CMJN à 300 ppp. */
+  var PRINT_FORMATS = ['ai', 'pdf', 'eps', 'jpeg']
+
+  /** Formats de la passe web, produits en RVB à 72 ppp. */
+  var WEB_FORMATS = ['svg', 'png', 'jpeg', 'ai']
+
+  /** Résolution des fichiers de la passe print. */
+  var PRINT_RESOLUTION = 300
 
   /** Tailles de favicon attendues par les navigateurs et les plateformes. */
   var FAVICON_SIZES = [16, 32, 128, 180, 192]
@@ -172,6 +185,15 @@ var LogoForgeEngine = (function () {
     return out || 'Logo'
   }
 
+  /** Assemble un chemin relatif interne au pack, toujours en `/`. */
+  function joinFolder(parts) {
+    var kept = []
+    for (var i = 0; i < parts.length; i += 1) {
+      if (parts[i]) kept.push(String(parts[i]))
+    }
+    return kept.join('/')
+  }
+
   /** Assemble un chemin natif, en déduisant le séparateur de la racine. */
   function joinPath(root, rest) {
     var sep = String(root).indexOf('\\') !== -1 ? '\\' : '/'
@@ -219,125 +241,166 @@ var LogoForgeEngine = (function () {
    * ---------------------------------------------------------------------- */
 
   /**
+   * Compose le nom d'un fichier de livraison.
+   *
+   * Convention : `{Client}_{Composant}_{Couleur}_{Taille}.{ext}`. La taille
+   * n'apparaît que pour les formats matriciels, où elle distingue seule deux
+   * fichiers par ailleurs identiques.
+   */
+  function deliveryName(clientName, component, scheme, size, extension, separator) {
+    return buildFileName(
+      [
+        pascal(clientName),
+        pascal(component.name),
+        schemeLabel(scheme),
+        size ? size + 'px' : '',
+      ],
+      separator || '_',
+      extension
+    )
+  }
+
+  /**
    * Calcule la liste des fichiers à produire.
    *
    * Le plan est établi avant toute écriture : il donne le total exact pour la
    * barre de progression, et permet d'afficher le pack avant de le lancer.
    *
+   * Les tâches sortent groupées par passe, puis par composant, puis par
+   * couleur. Cet ordre n'est pas cosmétique : il minimise les opérations
+   * coûteuses — une bascule de mode colorimétrique par passe, une ouverture de
+   * document par composant, une recoloration par couleur.
+   *
    * @returns un tableau de tâches
-   *   `{kind, scheme, component, format, folder, fileName, width, resolution}`.
+   *   `{pass, kind, scheme, component, format, folder, fileName, width, resolution}`.
    */
   function planExport(config) {
     var tasks = []
-    var separator = config.separator || '-'
-    var i
-    var j
-    var k
+    var separator = config.separator || '_'
+    var passes = []
 
-    for (i = 0; i < config.colorSchemes.length; i += 1) {
-      var scheme = config.colorSchemes[i]
-      var label = schemeLabel(scheme)
+    if (config.passes && config.passes.print !== false) passes.push('print')
+    if (config.passes && config.passes.web !== false) passes.push('web')
+    if (passes.length === 0) passes = ['print', 'web']
 
-      for (j = 0; j < config.components.length; j += 1) {
-        var component = config.components[j]
-        var base = pascal(component.name)
+    function scalesFor(pass) {
+      var list = []
+      for (var i = 0; i < config.scales.length; i += 1) {
+        if (config.scales[i].type === pass) list.push(config.scales[i])
+      }
+      // Une passe sans échelle déclarée garde sa résolution de référence.
+      if (list.length === 0) {
+        list.push({
+          type: pass,
+          width: 0,
+          resolution: pass === 'print' ? PRINT_RESOLUTION : 72,
+        })
+      }
+      return list
+    }
 
-        // Sources : le document natif, seulement en pleine couleur — un .ai
-        // recoloré ne serait plus une source.
-        if (config.formats.ai && scheme.id === 'fullColor') {
-          tasks.push({
-            kind: 'ai',
-            scheme: scheme,
-            component: component,
-            format: 'ai',
-            folder: FOLDERS.sources,
-            fileName: buildFileName([base], separator, 'ai'),
-          })
-        }
+    function formatsFor(pass) {
+      var allowed = pass === 'print' ? PRINT_FORMATS : WEB_FORMATS
+      var chosen = config.formats[pass] || {}
+      var list = []
+      for (var i = 0; i < allowed.length; i += 1) {
+        if (chosen[allowed[i]]) list.push(allowed[i])
+      }
+      return list
+    }
 
-        if (config.formats.svg) {
-          tasks.push({
-            kind: 'svg',
-            scheme: scheme,
-            component: component,
-            format: 'svg',
-            folder: FOLDERS.web + '/SVG',
-            fileName: buildFileName([base, label], separator, 'svg'),
-          })
-        }
+    for (var p = 0; p < passes.length; p += 1) {
+      var pass = passes[p]
+      var formats = formatsFor(pass)
+      var scales = scalesFor(pass)
+      if (formats.length === 0) continue
 
-        if (config.formats.png) {
-          for (k = 0; k < config.scales.length; k += 1) {
-            var scale = config.scales[k]
+      for (var c = 0; c < config.components.length; c += 1) {
+        var component = config.components[c]
+        if (!component.path) continue
+
+        for (var s = 0; s < config.colorSchemes.length; s += 1) {
+          var scheme = config.colorSchemes[s]
+          var folder = joinFolder([
+            FOLDERS[pass],
+            pascal(component.name),
+            schemeLabel(scheme),
+          ])
+
+          for (var f = 0; f < formats.length; f += 1) {
+            var format = formats[f]
+
+            // Le fichier source natif n'a de sens qu'en pleine couleur : un .ai
+            // recoloré ne serait plus une source.
+            if (format === 'ai' && scheme.id !== 'fullColor') continue
+
+            if (format === 'png' || format === 'jpeg') {
+              for (var k = 0; k < scales.length; k += 1) {
+                tasks.push({
+                  pass: pass,
+                  kind: format,
+                  scheme: scheme,
+                  component: component,
+                  format: format === 'jpeg' ? 'jpg' : format,
+                  folder: folder,
+                  fileName: deliveryName(
+                    config.clientName,
+                    component,
+                    scheme,
+                    scales[k].width,
+                    format === 'jpeg' ? 'jpg' : format,
+                    separator
+                  ),
+                  width: scales[k].width,
+                  resolution: scales[k].resolution,
+                })
+              }
+              continue
+            }
+
             tasks.push({
-              kind: 'png',
+              pass: pass,
+              kind: format,
               scheme: scheme,
               component: component,
-              format: 'png',
-              folder:
-                (scale.type === 'print' ? FOLDERS.print : FOLDERS.web) + '/PNG',
-              fileName: buildFileName(
-                [base, label, scale.label],
-                separator,
-                'png'
+              format: format,
+              folder: folder,
+              fileName: deliveryName(
+                config.clientName,
+                component,
+                scheme,
+                0,
+                format,
+                separator
               ),
-              width: scale.width,
-              resolution: scale.resolution,
+              resolution: pass === 'print' ? PRINT_RESOLUTION : 72,
             })
           }
         }
+      }
+    }
 
-        if (config.formats.pdf) {
+    // Favicons : le premier composant, première couleur, aux tailles attendues
+    // par les navigateurs. Ils vivent dans la passe web.
+    if (config.favicon && config.components.length > 0 && passes.indexOf('web') !== -1) {
+      var first = config.components[0]
+      if (first.path) {
+        for (var v = 0; v < FAVICON_SIZES.length; v += 1) {
           tasks.push({
-            kind: 'pdf',
-            scheme: scheme,
-            component: component,
-            format: 'pdf',
-            folder: FOLDERS.print + '/PDF',
-            fileName: buildFileName([base, label], separator, 'pdf'),
-          })
-        }
-
-        if (config.formats.eps) {
-          tasks.push({
-            kind: 'eps',
-            scheme: scheme,
-            component: component,
-            format: 'eps',
-            folder: FOLDERS.print + '/EPS',
-            fileName: buildFileName([base, label], separator, 'eps'),
+            pass: 'web',
+            kind: 'png',
+            scheme: config.colorSchemes[0],
+            component: first,
+            format: 'png',
+            folder: joinFolder([FOLDERS.web, 'Favicon']),
+            fileName:
+              'favicon' + separator + FAVICON_SIZES[v] + 'px.png',
+            width: FAVICON_SIZES[v],
+            resolution: 72,
           })
         }
       }
     }
-
-    // Favicons : le premier composant, à la première déclinaison, aux tailles
-    // attendues par les navigateurs.
-    if (config.favicon && config.components.length > 0) {
-      var faviconScheme = config.colorSchemes[0]
-      for (i = 0; i < FAVICON_SIZES.length; i += 1) {
-        tasks.push({
-          kind: 'png',
-          scheme: faviconScheme,
-          component: config.components[0],
-          format: 'png',
-          folder: FOLDERS.favicon,
-          fileName: 'favicon' + separator + FAVICON_SIZES[i] + 'px.png',
-          width: FAVICON_SIZES[i],
-          resolution: 72,
-        })
-      }
-    }
-
-    // Regroupe par déclinaison : une seule recoloration par schéma, là où
-    // l'ordre inverse en imposerait une par fichier.
-    tasks.sort(function (a, b) {
-      var left = String(a.scheme.id) + ' ' + a.component.name
-      var right = String(b.scheme.id) + ' ' + b.component.name
-      if (left < right) return -1
-      if (left > right) return 1
-      return 0
-    })
 
     return tasks
   }
@@ -530,15 +593,17 @@ var LogoForgeEngine = (function () {
 
   /** Lance l'exportation d'une tâche unique. */
   function exportTask(root, task, done) {
-    var path = joinPath(root, [task.folder, task.fileName])
-    var index = task.component.artboardIndex
+    var path = joinPath(root, task.folder.split('/').concat([task.fileName]))
+    // Chaque composant est un document autonome : son unique plan de travail
+    // porte l'index 0.
+    var index = 0
 
     if (task.kind === 'png') {
-      call(
-        'lfExportPNG',
-        [index, path, task.width || 0, task.resolution || 72],
-        done
-      )
+      call('lfExportPNG', [index, path, task.width || 0, task.resolution || 72], done)
+      return
+    }
+    if (task.kind === 'jpeg') {
+      call('lfExportJPEG', [index, path, task.width || 0, task.resolution || 72], done)
       return
     }
     if (task.kind === 'svg') {
@@ -561,12 +626,17 @@ var LogoForgeEngine = (function () {
   }
 
   /**
-   * Exécute un export complet.
+   * Exécute un export complet, en deux passes.
+   *
+   * L'ordre des tâches — passe, composant, couleur — permet de n'ouvrir un
+   * document et de ne basculer un mode colorimétrique que lorsque c'est
+   * réellement nécessaire.
    *
    * @param config
-   *   `{clientName, outputFolder, components:[{name, artboardIndex}],
-   *     colorSchemes:[{id, name, hex}], formats:{svg,png,pdf,eps,ai},
-   *     scales:[{type, label, width, resolution}], favicon, separator}`
+   *   `{clientName, outputFolder, components:[{name, path}],
+   *     colorSchemes:[{id, name, hex}], formats:{print:{}, web:{}},
+   *     scales:[{type, width, resolution}], passes:{print, web}, favicon,
+   *     separator, padding}`
    * @param handlers `{onProgress(done,total,label), onDone(result), onError(msg)}`
    * @returns un objet portant `cancel()`.
    */
@@ -578,20 +648,24 @@ var LogoForgeEngine = (function () {
     var written = []
     var failures = []
     var cancelled = false
-    var currentScheme = null
-    var documentName = ''
     var index = 0
 
+    /** Contexte courant, pour n'agir que sur les changements. */
+    var current = { pass: null, component: null, scheme: null }
+
+    function fail(task, message) {
+      failures.push({ task: task, message: message })
+      setTimeout(step, 0)
+    }
+
     function finish() {
-      // La session est refermée quoi qu'il arrive : un document temporaire
-      // resté ouvert dans Illustrator serait plus gênant qu'un échec.
       call('lfEndSession', [], function () {
         var result = {
           written: written,
           failures: failures,
           cancelled: cancelled,
           durationMs: new Date().getTime() - startedAt,
-          documentName: documentName,
+          documentName: config.sourceName || '',
           root: root,
           total: tasks.length,
         }
@@ -620,50 +694,6 @@ var LogoForgeEngine = (function () {
       })
     }
 
-    /**
-     * Élargit les plans de travail de la marge demandée.
-     *
-     * La marge est réappliquée après chaque remise à zéro de la session : la
-     * copie repart du fichier d'origine, donc sans marge.
-     */
-    function applyPadding(task, done) {
-      var padding = config.padding
-      if (!padding) {
-        done()
-        return
-      }
-      if (!padding.top && !padding.right && !padding.bottom && !padding.left) {
-        done()
-        return
-      }
-
-      var remaining = config.components.length
-      if (remaining === 0) {
-        done()
-        return
-      }
-
-      for (var i = 0; i < config.components.length; i += 1) {
-        call(
-          'lfSetPadding',
-          [
-            config.components[i].artboardIndex,
-            padding.top,
-            padding.right,
-            padding.bottom,
-            padding.left,
-          ],
-          function (result) {
-            if (!result.ok) {
-              failures.push({ task: task, message: 'marge : ' + result.value })
-            }
-            remaining -= 1
-            if (remaining === 0) done()
-          }
-        )
-      }
-    }
-
     function runTask(task) {
       exportTask(root, task, function (result) {
         if (result.ok) written.push(task)
@@ -671,6 +701,78 @@ var LogoForgeEngine = (function () {
         // `setTimeout` rend la main au navigateur : sans lui, la barre de
         // progression resterait figée pendant tout le lot.
         setTimeout(step, 0)
+      })
+    }
+
+    /** Applique la marge configurée au plan de travail du composant. */
+    function applyPadding(task, done) {
+      var padding = config.padding
+      if (
+        !padding ||
+        (!padding.top && !padding.right && !padding.bottom && !padding.left)
+      ) {
+        done()
+        return
+      }
+      call(
+        'lfSetPadding',
+        [0, padding.top, padding.right, padding.bottom, padding.left],
+        function (result) {
+          if (!result.ok) {
+            failures.push({ task: task, message: 'marge : ' + result.value })
+          }
+          done()
+        }
+      )
+    }
+
+    /** Recolore le document de travail, puis exporte. */
+    function recolorThenRun(task) {
+      current.scheme = task.scheme.id + ':' + (task.scheme.hex || '')
+      // Le seuil d'inversion voyage avec la déclinaison : la couche
+      // ExtendScript applique exactement la règle que le panneau prévisualise.
+      var threshold = typeof config.threshold === 'number' ? config.threshold : 100
+      call(
+        'lfApplyColorScheme',
+        [task.scheme.id, task.scheme.hex || '', threshold],
+        function (applied) {
+          if (!applied.ok) {
+            fail(task, 'recolorage : ' + applied.value)
+            return
+          }
+          runTask(task)
+        }
+      )
+    }
+
+    /**
+     * Ouvre le document du composant, le met au bon mode colorimétrique, puis
+     * applique la marge et la couleur.
+     */
+    function openThenRun(task) {
+      current.component = task.component.path
+      current.scheme = null
+
+      call('lfOpenComponent', [task.component.path], function (opened) {
+        if (!opened.ok) {
+          fail(task, 'ouverture du composant : ' + opened.value)
+          return
+        }
+        call(
+          'lfSetColorMode',
+          [task.pass === 'print' ? 'cmyk' : 'rgb'],
+          function (mode) {
+            if (!mode.ok) {
+              failures.push({
+                task: task,
+                message: 'mode colorimetrique : ' + mode.value,
+              })
+            }
+            applyPadding(task, function () {
+              recolorThenRun(task)
+            })
+          }
+        )
       })
     }
 
@@ -685,72 +787,54 @@ var LogoForgeEngine = (function () {
       handlers.onProgress(index, tasks.length, task.fileName)
 
       var signature = task.scheme.id + ':' + (task.scheme.hex || '')
-      if (currentScheme === signature) {
-        runTask(task)
+
+      // Changement de composant ou de passe : il faut rouvrir le document.
+      if (
+        current.component !== task.component.path ||
+        current.pass !== task.pass
+      ) {
+        current.pass = task.pass
+        openThenRun(task)
         return
       }
 
-      // Changement de déclinaison : le recolorage étant destructeur, on repart
-      // de la copie vierge avant de l'appliquer.
-      currentScheme = signature
-      call('lfResetSession', [], function (reset) {
-        if (!reset.ok) {
-          failures.push({
-            task: task,
-            message: 'reinitialisation : ' + reset.value,
-          })
-          setTimeout(step, 0)
-          return
-        }
-        call(
-          'lfApplyColorScheme',
-          [task.scheme.id, task.scheme.hex || ''],
-          function (applied) {
-            if (!applied.ok) {
-              failures.push({
-                task: task,
-                message: 'recolorage : ' + applied.value,
-              })
-              setTimeout(step, 0)
-              return
-            }
-            applyPadding(task, function () {
-              runTask(task)
-            })
-          }
-        )
-      })
-    }
-
-    readDocumentInfo(function (info) {
-      if (!info) {
-        handlers.onError('Aucun document Illustrator ouvert.')
-        return
-      }
-      if (!info.path) {
-        handlers.onError(
-          "Enregistrez le document avant d'exporter : Logo Forge travaille " +
-            'sur une copie du fichier.'
-        )
-        return
-      }
-      documentName = info.name
-
-      createDirectories(root, planDirectories(tasks), function (folderError) {
-        if (folderError) {
-          handlers.onError(folderError)
-          return
-        }
-        call('lfBeginSession', [], function (session) {
-          if (!session.ok) {
-            handlers.onError(
-              'Ouverture de la copie de travail : ' + session.value
-            )
+      // Changement de couleur seul : le recolorage étant destructeur, on repart
+      // du document vierge du composant.
+      if (current.scheme !== signature) {
+        call('lfOpenComponent', [task.component.path], function (opened) {
+          if (!opened.ok) {
+            fail(task, 'reouverture du composant : ' + opened.value)
             return
           }
-          step()
+          call(
+            'lfSetColorMode',
+            [task.pass === 'print' ? 'cmyk' : 'rgb'],
+            function () {
+              applyPadding(task, function () {
+                recolorThenRun(task)
+              })
+            }
+          )
         })
-      })
+        return
+      }
+
+      runTask(task)
+    }
+
+    if (tasks.length === 0) {
+      handlers.onError(
+        'Rien a exporter : definissez au moins un composant, une couleur et un format.'
+      )
+      return { cancel: function () {} }
+    }
+
+    createDirectories(root, planDirectories(tasks), function (folderError) {
+      if (folderError) {
+        handlers.onError(folderError)
+        return
+      }
+      step()
     })
 
     return {
@@ -763,6 +847,10 @@ var LogoForgeEngine = (function () {
   return {
     FOLDERS: FOLDERS,
     FAVICON_SIZES: FAVICON_SIZES,
+    PRINT_FORMATS: PRINT_FORMATS,
+    WEB_FORMATS: WEB_FORMATS,
+    joinFolder: joinFolder,
+    deliveryName: deliveryName,
     call: call,
     quote: quote,
     sanitize: sanitize,

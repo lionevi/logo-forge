@@ -16,7 +16,7 @@
         - pas de `inset` (Chrome 87), pas de `rgb(r g b / a%)` (Chrome 65) ;
         - pas d'unité `vh` : la mise en page est ancrée en positionnement absolu.
 
-      L'export lui-même vit dans js/export-engine.js et jsx/main.jsx.
+      L'export vit dans js/export-engine.js et jsx/main.jsx.
     -->
 
     <style>
@@ -62,7 +62,6 @@
         left: 0;
         overflow: hidden;
       }
-
       .panel-header {
         position: absolute;
         top: 0;
@@ -73,7 +72,6 @@
         border-bottom: 1px solid #3e3e3e;
         background: #2f2f2f;
       }
-
       .tabs {
         position: absolute;
         top: 44px;
@@ -83,7 +81,6 @@
         border-bottom: 1px solid #3e3e3e;
         background: #2f2f2f;
       }
-
       .panel-body {
         position: absolute;
         top: 78px;
@@ -94,7 +91,6 @@
         overflow-x: hidden;
         overflow-y: auto;
       }
-
       .panel-footer {
         position: absolute;
         right: 0;
@@ -122,27 +118,26 @@
         font-size: 10px;
         color: #909090;
       }
-      .connection {
+      .header-tools {
         position: absolute;
-        top: 15px;
+        top: 11px;
         right: 12px;
-        font-size: 10px;
-        color: #909090;
+      }
+      .header-tools .icon-button {
+        float: right;
+        margin-left: 6px;
       }
       .status-dot {
         display: inline-block;
         width: 8px;
         height: 8px;
-        margin-right: 5px;
+        margin: 0 6px 0 0;
         border-radius: 50%;
         background: #6e6e6e;
         vertical-align: middle;
       }
       .status-dot.on {
         background: #2d9d78;
-      }
-      .status-dot.partial {
-        background: #e68619;
       }
       .status-dot.off {
         background: #e34850;
@@ -172,7 +167,6 @@
         border-bottom-color: #2680eb;
         color: #ffffff;
       }
-
       .pane {
         display: none;
       }
@@ -225,7 +219,6 @@
         color: #909090;
       }
       .icon-button {
-        float: right;
         width: 22px;
         height: 22px;
         padding: 0;
@@ -261,15 +254,49 @@
         border-radius: 4px;
         background: #2f2f2f;
       }
+      .comp-card.set {
+        border-color: #2680eb;
+      }
       .comp-preview {
-        height: 46px;
+        position: relative;
+        height: 58px;
         margin-bottom: 6px;
         border-radius: 3px;
-        background: #4a4a4a;
+        background: #e0e0e0;
+        overflow: hidden;
+      }
+      .comp-preview.dark {
+        background: #1d1d1d;
+      }
+      .comp-preview canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .comp-placeholder {
         color: #909090;
-        font-size: 10px;
-        line-height: 46px;
+        font-size: 20px;
+        line-height: 58px;
         text-align: center;
+      }
+      .comp-contrast {
+        position: absolute;
+        right: 3px;
+        bottom: 3px;
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        border: 1px solid #909090;
+        border-radius: 3px;
+        background: #ffffff;
+        color: #1d1d1d;
+        font-size: 10px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .comp-preview.dark .comp-contrast {
+        background: #1d1d1d;
+        color: #ffffff;
       }
       .comp-name {
         width: 100%;
@@ -287,16 +314,13 @@
         background: #252525;
         outline: none;
       }
-      .comp-board {
-        width: 100%;
-        margin-top: 4px;
-        padding: 3px 4px;
-        border: 1px solid #4a4a4a;
-        border-radius: 3px;
-        background: #252525;
-        color: #e3e3e3;
-        font-family: inherit;
-        font-size: 10px;
+      .comp-meta {
+        margin: 2px 0 5px;
+        overflow: hidden;
+        font-size: 9px;
+        color: #6e6e6e;
+        white-space: nowrap;
+        text-overflow: ellipsis;
       }
       .comp-remove {
         position: absolute;
@@ -307,8 +331,8 @@
         padding: 0;
         border: 0;
         border-radius: 3px;
-        background: transparent;
-        color: #6e6e6e;
+        background: rgba(37, 37, 37, 0.72);
+        color: #b9b9b9;
         font-size: 12px;
         line-height: 1;
         cursor: pointer;
@@ -318,31 +342,38 @@
         color: #ffffff;
       }
 
-      /* ---- Cases à cocher ---- */
+      /* ---- Cases à cocher et couleurs ---- */
 
       .check-row {
         display: block;
-        padding: 4px 2px;
+        padding: 5px 2px;
         cursor: pointer;
-      }
-      .check-row.disabled {
-        cursor: not-allowed;
-        opacity: 0.5;
+        overflow: hidden;
       }
       .check-row input {
+        float: left;
         width: 13px;
         height: 13px;
-        margin: 0 7px 0 0;
-        vertical-align: middle;
+        margin: 3px 7px 0 0;
       }
-      .swatch {
-        display: inline-block;
-        width: 12px;
-        height: 12px;
-        margin-right: 6px;
+      .check-label {
+        float: left;
+        width: 92px;
+        font-size: 11px;
+        line-height: 18px;
+      }
+      .bar {
+        display: block;
+        overflow: hidden;
+        height: 18px;
         border: 1px solid #5a5a5a;
-        border-radius: 2px;
-        vertical-align: middle;
+        border-radius: 3px;
+      }
+      .bar span {
+        display: block;
+        float: left;
+        width: 25%;
+        height: 100%;
       }
       .badge {
         margin-left: 6px;
@@ -375,6 +406,19 @@
         font-family: inherit;
         font-size: 12px;
       }
+      input[type='color'] {
+        width: 100%;
+        height: 26px;
+        padding: 1px;
+        border: 1px solid #4a4a4a;
+        border-radius: 4px;
+        background: #252525;
+        cursor: pointer;
+      }
+      input[type='range'] {
+        width: 100%;
+        margin: 4px 0 8px;
+      }
       input:focus,
       select:focus {
         border-color: #2680eb;
@@ -392,7 +436,6 @@
       .destination.empty {
         font-style: italic;
       }
-
       .row {
         margin: 0 -3px 6px;
         overflow: hidden;
@@ -407,12 +450,7 @@
         width: 25%;
         padding: 0 3px;
       }
-      .col label {
-        display: block;
-        margin-bottom: 3px;
-        font-size: 10px;
-        color: #909090;
-      }
+      .col label,
       .col-4 label {
         display: block;
         margin-bottom: 3px;
@@ -420,7 +458,7 @@
         color: #909090;
       }
 
-      /* ---- Listes d'échelles et de couleurs ---- */
+      /* ---- Listes ---- */
 
       .list-row {
         margin-bottom: 4px;
@@ -456,6 +494,16 @@
       .list-row .kill:hover {
         background: #e34850;
         color: #ffffff;
+      }
+      .list-row .chip {
+        float: left;
+        width: 46px;
+        height: 20px;
+        margin-right: 8px;
+        border: 1px solid #5a5a5a;
+        border-radius: 3px;
+        padding: 0;
+        cursor: pointer;
       }
 
       /* ---- Messages ---- */
@@ -515,7 +563,7 @@
         background: #1473e6;
       }
       .button.small {
-        padding: 5px 10px;
+        padding: 4px 10px;
         border-radius: 12px;
         font-size: 11px;
       }
@@ -526,7 +574,7 @@
         cursor: not-allowed;
       }
 
-      /* ---- Modale et progression ---- */
+      /* ---- Modales ---- */
 
       .veil {
         position: absolute;
@@ -535,23 +583,28 @@
         bottom: 0;
         left: 0;
         display: none;
-        background: rgba(15, 15, 15, 0.72);
+        background: rgba(15, 15, 15, 0.76);
       }
       .veil.on {
         display: block;
       }
       .dialog {
         position: absolute;
-        top: 50%;
+        top: 24px;
         right: 12px;
+        bottom: 24px;
         left: 12px;
-        max-height: 88%;
-        margin-top: -170px;
         padding: 14px;
         border: 1px solid #4a4a4a;
         border-radius: 6px;
         background: #2f2f2f;
         overflow-y: auto;
+      }
+      .dialog.short {
+        top: auto;
+        bottom: 50%;
+        height: 300px;
+        margin-bottom: -150px;
       }
       .dialog h3 {
         margin: 0 0 12px;
@@ -578,6 +631,12 @@
         white-space: nowrap;
         text-overflow: ellipsis;
       }
+      .done-count {
+        margin: 8px 0 4px;
+        font-size: 26px;
+        font-weight: 700;
+        color: #ffffff;
+      }
     </style>
   </head>
 
@@ -588,28 +647,27 @@
           <span class="brand-name">Logo Forge</span>
           <span class="brand-version">v0.1.0</span>
         </div>
-        <div class="connection">
-          <span class="status-dot" id="status-dot"></span>
-          <span id="status-label">…</span>
+        <div class="header-tools">
+          <button class="icon-button" id="open-settings" title="Réglages">
+            &#9881;
+          </button>
+          <button class="icon-button" id="refresh" title="Re-détecter">
+            &#8635;
+          </button>
+          <span class="status-dot" id="status-dot" title="État"></span>
         </div>
       </div>
 
       <div class="tabs" id="tabs">
-        <button class="tab on" data-tab="components">Composants</button>
-        <button class="tab" data-tab="colors">Couleurs</button>
-        <button class="tab" data-tab="settings">Réglages</button>
+        <button class="tab on" data-tab="components">Components</button>
+        <button class="tab" data-tab="colors">Colors</button>
       </div>
 
       <div class="panel-body">
-        <!-- Onglet Composants -->
+        <!-- Onglet Components -->
         <div class="pane on" id="pane-components">
           <div class="section">
-            <h2 class="section-title">
-              Document
-              <button class="icon-button" id="refresh" title="Re-détecter">
-                &#8635;
-              </button>
-            </h2>
+            <h2 class="section-title">Document</h2>
             <div id="document-card"></div>
           </div>
 
@@ -624,15 +682,21 @@
           </div>
         </div>
 
-        <!-- Onglet Couleurs -->
+        <!-- Onglet Colors -->
         <div class="pane" id="pane-colors">
           <div class="section">
             <h2 class="section-title">Déclinaisons</h2>
             <div id="scheme-list"></div>
+            <label class="check-row">
+              <input type="checkbox" id="remember-schemes" checked />
+              <span class="check-label" style="width: auto"
+                >Remember color scheme settings</span
+              >
+            </label>
           </div>
 
           <div class="section">
-            <h2 class="section-title">Couleurs personnalisées</h2>
+            <h2 class="section-title">Custom Color Schemes</h2>
             <div id="custom-list"></div>
             <div class="row">
               <div class="col">
@@ -641,29 +705,70 @@
               </div>
               <div class="col">
                 <label for="custom-hex">Couleur</label>
-                <input type="text" id="custom-hex" value="#2680eb" />
+                <input type="color" id="custom-hex" value="#2680eb" />
               </div>
             </div>
-            <button class="button small" id="add-custom">+ Couleur</button>
+            <button class="button small" id="add-custom">+ Color Scheme</button>
+          </div>
+
+          <div class="section">
+            <h2 class="section-title">Inversion</h2>
+            <label class="field-label" for="threshold">
+              Seuil de détection clair / sombre :
+              <span id="threshold-value">50</span>
+            </label>
+            <input type="range" id="threshold" min="0" max="100" value="50" />
+            <div class="row">
+              <div class="col">
+                <label>Avant</label>
+                <span class="bar" id="invert-before"></span>
+              </div>
+              <div class="col">
+                <label>Après</label>
+                <span class="bar" id="invert-after"></span>
+              </div>
+            </div>
+            <p class="summary">
+              Seules les couleurs plus sombres que le seuil sont inversées :
+              au-delà, elles sont déjà assez claires pour rester lisibles sur un
+              fond sombre. À 100 tout bascule, à 0 rien ne bascule.
+            </p>
           </div>
         </div>
 
-        <!-- Onglet Réglages -->
-        <div class="pane" id="pane-settings">
+        <div id="messages"></div>
+      </div>
+
+      <div class="panel-footer">
+        <button class="button primary" id="open-export" disabled>
+          Export Logos
+        </button>
+      </div>
+
+      <!-- Réglages -->
+      <div class="veil" id="settings-veil">
+        <div class="dialog">
+          <h3>Réglages</h3>
           <div class="tabs" id="subtabs" style="position: static; height: auto; border: 0; background: transparent; margin-bottom: 10px; overflow: hidden">
-            <button class="tab on" data-sub="files">Fichiers</button>
-            <button class="tab" data-sub="names">Noms</button>
-            <button class="tab" data-sub="scales">Échelles</button>
-            <button class="tab" data-sub="padding">Marges</button>
+            <button class="tab on" data-sub="files">Files</button>
+            <button class="tab" data-sub="names">Names</button>
+            <button class="tab" data-sub="scales">Scales</button>
+            <button class="tab" data-sub="padding">Padding</button>
           </div>
 
           <div class="pane on" id="sub-files">
             <div class="section">
-              <h2 class="section-title">Formats</h2>
-              <div id="format-list"></div>
+              <h2 class="section-title">Print — CMJN, 300 ppp</h2>
+              <div id="print-formats"></div>
+            </div>
+            <div class="section">
+              <h2 class="section-title">Web — RVB, 72 ppp</h2>
+              <div id="web-formats"></div>
               <label class="check-row">
-                <input type="checkbox" id="want-favicon" checked />Générer les
-                favicons (16, 32, 128, 180, 192 px)
+                <input type="checkbox" id="want-favicon" checked />
+                <span class="check-label" style="width: auto"
+                  >Favicons 16 à 192 px</span
+                >
               </label>
             </div>
           </div>
@@ -672,9 +777,9 @@
             <div class="section">
               <h2 class="section-title">Séparateur</h2>
               <select id="separator">
-                <option value="-">Tiret — Logo-FullColor.svg</option>
-                <option value="_">Underscore — Logo_FullColor.svg</option>
-                <option value=" ">Espace — Logo FullColor.svg</option>
+                <option value="_">Underscore</option>
+                <option value="-">Tiret</option>
+                <option value=" ">Espace</option>
               </select>
               <p class="summary" id="name-preview"></p>
             </div>
@@ -684,9 +789,10 @@
             <div class="section">
               <h2 class="section-title">Préréglage</h2>
               <select id="scale-preset">
-                <option value="default">Défaut — web + print</option>
-                <option value="web">Web seul</option>
-                <option value="print">Print seul</option>
+                <option value="default">Default</option>
+                <option value="web">Web</option>
+                <option value="print">Print</option>
+                <option value="favicon">Favicon</option>
               </select>
             </div>
             <div class="section">
@@ -694,14 +800,14 @@
               <div id="scale-list"></div>
               <div class="row">
                 <div class="col-4">
-                  <label for="scale-type">Type</label>
+                  <label for="scale-type">Passe</label>
                   <select id="scale-type">
                     <option value="web">Web</option>
                     <option value="print">Print</option>
                   </select>
                 </div>
                 <div class="col-4">
-                  <label for="scale-width">Largeur px</label>
+                  <label for="scale-width">Largeur</label>
                   <input type="number" id="scale-width" value="900" min="1" />
                 </div>
                 <div class="col-4">
@@ -720,12 +826,12 @@
             <div class="section">
               <h2 class="section-title">Marges autour du logo (px)</h2>
               <label class="check-row">
-                <input type="radio" name="padmode" value="square" checked />Carré
-                — une seule valeur
+                <input type="radio" name="padmode" value="square" checked />
+                <span class="check-label" style="width: auto">Square</span>
               </label>
               <label class="check-row">
-                <input type="radio" name="padmode" value="individual" />Individuel
-                — quatre valeurs
+                <input type="radio" name="padmode" value="individual" />
+                <span class="check-label" style="width: auto">Individual</span>
               </label>
               <div class="row" id="padding-fields">
                 <div class="col-4">
@@ -747,27 +853,29 @@
               </div>
             </div>
           </div>
+
+          <button class="button small" id="close-settings">Fermer</button>
         </div>
-
-        <div id="messages"></div>
       </div>
 
-      <div class="panel-footer">
-        <button class="button primary" id="open-export" disabled>
-          Exporter le package logo
-        </button>
-      </div>
-
-      <!-- Modale d'export -->
+      <!-- Export -->
       <div class="veil" id="export-veil">
-        <div class="dialog">
-          <h3>Exporter le package</h3>
-          <label class="field-label" for="client-name">Nom du client</label>
+        <div class="dialog short">
+          <h3>Export Logos</h3>
+          <label class="field-label" for="client-name">Client Name</label>
           <input type="text" id="client-name" placeholder="Ma Marque" />
           <button class="button small" id="choose-folder">
             Choisir le dossier&hellip;
           </button>
           <p class="destination empty" id="destination">Aucun dossier choisi</p>
+          <label class="check-row">
+            <input type="checkbox" id="pass-print" checked />
+            <span class="check-label" style="width: auto">Print</span>
+          </label>
+          <label class="check-row">
+            <input type="checkbox" id="pass-web" checked />
+            <span class="check-label" style="width: auto">Web</span>
+          </label>
           <p class="summary" id="export-summary"></p>
           <div id="export-error"></div>
           <div class="row">
@@ -776,31 +884,47 @@
             </div>
             <div class="col">
               <button class="button primary small" id="start-export" disabled>
-                Exporter
+                Export logos
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Progression -->
+      <!-- Progression et écran de fin -->
       <div class="veil" id="progress-veil">
-        <div class="dialog">
+        <div class="dialog short">
           <h3 id="progress-title">Export en cours</h3>
-          <div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
-          <p class="progress-label" id="progress-label">Préparation&hellip;</p>
-          <div id="progress-result"></div>
-          <button class="button small" id="abort-export">Annuler</button>
+          <div id="progress-live">
+            <div class="progress">
+              <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            <p class="progress-label" id="progress-label">Préparation&hellip;</p>
+          </div>
+          <div id="done-panel" style="display: none">
+            <p class="done-count" id="done-count">0</p>
+            <p class="progress-label" id="done-detail"></p>
+            <div id="done-messages"></div>
+            <button class="button small" id="open-folder">
+              Ouvrir le dossier
+            </button>
+            <button class="button small" id="reset-all" style="margin-top: 6px">
+              Réinitialiser
+            </button>
+          </div>
+          <button class="button small" id="abort-export" style="margin-top: 6px">
+            Annuler
+          </button>
         </div>
       </div>
     </div>
 
     <!--
-      CSInterface, quand l'hôte le met à disposition. Le panneau n'en dépend
-      pas : il parle directement à window.__adobe_cep__, sur lequel CSInterface
-      n'est qu'une surcouche. Un 404 sur cette ligne est sans conséquence.
+      Aucune bibliothèque tierce : le panneau parle directement à
+      window.__adobe_cep__, que l'hôte injecte. CSInterface n'en est qu'une
+      surcouche, et la charger sans l'embarquer ne produirait qu'un 404 rouge
+      dans la console de l'extension.
     -->
-    <script src="./CSInterface.js"></script>
     <script src="./js/export-engine.js"></script>
 
     <script>
@@ -850,8 +974,6 @@
           }
         }
 
-        // Le moteur est un fichier séparé : sans lui, on le dit plutôt que de
-        // laisser un bouton inerte.
         if (typeof LogoForgeEngine === 'undefined') {
           showError(
             'Moteur introuvable :',
@@ -866,82 +988,223 @@
          * Environnement
          * ---------------------------------------------------------------- */
 
-        if (typeof CSInterface === 'undefined') {
-          window.CSInterface = function () {}
-          window.CSInterface.prototype.evalScript = function (script, cb) {
-            if (cb) cb('')
-          }
-        }
-
         function detectEnvironment() {
           if (typeof window.__adobe_cep__ !== 'undefined') return 'cep'
-          try {
-            if (typeof require === 'function' && require('uxp')) return 'uxp'
-          } catch (ignored) {
-            /* pas d'hôte UXP */
-          }
           return 'dev'
         }
 
         var ENVIRONMENT = detectEnvironment()
-        var ENV_LABEL = {
-          cep: { dot: 'on', text: 'CEP' },
-          uxp: { dot: 'partial', text: 'UXP' },
-          dev: { dot: 'off', text: 'Dev' },
-        }
 
         /* ---------------------------------------------------------------- *
-         * État
+         * Données
          * ---------------------------------------------------------------- */
 
-        var DEFAULT_COMPONENTS = [
-          'Logo',
-          'Logo Mark',
-          'Logotype',
-          'Stacked Logo',
-          'Vertical Logo',
-          'Centered Logo',
-        ]
-
         var SCHEMES = [
-          { id: 'fullColor', label: 'Full Color', swatch: '#2680eb' },
-          { id: 'black', label: 'Black', swatch: '#000000' },
-          { id: 'white', label: 'White', swatch: '#ffffff' },
-          { id: 'inverted', label: 'Inverted', swatch: '#d97fd9' },
-          { id: 'grayscale', label: 'Grayscale', swatch: '#909090' },
+          { id: 'fullColor', label: 'Full Color' },
+          { id: 'black', label: 'Black' },
+          { id: 'white', label: 'White' },
+          { id: 'inverted', label: 'Inverted' },
+          { id: 'grayscale', label: 'Grayscale' },
         ]
 
-        var FORMATS = [
-          { id: 'ai', label: 'AI — source Illustrator' },
-          { id: 'svg', label: 'SVG — vectoriel web' },
-          { id: 'png', label: 'PNG — matriciel transparent' },
-          { id: 'pdf', label: 'PDF — imprimeur' },
-          { id: 'eps', label: 'EPS — imprimeur historique' },
+        var PRINT_FORMATS = [
+          { id: 'ai', label: 'AI' },
+          { id: 'pdf', label: 'PDF' },
+          { id: 'eps', label: 'EPS' },
+          { id: 'jpeg', label: 'JPEG' },
         ]
+
+        var WEB_FORMATS = [
+          { id: 'svg', label: 'SVG' },
+          { id: 'png', label: 'PNG' },
+          { id: 'jpeg', label: 'JPEG' },
+          { id: 'ai', label: 'AI' },
+        ]
+
+        /** Couleurs de référence, pour les prévisualisations du panneau. */
+        var SAMPLE = ['#2680eb', '#e34850', '#e68619', '#2d9d78']
+
+        var STORAGE_KEY = 'logo-forge-color-schemes'
 
         var state = {
           document: null,
           components: [],
           schemes: { fullColor: true, black: true, white: true, inverted: true },
           customs: [],
-          formats: { ai: true, svg: true, png: true, pdf: true, eps: false },
+          rememberSchemes: true,
+          threshold: 50,
+          formats: {
+            print: { ai: true, pdf: true, eps: false, jpeg: false },
+            web: { svg: true, png: true, jpeg: false, ai: false },
+          },
           favicon: true,
-          separator: '-',
+          separator: '_',
           scales: [
             { type: 'web', width: 900, resolution: 72 },
             { type: 'print', width: 2400, resolution: 300 },
           ],
           padding: { mode: 'square', top: 0, right: 0, bottom: 0, left: 0 },
+          passes: { print: true, web: true },
           clientName: '',
           destination: null,
           running: null,
+          lastResult: null,
         }
 
-        for (var d = 0; d < DEFAULT_COMPONENTS.length; d += 1) {
-          state.components.push({
-            name: DEFAULT_COMPONENTS[d],
-            artboardIndex: Math.min(d, 0),
-          })
+        /* ---------------------------------------------------------------- *
+         * Persistance des déclinaisons
+         * ---------------------------------------------------------------- */
+
+        /** Relit les déclinaisons mémorisées d'une session à l'autre. */
+        function restoreSchemes() {
+          try {
+            if (!window.localStorage) return
+            var raw = window.localStorage.getItem(STORAGE_KEY)
+            if (!raw) return
+            var saved = JSON.parse(raw)
+            if (saved && saved.schemes) state.schemes = saved.schemes
+            if (saved && saved.customs) state.customs = saved.customs
+            if (saved && typeof saved.threshold === 'number') {
+              state.threshold = saved.threshold
+            }
+          } catch (error) {
+            // Un stockage indisponible ou corrompu ne doit pas empêcher le
+            // panneau de démarrer : on repart des valeurs par défaut.
+          }
+        }
+
+        function persistSchemes() {
+          try {
+            if (!window.localStorage) return
+            if (!state.rememberSchemes) {
+              window.localStorage.removeItem(STORAGE_KEY)
+              return
+            }
+            window.localStorage.setItem(
+              STORAGE_KEY,
+              JSON.stringify({
+                schemes: state.schemes,
+                customs: state.customs,
+                threshold: state.threshold,
+              })
+            )
+          } catch (error) {
+            /* stockage indisponible : sans conséquence */
+          }
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Couleurs — prévisualisation sans Illustrator
+         * ---------------------------------------------------------------- */
+
+        function hexToRgb(hex) {
+          var clean = String(hex).replace('#', '')
+          return [
+            parseInt(clean.substring(0, 2), 16),
+            parseInt(clean.substring(2, 4), 16),
+            parseInt(clean.substring(4, 6), 16),
+          ]
+        }
+
+        function rgbToHex(rgb) {
+          var out = '#'
+          for (var i = 0; i < 3; i += 1) {
+            var v = Math.max(0, Math.min(255, Math.round(rgb[i]))).toString(16)
+            out += v.length === 1 ? '0' + v : v
+          }
+          return out
+        }
+
+        /** Luminance perçue, de 0 (noir) à 255 (blanc). */
+        function luminance(rgb) {
+          return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+        }
+
+        /**
+         * Applique une déclinaison à une couleur, pour la prévisualisation.
+         *
+         * Ce calcul reproduit celui de la couche ExtendScript : ce que le
+         * panneau montre doit être ce que l'export produira.
+         */
+        function previewColor(hex, schemeId, threshold) {
+          var rgb = hexToRgb(hex)
+          if (schemeId === 'fullColor') return hex
+          if (schemeId === 'black') return '#000000'
+          if (schemeId === 'white') return '#ffffff'
+          if (schemeId === 'grayscale') {
+            var level = Math.round(luminance(rgb))
+            return rgbToHex([level, level, level])
+          }
+          if (schemeId === 'inverted') {
+            // Au-delà du seuil la couleur est déjà claire : elle reste
+            // lisible sur un fond sombre, donc on n'y touche pas. Les
+            // couleurs plus sombres basculent vers leur complément.
+            if (luminance(rgb) >= (threshold / 100) * 255) return hex
+            return rgbToHex([255 - rgb[0], 255 - rgb[1], 255 - rgb[2]])
+          }
+          return hex
+        }
+
+        /** Remplit une barre de quatre échantillons pour une déclinaison. */
+        function fillBar(element, schemeId, customHex) {
+          var html = ''
+          for (var i = 0; i < SAMPLE.length; i += 1) {
+            var color = customHex
+              ? customHex
+              : previewColor(SAMPLE[i], schemeId, state.threshold)
+            html += '<span style="background:' + color + '"></span>'
+          }
+          element.innerHTML = html
+        }
+
+        /**
+         * Dessine la miniature d'un composant.
+         *
+         * Illustrator ne sait pas produire de vignette par script sans exporter
+         * un fichier : la miniature figure le composant par ses proportions
+         * réelles et par les couleurs de la déclinaison, ce qui suffit à
+         * distinguer les cartes entre elles.
+         */
+        function drawPreview(canvas, component, dark) {
+          if (!canvas || !canvas.getContext) return
+          var context = canvas.getContext('2d')
+          if (!context) return
+
+          var width = canvas.width
+          var height = canvas.height
+          context.clearRect(0, 0, width, height)
+
+          var ratio =
+            component.width && component.height
+              ? component.width / component.height
+              : 1
+          var boxHeight = height * 0.52
+          var boxWidth = Math.min(width * 0.78, boxHeight * ratio)
+          if (boxWidth < width * 0.14) boxWidth = width * 0.14
+
+          var x = (width - boxWidth) / 2
+          var y = (height - boxHeight) / 2
+
+          context.fillStyle = dark ? '#ffffff' : '#1d1d1d'
+          context.globalAlpha = 0.16
+          context.fillRect(x, y, boxWidth, boxHeight)
+          context.globalAlpha = 1
+
+          context.fillStyle = '#2680eb'
+          context.fillRect(x, y, boxWidth * 0.34, boxHeight)
+          context.fillStyle = dark ? '#e3e3e3' : '#4a4a4a'
+          context.fillRect(
+            x + boxWidth * 0.42,
+            y + boxHeight * 0.24,
+            boxWidth * 0.58,
+            boxHeight * 0.16
+          )
+          context.fillRect(
+            x + boxWidth * 0.42,
+            y + boxHeight * 0.56,
+            boxWidth * 0.42,
+            boxHeight * 0.12
+          )
         }
 
         /* ---------------------------------------------------------------- *
@@ -960,11 +1223,6 @@
             .replace(/"/g, '&quot;')
         }
 
-        function scaleLabel(scale) {
-          return scale.width + 'px'
-        }
-
-        /** Déclinaisons retenues, personnalisées comprises. */
         function activeSchemes() {
           var list = []
           for (var i = 0; i < SCHEMES.length; i += 1) {
@@ -980,31 +1238,31 @@
           return list
         }
 
-        /** Configuration transmise au moteur. */
-        function buildConfig() {
-          var scales = []
-          for (var i = 0; i < state.scales.length; i += 1) {
-            scales.push({
-              type: state.scales[i].type,
-              label: scaleLabel(state.scales[i]),
-              width: state.scales[i].width,
-              resolution: state.scales[i].resolution,
-            })
+        function definedComponents() {
+          var list = []
+          for (var i = 0; i < state.components.length; i += 1) {
+            if (state.components[i].path) list.push(state.components[i])
           }
+          return list
+        }
+
+        function buildConfig() {
           return {
             clientName: state.clientName,
             outputFolder: state.destination,
+            sourceName: state.document ? state.document.name : '',
             components: state.components,
             colorSchemes: activeSchemes(),
             formats: state.formats,
-            scales: scales,
+            scales: state.scales,
+            passes: state.passes,
             favicon: state.favicon,
             separator: state.separator,
             padding: state.padding,
+            threshold: state.threshold,
           }
         }
 
-        /** Nombre de fichiers prévus par le plan courant. */
         function plannedCount() {
           try {
             return engine.planExport(buildConfig()).length
@@ -1018,9 +1276,10 @@
          * ---------------------------------------------------------------- */
 
         function renderStatus() {
-          var info = ENV_LABEL[ENVIRONMENT]
-          byId('status-dot').className = 'status-dot ' + info.dot
-          byId('status-label').innerHTML = info.text
+          byId('status-dot').className =
+            'status-dot ' + (ENVIRONMENT === 'cep' ? 'on' : 'off')
+          byId('status-dot').title =
+            ENVIRONMENT === 'cep' ? 'Illustrator connecté' : 'Hors Illustrator'
         }
 
         function renderDocument() {
@@ -1030,58 +1289,66 @@
             card.innerHTML =
               '<p class="doc-name">' +
               escapeHtml(state.document.name) +
-              '</p><p class="doc-meta">' +
-              state.document.artboardCount +
-              ' plan' +
-              (state.document.artboardCount > 1 ? 's' : '') +
-              ' de travail</p>'
+              '</p><p class="doc-meta">Sélectionnez un objet, puis « Set Component ».</p>'
           } else {
             card.className = 'card empty'
             card.innerHTML =
               '<p class="doc-name">Aucun document ouvert</p>' +
-              '<p class="doc-meta">Ouvrez et enregistrez le logo dans ' +
-              'Illustrator, puis actualisez.</p>'
+              '<p class="doc-meta">Ouvrez votre logo dans Illustrator.</p>'
           }
         }
 
         function renderComponents() {
-          var count = state.document ? state.document.artboardCount : 1
           var html = ''
           for (var i = 0; i < state.components.length; i += 1) {
             var comp = state.components[i]
-            var options = ''
-            for (var a = 0; a < count; a += 1) {
-              options +=
-                '<option value="' +
-                a +
-                '"' +
-                (comp.artboardIndex === a ? ' selected' : '') +
-                '>Plan ' +
-                (a + 1) +
-                '</option>'
-            }
+            var isSet = !!comp.path
             html +=
-              '<div class="comp-cell"><div class="comp-card">' +
+              '<div class="comp-cell"><div class="comp-card' +
+              (isSet ? ' set' : '') +
+              '">' +
               '<button class="comp-remove" data-remove="' +
               i +
               '" title="Supprimer">&times;</button>' +
-              '<div class="comp-preview">Plan ' +
-              (comp.artboardIndex + 1) +
+              '<div class="comp-preview' +
+              (comp.dark ? ' dark' : '') +
+              '">' +
+              (isSet
+                ? '<canvas data-canvas="' + i + '" width="150" height="58"></canvas>'
+                : '<div class="comp-placeholder">&#9633;</div>') +
+              '<button class="comp-contrast" data-contrast="' +
+              i +
+              '" title="Fond clair / sombre">&#9681;</button>' +
               '</div>' +
               '<input class="comp-name" type="text" data-name="' +
               i +
               '" value="' +
               escapeHtml(comp.name) +
               '" />' +
-              '<select class="comp-board" data-board="' +
+              '<p class="comp-meta">' +
+              (isSet
+                ? Math.round(comp.width) + ' × ' + Math.round(comp.height) + ' pt'
+                : 'non défini') +
+              '</p>' +
+              '<button class="button small" data-set="' +
               i +
-              '">' +
-              options +
-              '</select>' +
+              '"' +
+              (isSet ? '' : ' style="border-color:#2680eb;background:#2680eb;color:#fff"') +
+              '>' +
+              (isSet ? 'Réassigner' : 'Set Component') +
+              '</button>' +
               '</div></div>'
           }
           byId('comp-grid').innerHTML = html
-          byId('comp-count').innerHTML = state.components.length + ' composants'
+          byId('comp-count').innerHTML =
+            definedComponents().length + ' / ' + state.components.length
+
+          // Les canvas n'existent qu'après insertion du balisage.
+          var canvases = byId('comp-grid').getElementsByTagName('canvas')
+          for (var c = 0; c < canvases.length; c += 1) {
+            var index = parseInt(canvases[c].getAttribute('data-canvas'), 10)
+            drawPreview(canvases[c], state.components[index], state.components[index].dark)
+          }
         }
 
         function renderSchemes() {
@@ -1093,23 +1360,30 @@
               scheme.id +
               '"' +
               (state.schemes[scheme.id] ? ' checked' : '') +
-              ' /><span class="swatch" style="background:' +
-              scheme.swatch +
-              '"></span>' +
+              ' /><span class="check-label">' +
               scheme.label +
-              '</label>'
+              '</span><span class="bar" data-bar="' +
+              scheme.id +
+              '"></span></label>'
           }
           byId('scheme-list').innerHTML = html
+
+          var bars = byId('scheme-list').querySelectorAll('[data-bar]')
+          for (var b = 0; b < bars.length; b += 1) {
+            fillBar(bars[b], bars[b].getAttribute('data-bar'), null)
+          }
 
           var customs = ''
           for (var j = 0; j < state.customs.length; j += 1) {
             customs +=
-              '<div class="list-row"><span class="swatch" style="background:' +
+              '<div class="list-row">' +
+              '<button class="chip" data-chip="' +
+              j +
+              '" style="background:' +
               escapeHtml(state.customs[j].hex) +
-              '"></span><span class="label">' +
+              '" title="Changer la couleur"></button>' +
+              '<span class="label">' +
               escapeHtml(state.customs[j].name) +
-              '</span><span class="meta">' +
-              escapeHtml(state.customs[j].hex) +
               '</span><button class="kill" data-custom="' +
               j +
               '">&times;</button></div>'
@@ -1118,19 +1392,31 @@
             customs || '<p class="summary">Aucune couleur personnalisée.</p>'
         }
 
+        function renderInversion() {
+          byId('threshold-value').innerHTML = state.threshold
+          fillBar(byId('invert-before'), 'fullColor', null)
+          fillBar(byId('invert-after'), 'inverted', null)
+        }
+
         function renderFormats() {
-          var html = ''
-          for (var i = 0; i < FORMATS.length; i += 1) {
-            html +=
-              '<label class="check-row"><input type="checkbox" data-format="' +
-              FORMATS[i].id +
-              '"' +
-              (state.formats[FORMATS[i].id] ? ' checked' : '') +
-              ' />' +
-              FORMATS[i].label +
-              '</label>'
+          function list(target, formats, pass) {
+            var html = ''
+            for (var i = 0; i < formats.length; i += 1) {
+              html +=
+                '<label class="check-row"><input type="checkbox" data-pass="' +
+                pass +
+                '" data-format="' +
+                formats[i].id +
+                '"' +
+                (state.formats[pass][formats[i].id] ? ' checked' : '') +
+                ' /><span class="check-label" style="width:auto">' +
+                formats[i].label +
+                '</span></label>'
+            }
+            byId(target).innerHTML = html
           }
-          byId('format-list').innerHTML = html
+          list('print-formats', PRINT_FORMATS, 'print')
+          list('web-formats', WEB_FORMATS, 'web')
         }
 
         function renderScales() {
@@ -1149,29 +1435,27 @@
               '">&times;</button></div>'
           }
           byId('scale-list').innerHTML =
-            html || '<p class="summary">Aucune échelle : pas de PNG.</p>'
+            html || '<p class="summary">Aucune échelle : pas de matriciel.</p>'
         }
 
         function renderNamePreview() {
           var sep = state.separator
           byId('name-preview').innerHTML =
-            'Aperçu : ' + escapeHtml('Logo' + sep + 'FullColor' + sep + '900px.png')
+            'Aperçu : ' +
+            escapeHtml('MaMarque' + sep + 'Logo' + sep + 'Black' + sep + '900px.png')
         }
 
         function renderMessages() {
           var html = ''
-          var schemes = activeSchemes()
+          var defined = definedComponents()
 
-          if (state.components.length === 0) {
-            html += '<p class="notice">Ajoutez au moins un composant.</p>'
-          }
-          if (schemes.length === 0) {
-            html += '<p class="notice">Cochez au moins une déclinaison.</p>'
-          }
-          if (state.document && !state.document.path) {
+          if (defined.length === 0) {
             html +=
-              '<p class="notice">Enregistrez le document : Logo Forge exporte ' +
-              'depuis une copie du fichier.</p>'
+              '<p class="notice">Sélectionnez un objet dans Illustrator, puis ' +
+              'cliquez « Set Component ».</p>'
+          }
+          if (activeSchemes().length === 0) {
+            html += '<p class="notice">Cochez au moins une déclinaison.</p>'
           }
 
           var total = plannedCount()
@@ -1180,22 +1464,18 @@
               '<p class="summary">' +
               total +
               ' fichiers prévus · ' +
-              state.components.length +
+              defined.length +
               ' composants × ' +
-              schemes.length +
+              activeSchemes().length +
               ' déclinaisons</p>'
           }
           byId('messages').innerHTML = html
         }
 
         function renderExportButton() {
-          var ready =
-            state.document !== null &&
-            state.document.path !== '' &&
-            state.components.length > 0 &&
-            activeSchemes().length > 0 &&
-            plannedCount() > 0
-          byId('open-export').disabled = !ready
+          byId('open-export').disabled = !(
+            definedComponents().length > 0 && plannedCount() > 0
+          )
         }
 
         function renderDestination() {
@@ -1203,7 +1483,6 @@
           if (state.destination) {
             element.className = 'destination'
             element.innerHTML = escapeHtml(state.destination)
-            element.title = state.destination
           } else {
             element.className = 'destination empty'
             element.innerHTML = 'Aucun dossier choisi'
@@ -1220,6 +1499,7 @@
           renderDocument()
           renderComponents()
           renderSchemes()
+          renderInversion()
           renderFormats()
           renderScales()
           renderNamePreview()
@@ -1242,8 +1522,7 @@
             }
             var panes = document.querySelectorAll('[id^="' + prefix + '"]')
             for (var j = 0; j < panes.length; j += 1) {
-              panes[j].className =
-                panes[j].id === prefix + key ? 'pane on' : 'pane'
+              panes[j].className = panes[j].id === prefix + key ? 'pane on' : 'pane'
             }
           }
         }
@@ -1252,83 +1531,175 @@
         switchTabs(byId('subtabs'), 'data-sub', 'sub-')
 
         /* ---------------------------------------------------------------- *
-         * Interactions
+         * Composants
          * ---------------------------------------------------------------- */
 
-        byId('comp-grid').onclick = function (event) {
-          var remove = event.target.getAttribute('data-remove')
-          if (remove === null) return
-          state.components.splice(parseInt(remove, 10), 1)
-          renderComponents()
-          renderMessages()
-          renderExportButton()
+        function newComponent(name) {
+          return {
+            name: name,
+            path: '',
+            width: 0,
+            height: 0,
+            colorMode: '',
+            dark: false,
+          }
         }
 
-        byId('comp-grid').onchange = function (event) {
-          var board = event.target.getAttribute('data-board')
-          if (board === null) return
-          state.components[parseInt(board, 10)].artboardIndex = parseInt(
-            event.target.value,
-            10
-          )
-          renderComponents()
+        /** Promeut la sélection Illustrator en composant. */
+        function setComponent(index) {
+          var component = state.components[index]
+          engine.call('lfSetComponent', ['c' + index], function (result) {
+            if (!result.ok) {
+              byId('messages').innerHTML =
+                '<p class="notice error">' + escapeHtml(result.value) + '</p>'
+              return
+            }
+            var fields = result.value.split(String.fromCharCode(31))
+            component.path = fields[1] || ''
+            component.width = parseFloat(fields[2]) || 0
+            component.height = parseFloat(fields[3]) || 0
+            component.colorMode = fields[4] || ''
+            renderComponents()
+            renderMessages()
+            renderExportButton()
+          })
+        }
+
+        byId('comp-grid').onclick = function (event) {
+          var target = event.target
+
+          var remove = target.getAttribute('data-remove')
+          if (remove !== null) {
+            var gone = state.components.splice(parseInt(remove, 10), 1)[0]
+            if (gone && gone.path) {
+              engine.call('lfRemoveComponentFile', [gone.path], function () {})
+            }
+            renderComponents()
+            renderMessages()
+            renderExportButton()
+            return
+          }
+
+          var contrast = target.getAttribute('data-contrast')
+          if (contrast !== null) {
+            var c = state.components[parseInt(contrast, 10)]
+            c.dark = !c.dark
+            renderComponents()
+            return
+          }
+
+          var set = target.getAttribute('data-set')
+          if (set !== null) {
+            guard('set component', function () {
+              setComponent(parseInt(set, 10))
+            })
+          }
         }
 
         byId('comp-grid').oninput = function (event) {
           var name = event.target.getAttribute('data-name')
           if (name === null) return
           state.components[parseInt(name, 10)].name = event.target.value
+          renderMessages()
         }
 
         byId('add-component').onclick = function () {
-          state.components.push({
-            name: 'Composant ' + (state.components.length + 1),
-            artboardIndex: 0,
-          })
+          state.components.push(
+            newComponent('Composant ' + (state.components.length + 1))
+          )
           renderComponents()
-          renderMessages()
-          renderExportButton()
         }
+
+        /* ---------------------------------------------------------------- *
+         * Couleurs
+         * ---------------------------------------------------------------- */
 
         byId('scheme-list').onclick = function (event) {
           var id = event.target.getAttribute('data-scheme')
           if (!id) return
           state.schemes[id] = event.target.checked
+          persistSchemes()
           renderMessages()
           renderExportButton()
         }
 
         byId('custom-list').onclick = function (event) {
-          var index = event.target.getAttribute('data-custom')
-          if (index === null) return
-          state.customs.splice(parseInt(index, 10), 1)
+          var kill = event.target.getAttribute('data-custom')
+          if (kill !== null) {
+            state.customs.splice(parseInt(kill, 10), 1)
+            persistSchemes()
+            renderSchemes()
+            renderMessages()
+            renderExportButton()
+            return
+          }
+          var chip = event.target.getAttribute('data-chip')
+          if (chip !== null) {
+            // Le sélecteur natif est le seul disponible dans CEP.
+            var picker = byId('custom-hex')
+            picker.value = state.customs[parseInt(chip, 10)].hex
+            picker.setAttribute('data-editing', chip)
+            picker.click()
+          }
+        }
+
+        byId('custom-hex').onchange = function () {
+          var editing = this.getAttribute('data-editing')
+          if (editing === null) return
+          state.customs[parseInt(editing, 10)].hex = this.value
+          this.removeAttribute('data-editing')
+          persistSchemes()
           renderSchemes()
-          renderMessages()
-          renderExportButton()
         }
 
         byId('add-custom').onclick = function () {
           var name = byId('custom-name').value
-          var hex = byId('custom-hex').value
-          if (!name || !/^#[0-9a-fA-F]{6}$/.test(hex)) {
+          if (!name) {
             byId('messages').innerHTML =
-              '<p class="notice">Donnez un nom et une couleur #rrggbb.</p>'
+              '<p class="notice">Donnez un nom à la couleur.</p>'
             return
           }
-          state.customs.push({ name: name, hex: hex })
+          state.customs.push({ name: name, hex: byId('custom-hex').value })
           byId('custom-name').value = ''
+          persistSchemes()
           renderSchemes()
           renderMessages()
           renderExportButton()
         }
 
-        byId('format-list').onclick = function (event) {
-          var id = event.target.getAttribute('data-format')
-          if (!id) return
-          state.formats[id] = event.target.checked
+        byId('remember-schemes').onchange = function () {
+          state.rememberSchemes = this.checked
+          persistSchemes()
+        }
+
+        byId('threshold').oninput = function () {
+          state.threshold = parseInt(this.value, 10)
+          renderInversion()
+          renderSchemes()
+          persistSchemes()
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Réglages
+         * ---------------------------------------------------------------- */
+
+        byId('open-settings').onclick = function () {
+          byId('settings-veil').className = 'veil on'
+        }
+        byId('close-settings').onclick = function () {
+          byId('settings-veil').className = 'veil'
+        }
+
+        function onFormatClick(event) {
+          var pass = event.target.getAttribute('data-pass')
+          var format = event.target.getAttribute('data-format')
+          if (!pass || !format) return
+          state.formats[pass][format] = event.target.checked
           renderMessages()
           renderExportButton()
         }
+        byId('print-formats').onclick = onFormatClick
+        byId('web-formats').onclick = onFormatClick
 
         byId('want-favicon').onchange = function () {
           state.favicon = this.checked
@@ -1351,12 +1722,11 @@
 
         byId('add-scale').onclick = function () {
           var width = parseInt(byId('scale-width').value, 10)
-          var dpi = parseInt(byId('scale-dpi').value, 10)
           if (!width || width <= 0) return
           state.scales.push({
             type: byId('scale-type').value,
             width: width,
-            resolution: dpi || 72,
+            resolution: parseInt(byId('scale-dpi').value, 10) || 72,
           })
           renderScales()
           renderMessages()
@@ -1368,6 +1738,14 @@
             state.scales = [{ type: 'web', width: 900, resolution: 72 }]
           } else if (this.value === 'print') {
             state.scales = [{ type: 'print', width: 2400, resolution: 300 }]
+          } else if (this.value === 'favicon') {
+            state.scales = [
+              { type: 'web', width: 16, resolution: 72 },
+              { type: 'web', width: 32, resolution: 72 },
+              { type: 'web', width: 128, resolution: 72 },
+              { type: 'web', width: 180, resolution: 72 },
+              { type: 'web', width: 192, resolution: 72 },
+            ]
           } else {
             state.scales = [
               { type: 'web', width: 900, resolution: 72 },
@@ -1405,7 +1783,7 @@
         }
 
         byId('padding-fields').oninput = readPadding
-        byId('pane-settings').onchange = function (event) {
+        byId('sub-padding').onchange = function (event) {
           if (event.target.name === 'padmode') readPadding()
         }
 
@@ -1416,9 +1794,7 @@
         function applyDocument(next) {
           var before = state.document ? state.document.name : null
           var after = next ? next.name : null
-          var boardsBefore = state.document ? state.document.artboardCount : 0
-          var boardsAfter = next ? next.artboardCount : 0
-          if (before === after && boardsBefore === boardsAfter) return
+          if (before === after) return
 
           state.document = next
           if (!state.clientName && next) {
@@ -1427,9 +1803,7 @@
             byId('client-name').value = state.clientName
           }
           renderDocument()
-          renderComponents()
           renderMessages()
-          renderExportButton()
         }
 
         function refreshDocument() {
@@ -1442,10 +1816,13 @@
           })
         }
 
-        byId('refresh').onclick = refreshDocument
+        byId('refresh').onclick = function () {
+          refreshDocument()
+          renderComponents()
+        }
 
         /* ---------------------------------------------------------------- *
-         * Choix du dossier
+         * Export
          * ---------------------------------------------------------------- */
 
         function chooseFolder(callback) {
@@ -1457,16 +1834,12 @@
               '',
               null
             )
-            callback(result && result.data && result.data.length ? result.data[0] : null)
+            callback(
+              result && result.data && result.data.length ? result.data[0] : null
+            )
             return
           }
-          engine.call(
-            'lfPathExists',
-            [''],
-            function () {
-              callback(null)
-            }
-          )
+          callback(null)
         }
 
         byId('choose-folder').onclick = function () {
@@ -1484,16 +1857,20 @@
           renderDestination()
         }
 
-        /* ---------------------------------------------------------------- *
-         * Export
-         * ---------------------------------------------------------------- */
+        byId('pass-print').onchange = function () {
+          state.passes.print = this.checked
+          renderDestination()
+        }
+        byId('pass-web').onchange = function () {
+          state.passes.web = this.checked
+          renderDestination()
+        }
 
         byId('open-export').onclick = function () {
           byId('export-error').innerHTML = ''
           renderDestination()
           byId('export-veil').className = 'veil on'
         }
-
         byId('cancel-export').onclick = function () {
           byId('export-veil').className = 'veil'
         }
@@ -1503,14 +1880,52 @@
           byId('progress-veil').className = 'veil'
         }
 
+        byId('open-folder').onclick = function () {
+          var path = state.lastResult ? state.lastResult.root : state.destination
+          if (!path) return
+          try {
+            if (window.cep && window.cep.fs && window.cep.fs.showOpenDialog) {
+              // `openURLInDefaultBrowser` accepte un chemin de dossier sur les
+              // deux plateformes.
+              if (window.__adobe_cep__ && window.__adobe_cep__.openURLInDefaultBrowser) {
+                window.__adobe_cep__.openURLInDefaultBrowser('file://' + path)
+                return
+              }
+            }
+            byId('done-messages').innerHTML =
+              '<p class="notice">Pack écrit dans ' + escapeHtml(path) + '</p>'
+          } catch (error) {
+            byId('done-messages').innerHTML =
+              '<p class="notice">Pack écrit dans ' + escapeHtml(path) + '</p>'
+          }
+        }
+
+        /** Vide les composants et repart d'une feuille blanche. */
+        byId('reset-all').onclick = function () {
+          for (var i = 0; i < state.components.length; i += 1) {
+            if (state.components[i].path) {
+              engine.call(
+                'lfRemoveComponentFile',
+                [state.components[i].path],
+                function () {}
+              )
+            }
+          }
+          state.components = [newComponent('Logo')]
+          state.lastResult = null
+          byId('progress-veil').className = 'veil'
+          renderAll()
+        }
+
         byId('start-export').onclick = function () {
           guard('export', function () {
             byId('export-veil').className = 'veil'
             byId('progress-veil').className = 'veil on'
             byId('progress-title').innerHTML = 'Export en cours'
-            byId('progress-result').innerHTML = ''
+            byId('progress-live').style.display = 'block'
+            byId('done-panel').style.display = 'none'
+            byId('abort-export').style.display = 'block'
             byId('progress-bar').style.width = '0'
-            byId('abort-export').innerHTML = 'Annuler'
 
             state.running = engine.runFullExport(buildConfig(), {
               onProgress: function (done, total, label) {
@@ -1521,21 +1936,25 @@
               },
               onDone: function (result) {
                 state.running = null
-                byId('progress-bar').style.width = '100%'
+                state.lastResult = result
+
                 byId('progress-title').innerHTML = result.cancelled
                   ? 'Export interrompu'
-                  : 'Export terminé'
-                byId('progress-label').innerHTML =
-                  result.written.length +
-                  ' fichiers écrits en ' +
-                  engine.formatDuration(result.durationMs)
+                  : 'Package terminé !'
+                byId('progress-live').style.display = 'none'
+                byId('done-panel').style.display = 'block'
+                byId('abort-export').style.display = 'none'
+                byId('done-count').innerHTML =
+                  result.written.length + ' fichiers'
+                byId('done-detail').innerHTML =
+                  'Écrits en ' + engine.formatDuration(result.durationMs)
 
                 var html = ''
                 if (result.failures.length > 0) {
                   html +=
                     '<p class="notice error">' +
                     result.failures.length +
-                    ' échecs. Détail dans le rapport.</p>'
+                    ' échecs — détail dans le rapport.</p>'
                 }
                 if (result.reportPath) {
                   html +=
@@ -1543,8 +1962,7 @@
                     escapeHtml(engine.FOLDERS.report) +
                     '/export-rapport.html</p>'
                 }
-                byId('progress-result').innerHTML = html
-                byId('abort-export').innerHTML = 'Fermer'
+                byId('done-messages').innerHTML = html
               },
               onError: function (message) {
                 state.running = null
@@ -1588,6 +2006,13 @@
         }
 
         guard('démarrage', function () {
+          restoreSchemes()
+          state.components = [
+            newComponent('Logo'),
+            newComponent('Logo Mark'),
+            newComponent('Logotype'),
+            newComponent('Stacked Logo'),
+          ]
           renderAll()
           renderDestination()
           refreshDocument()

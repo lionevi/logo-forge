@@ -315,9 +315,14 @@ var LogoForge = (function () {
 
   /**
    * Calcule la couleur de remplacement d'un élément.
+   *
+   * @param threshold seuil d'inversion, de 0 à 100 : une couleur dont la
+   *   luminance dépasse le seuil est déjà assez claire pour rester lisible
+   *   sur un fond sombre, elle n'est donc pas inversée. À 100 tout bascule,
+   *   à 0 rien ne bascule.
    * @returns `null` quand l'élément doit rester tel quel.
    */
-  function schemeColor(scheme, current, custom) {
+  function schemeColor(scheme, current, custom, threshold) {
     if (scheme === 'fullColor') return null
     if (scheme === 'black') return blackColor()
     if (scheme === 'white') return whiteColor()
@@ -334,23 +339,30 @@ var LogoForge = (function () {
       return grayColor(((255 - luminance) / 255) * 100)
     }
     if (scheme === 'inverted') {
+      var level = 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+      if (level >= (threshold / 100) * 255) return null
       return rgbColor(255 - rgb[0], 255 - rgb[1], 255 - rgb[2])
     }
     return null
   }
 
   /** Applique une couleur aux tracés d'un document. */
-  function recolorPaths(doc, scheme, custom) {
+  function recolorPaths(doc, scheme, custom, threshold) {
     var items = doc.pathItems
     for (var i = 0; i < items.length; i += 1) {
       var item = items[i]
       try {
         if (item.filled) {
-          var fill = schemeColor(scheme, item.fillColor, custom)
+          var fill = schemeColor(scheme, item.fillColor, custom, threshold)
           if (fill) item.fillColor = fill
         }
         if (item.stroked) {
-          var stroke = schemeColor(scheme, item.strokeColor, custom)
+          var stroke = schemeColor(
+            scheme,
+            item.strokeColor,
+            custom,
+            threshold
+          )
           if (stroke) item.strokeColor = stroke
         }
       } catch (itemError) {
@@ -360,12 +372,12 @@ var LogoForge = (function () {
   }
 
   /** Applique une couleur aux blocs de texte d'un document. */
-  function recolorText(doc, scheme, custom) {
+  function recolorText(doc, scheme, custom, threshold) {
     var frames = doc.textFrames
     for (var i = 0; i < frames.length; i += 1) {
       try {
         var attributes = frames[i].textRange.characterAttributes
-        var fill = schemeColor(scheme, attributes.fillColor, custom)
+        var fill = schemeColor(scheme, attributes.fillColor, custom, threshold)
         if (fill) attributes.fillColor = fill
       } catch (frameError) {
         /* bloc inaccessible : on poursuit */
@@ -378,12 +390,20 @@ var LogoForge = (function () {
    *
    * @param scheme fullColor, black, white, grayscale, inverted ou custom.
    * @param hex couleur au format #rrggbb, requise pour custom.
+   * @param threshold seuil d'inversion de 0 à 100 ; 100 par défaut.
    */
-  function applyColorScheme(scheme, hex) {
+  function applyColorScheme(scheme, hex, threshold) {
     try {
       var doc = workingDocument()
       if (!doc) return err('aucun document de travail')
       if (scheme === 'fullColor') return ok('unchanged')
+
+      // `evalScript` transmet les arguments en texte : un seuil absent ou
+      // illisible vaut 100, c'est-à-dire l'inversion complète.
+      var level = parseFloat(threshold)
+      if (isNaN(level)) level = 100
+      if (level < 0) level = 0
+      if (level > 100) level = 100
 
       var custom = [0, 0, 0]
       if (scheme === 'custom') {
@@ -409,8 +429,8 @@ var LogoForge = (function () {
         /* certaines versions refusent : on tente quand même le recolorage */
       }
 
-      recolorPaths(doc, scheme, custom)
-      recolorText(doc, scheme, custom)
+      recolorPaths(doc, scheme, custom, level)
+      recolorText(doc, scheme, custom, level)
       return ok(scheme)
     } catch (e) {
       return err(describe(e))
@@ -555,6 +575,43 @@ var LogoForge = (function () {
     }
   }
 
+  /** Exporte un plan de travail en JPEG. */
+  function exportArtboardAsJPEG(artboardIndex, outputPath, width, resolution) {
+    try {
+      var doc = workingDocument()
+      if (!doc) return err('aucun document de travail')
+
+      var index = parseInt(artboardIndex, 10)
+      selectArtboard(doc, index)
+
+      var rect = doc.artboards[index].artboardRect
+      var artboardWidth = Math.abs(rect[2] - rect[0])
+      if (!artboardWidth) return err('plan de travail de largeur nulle')
+
+      var targetWidth = parseFloat(width)
+      var scale =
+        targetWidth > 0
+          ? (targetWidth / artboardWidth) * 100
+          : (parseFloat(resolution) / 72) * 100
+      if (!isFinite(scale) || scale <= 0) return err('echelle invalide')
+      if (scale > 7761) scale = 7761
+
+      var options = new ExportOptionsJPEG()
+      options.antiAliasing = true
+      options.artBoardClipping = true
+      options.qualitySetting = 90
+      options.horizontalScale = scale
+      options.verticalScale = scale
+
+      var file = new File(outputPath)
+      doc.exportFile(file, ExportType.JPEG, options)
+      if (!file.exists) return err('JPEG non produit : ' + outputPath)
+      return ok(outputPath)
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
   /** Exporte un plan de travail en SVG. */
   function exportArtboardAsSVG(artboardIndex, outputPath) {
     try {
@@ -645,6 +702,170 @@ var LogoForge = (function () {
     }
   }
 
+  /* ---------------------------------------------------------------------- *
+   * Composants
+   *
+   * Un composant est une sélection de l'utilisateur promue en document
+   * autonome : Illustrator sait exporter un document entier bien plus
+   * fidèlement qu'une portion de plan de travail, et chaque composant reçoit
+   * ainsi son propre cadrage, indépendant de la mise en page du fichier source.
+   * ---------------------------------------------------------------------- */
+
+  /** Union des boîtes englobantes visibles d'une sélection. */
+  function selectionBounds(items) {
+    var left = null
+    var top = null
+    var right = null
+    var bottom = null
+
+    for (var i = 0; i < items.length; i += 1) {
+      var b = items[i].visibleBounds
+      if (left === null || b[0] < left) left = b[0]
+      if (top === null || b[1] > top) top = b[1]
+      if (right === null || b[2] > right) right = b[2]
+      if (bottom === null || b[3] < bottom) bottom = b[3]
+    }
+
+    return [left, top, right, bottom]
+  }
+
+  /**
+   * Promeut la sélection courante en document autonome.
+   *
+   * @param componentId identifiant du composant, qui nomme le fichier temporaire.
+   * @returns nom, chemin, largeur, hauteur et mode colorimétrique.
+   */
+  function setComponent(componentId) {
+    var created = null
+    try {
+      if (app.documents.length === 0) return err('aucun document ouvert')
+
+      var source = app.activeDocument
+      var selection = source.selection
+      if (!selection || selection.length === 0) {
+        return err('selectionnez un objet dans Illustrator avant de definir le composant')
+      }
+
+      var bounds = selectionBounds(selection)
+      var width = Math.abs(bounds[2] - bounds[0])
+      var height = Math.abs(bounds[1] - bounds[3])
+      if (!width || !height) return err('selection de taille nulle')
+
+      // Le nouveau document reprend le mode colorimétrique de la source : une
+      // conversion à ce stade fausserait toutes les couleurs en aval.
+      created = app.documents.add(source.documentColorSpace, width, height)
+      var layer = created.layers[0]
+
+      // Parcours à rebours : dupliquer en tête décale les index restants.
+      for (var i = selection.length - 1; i >= 0; i -= 1) {
+        selection[i].duplicate(layer, ElementPlacement.PLACEATEND)
+      }
+
+      if (created.pageItems.length === 0) {
+        return err('aucun objet n a pu etre copie')
+      }
+
+      // Les doublons gardent leurs coordonnées d'origine : on cadre le plan de
+      // travail sur elles plutôt que de déplacer l'artwork.
+      var copied = []
+      for (var j = 0; j < created.pageItems.length; j += 1) {
+        copied.push(created.pageItems[j])
+      }
+      created.artboards[0].artboardRect = selectionBounds(copied)
+
+      var stamp = new Date().getTime()
+      var temp = new File(
+        Folder.temp.fsName +
+          '/logo-forge-component-' +
+          String(componentId).replace(/[^a-zA-Z0-9]/g, '') +
+          '-' +
+          stamp +
+          '.ai'
+      )
+      var saveOptions = new IllustratorSaveOptions()
+      saveOptions.pdfCompatible = true
+      created.saveAs(temp, saveOptions)
+
+      var colorMode =
+        created.documentColorSpace === DocumentColorSpace.CMYK ? 'cmyk' : 'rgb'
+      var name = created.name
+
+      created.close(SaveOptions.DONOTSAVECHANGES)
+      created = null
+
+      // Rend la main au document de l'utilisateur, jamais laissé en arrière-plan.
+      app.activeDocument = source
+
+      return ok([name, temp.fsName, width, height, colorMode].join(UNIT))
+    } catch (e) {
+      if (created) {
+        try {
+          created.close(SaveOptions.DONOTSAVECHANGES)
+        } catch (closeError) {
+          /* déjà refermé */
+        }
+      }
+      return err(describe(e))
+    }
+  }
+
+  /** Ouvre le document d'un composant comme document de travail. */
+  function openComponent(path) {
+    try {
+      if (session) endSession()
+      var file = new File(path)
+      if (!file.exists) return err('composant introuvable : ' + path)
+
+      // La copie de travail protège le fichier du composant : le recolorage et
+      // `saveAs` sont tous deux destructeurs.
+      var temp = new File(
+        Folder.temp.fsName + '/logo-forge-work-' + new Date().getTime() + '.ai'
+      )
+      if (!file.copy(temp)) return err('copie de travail impossible')
+
+      session = { document: app.open(temp), file: temp }
+      return ok(temp.fsName)
+    } catch (e) {
+      session = null
+      return err(describe(e))
+    }
+  }
+
+  /**
+   * Bascule le document de travail en CMJN ou en RVB.
+   *
+   * Le mode colorimétrique n'est pas modifiable par affectation : Illustrator
+   * ne l'expose que par la commande de menu correspondante.
+   */
+  function setDocumentColorMode(mode) {
+    try {
+      var doc = workingDocument()
+      if (!doc) return err('aucun document de travail')
+
+      var wanted = String(mode).toLowerCase()
+      var current =
+        doc.documentColorSpace === DocumentColorSpace.CMYK ? 'cmyk' : 'rgb'
+      if (current === wanted) return ok('unchanged')
+
+      app.activeDocument = doc
+      app.executeMenuCommand(wanted === 'cmyk' ? 'doc-color-cmyk' : 'doc-color-rgb')
+      return ok(wanted)
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
+  /** Supprime un fichier temporaire de composant. */
+  function removeComponentFile(path) {
+    try {
+      var file = new File(path)
+      if (file.exists) file.remove()
+      return ok('removed')
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
   return {
     getDocumentName: getDocumentName,
     getDocumentInfo: getDocumentInfo,
@@ -656,8 +877,13 @@ var LogoForge = (function () {
     endSession: endSession,
     resetSession: resetSession,
     applyColorScheme: applyColorScheme,
+    setComponent: setComponent,
+    openComponent: openComponent,
+    setDocumentColorMode: setDocumentColorMode,
+    removeComponentFile: removeComponentFile,
     setArtboardPadding: setArtboardPadding,
     exportArtboardAsPNG: exportArtboardAsPNG,
+    exportArtboardAsJPEG: exportArtboardAsJPEG,
     exportArtboardAsSVG: exportArtboardAsSVG,
     exportArtboardAsPDF: exportArtboardAsPDF,
     exportArtboardAsEPS: exportArtboardAsEPS,
@@ -702,14 +928,29 @@ function lfEndSession() {
 function lfResetSession() {
   return LogoForge.resetSession()
 }
-function lfApplyColorScheme(scheme, hex) {
-  return LogoForge.applyColorScheme(scheme, hex)
+function lfApplyColorScheme(scheme, hex, threshold) {
+  return LogoForge.applyColorScheme(scheme, hex, threshold)
+}
+function lfSetComponent(componentId) {
+  return LogoForge.setComponent(componentId)
+}
+function lfOpenComponent(path) {
+  return LogoForge.openComponent(path)
+}
+function lfSetColorMode(mode) {
+  return LogoForge.setDocumentColorMode(mode)
+}
+function lfRemoveComponentFile(path) {
+  return LogoForge.removeComponentFile(path)
 }
 function lfSetPadding(index, top, right, bottom, left) {
   return LogoForge.setArtboardPadding(index, top, right, bottom, left)
 }
 function lfExportPNG(index, path, width, resolution) {
   return LogoForge.exportArtboardAsPNG(index, path, width, resolution)
+}
+function lfExportJPEG(index, path, width, resolution) {
+  return LogoForge.exportArtboardAsJPEG(index, path, width, resolution)
 }
 function lfExportSVG(index, path) {
   return LogoForge.exportArtboardAsSVG(index, path)
