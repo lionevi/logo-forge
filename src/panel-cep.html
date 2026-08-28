@@ -6,17 +6,17 @@
     <title>Logo Forge</title>
 
     <!--
-      Panneau CEP autonome.
+      Panneau CEP de Logo Forge.
 
-      Un seul fichier, sans framework, sans module, sans bundle : c'est la seule
-      forme dont on soit certain qu'elle s'exécute dans le Chromium figé de CEP.
-
-      Contraintes tenues dans tout ce fichier, pour Chromium 61 (CEP 9) :
-        - pas de `?.` ni `??` (Chrome 80) ;
+      Contraintes tenues dans tout ce fichier, pour le Chromium figé de CEP
+      (61 en CEP 9, ~74 en CEP 10) :
+        - ES5 : pas de `?.`, pas de `??`, pas d'arrow, pas de `const` ;
         - pas de `gap` en flexbox (Chrome 84) — les gouttières passent par des
-          marges ;
+          marges ou des `float` ;
         - pas de `inset` (Chrome 87), pas de `rgb(r g b / a%)` (Chrome 65) ;
         - pas d'unité `vh` : la mise en page est ancrée en positionnement absolu.
+
+      L'export lui-même vit dans js/export-engine.js et jsx/main.jsx.
     -->
 
     <style>
@@ -39,7 +39,6 @@
         box-sizing: border-box;
       }
 
-      /* Barre de défilement discrète */
       ::-webkit-scrollbar {
         width: 8px;
       }
@@ -53,7 +52,7 @@
         background-clip: content-box;
       }
 
-      /* ---- Structure : trois bandes ancrées en absolu ---- */
+      /* ---- Structure ---- */
 
       .panel {
         position: absolute;
@@ -75,13 +74,23 @@
         background: #2f2f2f;
       }
 
-      .panel-body {
+      .tabs {
         position: absolute;
         top: 44px;
         right: 0;
+        left: 0;
+        height: 34px;
+        border-bottom: 1px solid #3e3e3e;
+        background: #2f2f2f;
+      }
+
+      .panel-body {
+        position: absolute;
+        top: 78px;
+        right: 0;
         bottom: 0;
         left: 0;
-        padding: 12px 12px 96px;
+        padding: 12px 12px 84px;
         overflow-x: hidden;
         overflow-y: auto;
       }
@@ -103,19 +112,16 @@
         top: 13px;
         left: 12px;
       }
-
       .brand-name {
         font-size: 14px;
         font-weight: 700;
         color: #ffffff;
       }
-
       .brand-version {
         margin-left: 5px;
         font-size: 10px;
         color: #909090;
       }
-
       .connection {
         position: absolute;
         top: 15px;
@@ -123,7 +129,6 @@
         font-size: 10px;
         color: #909090;
       }
-
       .status-dot {
         display: inline-block;
         width: 8px;
@@ -133,7 +138,6 @@
         background: #6e6e6e;
         vertical-align: middle;
       }
-
       .status-dot.on {
         background: #2d9d78;
       }
@@ -144,12 +148,43 @@
         background: #e34850;
       }
 
+      /* ---- Onglets ---- */
+
+      .tab {
+        float: left;
+        height: 33px;
+        padding: 0 14px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: transparent;
+        color: #909090;
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        cursor: pointer;
+      }
+      .tab:hover {
+        color: #e3e3e3;
+      }
+      .tab.on {
+        border-bottom-color: #2680eb;
+        color: #ffffff;
+      }
+
+      .pane {
+        display: none;
+      }
+      .pane.on {
+        display: block;
+      }
+
       /* ---- Sections ---- */
 
       .section {
         margin-bottom: 16px;
       }
-
       .section-title {
         margin: 0 0 8px;
         font-size: 11px;
@@ -158,25 +193,21 @@
         letter-spacing: 0.06em;
         color: #909090;
       }
-
       .section-count {
         float: right;
         font-weight: 400;
         letter-spacing: 0;
       }
-
       .card {
         padding: 8px 10px;
         border: 1px solid #3e3e3e;
         border-radius: 4px;
         background: #2f2f2f;
       }
-
       .card.empty {
         border-style: dashed;
         border-color: #4a4a4a;
       }
-
       .doc-name {
         margin: 0;
         overflow: hidden;
@@ -185,17 +216,14 @@
         white-space: nowrap;
         text-overflow: ellipsis;
       }
-
       .card.empty .doc-name {
         color: #e68619;
       }
-
       .doc-meta {
         margin: 2px 0 0;
         font-size: 11px;
         color: #909090;
       }
-
       .icon-button {
         float: right;
         width: 22px;
@@ -209,102 +237,85 @@
         line-height: 1;
         cursor: pointer;
       }
-
       .icon-button:hover {
         border-color: #4a4a4a;
         background: #323232;
         color: #e3e3e3;
       }
 
-      /* ---- Grille de préréglages, 2 colonnes ---- */
+      /* ---- Composants ---- */
 
-      .preset-grid {
+      .comp-grid {
         margin: 0 -3px;
         overflow: hidden;
       }
-
-      .preset-cell {
+      .comp-cell {
         float: left;
         width: 50%;
         padding: 0 3px 6px;
       }
-
-      .preset-tile {
+      .comp-card {
         position: relative;
-        display: block;
-        width: 100%;
-        padding: 8px 34px 8px 8px;
+        padding: 8px;
         border: 1px solid #3e3e3e;
         border-radius: 4px;
         background: #2f2f2f;
+      }
+      .comp-preview {
+        height: 46px;
+        margin-bottom: 6px;
+        border-radius: 3px;
+        background: #4a4a4a;
+        color: #909090;
+        font-size: 10px;
+        line-height: 46px;
+        text-align: center;
+      }
+      .comp-name {
+        width: 100%;
+        padding: 3px 5px;
+        border: 1px solid transparent;
+        border-radius: 3px;
+        background: transparent;
         color: #e3e3e3;
         font-family: inherit;
-        text-align: left;
-        cursor: pointer;
-      }
-
-      .preset-tile:hover {
-        border-color: #4a4a4a;
-        background: #323232;
-      }
-
-      .preset-tile.on {
-        border-color: #2680eb;
-        background: rgba(38, 128, 235, 0.1);
-      }
-
-      .preset-emoji {
-        float: left;
-        margin-right: 7px;
-        font-size: 15px;
-        line-height: 1.4;
-      }
-
-      .preset-label {
-        display: block;
-        overflow: hidden;
         font-size: 11px;
         font-weight: 700;
-        white-space: nowrap;
-        text-overflow: ellipsis;
       }
-
-      .preset-summary {
-        display: block;
-        overflow: hidden;
+      .comp-name:focus {
+        border-color: #2680eb;
+        background: #252525;
+        outline: none;
+      }
+      .comp-board {
+        width: 100%;
+        margin-top: 4px;
+        padding: 3px 4px;
+        border: 1px solid #4a4a4a;
+        border-radius: 3px;
+        background: #252525;
+        color: #e3e3e3;
+        font-family: inherit;
         font-size: 10px;
-        color: #909090;
-        white-space: nowrap;
-        text-overflow: ellipsis;
       }
-
-      .preset-switch {
+      .comp-remove {
         position: absolute;
-        top: 50%;
-        right: 8px;
-        width: 22px;
-        height: 12px;
-        margin-top: -6px;
-        border-radius: 6px;
-        background: #5a5a5a;
+        top: 4px;
+        right: 4px;
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        border: 0;
+        border-radius: 3px;
+        background: transparent;
+        color: #6e6e6e;
+        font-size: 12px;
+        line-height: 1;
+        cursor: pointer;
       }
-
-      .preset-tile.on .preset-switch {
-        background: #2680eb;
-      }
-
-      .preset-knob {
-        position: absolute;
-        top: 2px;
-        left: 2px;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #ffffff;
-      }
-
-      .preset-tile.on .preset-knob {
-        left: 12px;
+      .comp-remove:hover {
+        background: #e34850;
+        color: #ffffff;
       }
 
       /* ---- Cases à cocher ---- */
@@ -314,19 +325,25 @@
         padding: 4px 2px;
         cursor: pointer;
       }
-
       .check-row.disabled {
         cursor: not-allowed;
         opacity: 0.5;
       }
-
       .check-row input {
         width: 13px;
         height: 13px;
         margin: 0 7px 0 0;
         vertical-align: middle;
       }
-
+      .swatch {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        margin-right: 6px;
+        border: 1px solid #5a5a5a;
+        border-radius: 2px;
+        vertical-align: middle;
+      }
       .badge {
         margin-left: 6px;
         padding: 1px 5px;
@@ -345,8 +362,9 @@
         font-size: 11px;
         color: #909090;
       }
-
-      input[type='text'] {
+      input[type='text'],
+      input[type='number'],
+      select {
         width: 100%;
         margin-bottom: 8px;
         padding: 5px 8px;
@@ -357,12 +375,11 @@
         font-family: inherit;
         font-size: 12px;
       }
-
-      input[type='text']:focus {
+      input:focus,
+      select:focus {
         border-color: #2680eb;
         outline: none;
       }
-
       .destination {
         margin: 6px 0 0;
         overflow: hidden;
@@ -372,12 +389,76 @@
         white-space: nowrap;
         text-overflow: ellipsis;
       }
-
       .destination.empty {
         font-style: italic;
       }
 
-      /* ---- Résumé, avertissements ---- */
+      .row {
+        margin: 0 -3px 6px;
+        overflow: hidden;
+      }
+      .col {
+        float: left;
+        width: 50%;
+        padding: 0 3px;
+      }
+      .col-4 {
+        float: left;
+        width: 25%;
+        padding: 0 3px;
+      }
+      .col label {
+        display: block;
+        margin-bottom: 3px;
+        font-size: 10px;
+        color: #909090;
+      }
+      .col-4 label {
+        display: block;
+        margin-bottom: 3px;
+        font-size: 10px;
+        color: #909090;
+      }
+
+      /* ---- Listes d'échelles et de couleurs ---- */
+
+      .list-row {
+        margin-bottom: 4px;
+        padding: 6px 8px;
+        border: 1px solid #3e3e3e;
+        border-radius: 4px;
+        background: #2f2f2f;
+        overflow: hidden;
+      }
+      .list-row .label {
+        float: left;
+        font-size: 11px;
+        line-height: 20px;
+      }
+      .list-row .meta {
+        float: left;
+        margin-left: 8px;
+        color: #909090;
+        font-size: 10px;
+        line-height: 20px;
+      }
+      .list-row .kill {
+        float: right;
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        border: 0;
+        border-radius: 3px;
+        background: transparent;
+        color: #6e6e6e;
+        cursor: pointer;
+      }
+      .list-row .kill:hover {
+        background: #e34850;
+        color: #ffffff;
+      }
+
+      /* ---- Messages ---- */
 
       .summary {
         margin: 0 0 12px;
@@ -387,7 +468,6 @@
         color: #909090;
         font-size: 11px;
       }
-
       .notice {
         margin: 0 0 8px;
         padding: 6px 8px;
@@ -398,12 +478,10 @@
         font-size: 11px;
         line-height: 1.4;
       }
-
       .notice.error {
         border-left-color: #e34850;
         color: #e34850;
       }
-
       .notice.ok {
         border-left-color: #2d9d78;
         color: #2d9d78;
@@ -423,23 +501,24 @@
         font-size: 12px;
         cursor: pointer;
       }
-
       .button:hover {
         background: #323232;
       }
-
       .button.primary {
         border-color: #2680eb;
         background: #2680eb;
         color: #ffffff;
         font-weight: 700;
       }
-
       .button.primary:hover {
         border-color: #1473e6;
         background: #1473e6;
       }
-
+      .button.small {
+        padding: 5px 10px;
+        border-radius: 12px;
+        font-size: 11px;
+      }
       .button[disabled] {
         border-color: #4a4a4a;
         background: #4a4a4a;
@@ -447,7 +526,58 @@
         cursor: not-allowed;
       }
 
-      /* Bandeau de diagnostic : styles en ligne dans le JS, rien ici. */
+      /* ---- Modale et progression ---- */
+
+      .veil {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        display: none;
+        background: rgba(15, 15, 15, 0.72);
+      }
+      .veil.on {
+        display: block;
+      }
+      .dialog {
+        position: absolute;
+        top: 50%;
+        right: 12px;
+        left: 12px;
+        max-height: 88%;
+        margin-top: -170px;
+        padding: 14px;
+        border: 1px solid #4a4a4a;
+        border-radius: 6px;
+        background: #2f2f2f;
+        overflow-y: auto;
+      }
+      .dialog h3 {
+        margin: 0 0 12px;
+        font-size: 13px;
+        color: #ffffff;
+      }
+      .progress {
+        position: relative;
+        height: 18px;
+        margin: 10px 0 8px;
+        border-radius: 4px;
+        background: #4a4a4a;
+        overflow: hidden;
+      }
+      .progress-bar {
+        width: 0;
+        height: 100%;
+        background: #2680eb;
+      }
+      .progress-label {
+        overflow: hidden;
+        color: #909090;
+        font-size: 10px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
     </style>
   </head>
 
@@ -456,7 +586,7 @@
       <div class="panel-header">
         <div class="brand">
           <span class="brand-name">Logo Forge</span>
-          <span class="brand-version" id="version">v0.1.0</span>
+          <span class="brand-version">v0.1.0</span>
         </div>
         <div class="connection">
           <span class="status-dot" id="status-dot"></span>
@@ -464,58 +594,214 @@
         </div>
       </div>
 
+      <div class="tabs" id="tabs">
+        <button class="tab on" data-tab="components">Composants</button>
+        <button class="tab" data-tab="colors">Couleurs</button>
+        <button class="tab" data-tab="settings">Réglages</button>
+      </div>
+
       <div class="panel-body">
-        <div class="section">
-          <h2 class="section-title">
-            Document
-            <button
-              class="icon-button"
-              id="refresh"
-              title="Re-détecter le document actif"
-            >
-              &#8635;
+        <!-- Onglet Composants -->
+        <div class="pane on" id="pane-components">
+          <div class="section">
+            <h2 class="section-title">
+              Document
+              <button class="icon-button" id="refresh" title="Re-détecter">
+                &#8635;
+              </button>
+            </h2>
+            <div id="document-card"></div>
+          </div>
+
+          <div class="section">
+            <h2 class="section-title">
+              Composants <span class="section-count" id="comp-count"></span>
+            </h2>
+            <div class="comp-grid" id="comp-grid"></div>
+            <button class="button small" id="add-component">
+              + Ajouter un composant
             </button>
-          </h2>
-          <div id="document-card"></div>
+          </div>
         </div>
 
-        <div class="section">
-          <h2 class="section-title">
-            Préréglages <span class="section-count" id="preset-count"></span>
-          </h2>
-          <div class="preset-grid" id="preset-grid"></div>
+        <!-- Onglet Couleurs -->
+        <div class="pane" id="pane-colors">
+          <div class="section">
+            <h2 class="section-title">Déclinaisons</h2>
+            <div id="scheme-list"></div>
+          </div>
+
+          <div class="section">
+            <h2 class="section-title">Couleurs personnalisées</h2>
+            <div id="custom-list"></div>
+            <div class="row">
+              <div class="col">
+                <label for="custom-name">Nom</label>
+                <input type="text" id="custom-name" placeholder="Bleu marque" />
+              </div>
+              <div class="col">
+                <label for="custom-hex">Couleur</label>
+                <input type="text" id="custom-hex" value="#2680eb" />
+              </div>
+            </div>
+            <button class="button small" id="add-custom">+ Couleur</button>
+          </div>
         </div>
 
-        <div class="section">
-          <h2 class="section-title">Déclinaisons</h2>
-          <div id="scheme-list"></div>
-        </div>
+        <!-- Onglet Réglages -->
+        <div class="pane" id="pane-settings">
+          <div class="tabs" id="subtabs" style="position: static; height: auto; border: 0; background: transparent; margin-bottom: 10px; overflow: hidden">
+            <button class="tab on" data-sub="files">Fichiers</button>
+            <button class="tab" data-sub="names">Noms</button>
+            <button class="tab" data-sub="scales">Échelles</button>
+            <button class="tab" data-sub="padding">Marges</button>
+          </div>
 
-        <div class="section">
-          <h2 class="section-title">Destination</h2>
-          <label class="field-label" for="package-name">Nom du package</label>
-          <input type="text" id="package-name" placeholder="mon-logo" />
-          <button class="button" id="choose-folder">Choisir le dossier&hellip;</button>
-          <p class="destination empty" id="destination">Aucun dossier choisi</p>
+          <div class="pane on" id="sub-files">
+            <div class="section">
+              <h2 class="section-title">Formats</h2>
+              <div id="format-list"></div>
+              <label class="check-row">
+                <input type="checkbox" id="want-favicon" checked />Générer les
+                favicons (16, 32, 128, 180, 192 px)
+              </label>
+            </div>
+          </div>
+
+          <div class="pane" id="sub-names">
+            <div class="section">
+              <h2 class="section-title">Séparateur</h2>
+              <select id="separator">
+                <option value="-">Tiret — Logo-FullColor.svg</option>
+                <option value="_">Underscore — Logo_FullColor.svg</option>
+                <option value=" ">Espace — Logo FullColor.svg</option>
+              </select>
+              <p class="summary" id="name-preview"></p>
+            </div>
+          </div>
+
+          <div class="pane" id="sub-scales">
+            <div class="section">
+              <h2 class="section-title">Préréglage</h2>
+              <select id="scale-preset">
+                <option value="default">Défaut — web + print</option>
+                <option value="web">Web seul</option>
+                <option value="print">Print seul</option>
+              </select>
+            </div>
+            <div class="section">
+              <h2 class="section-title">Échelles</h2>
+              <div id="scale-list"></div>
+              <div class="row">
+                <div class="col-4">
+                  <label for="scale-type">Type</label>
+                  <select id="scale-type">
+                    <option value="web">Web</option>
+                    <option value="print">Print</option>
+                  </select>
+                </div>
+                <div class="col-4">
+                  <label for="scale-width">Largeur px</label>
+                  <input type="number" id="scale-width" value="900" min="1" />
+                </div>
+                <div class="col-4">
+                  <label for="scale-dpi">ppp</label>
+                  <input type="number" id="scale-dpi" value="72" min="1" />
+                </div>
+                <div class="col-4">
+                  <label>&nbsp;</label>
+                  <button class="button small" id="add-scale">+</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pane" id="sub-padding">
+            <div class="section">
+              <h2 class="section-title">Marges autour du logo (px)</h2>
+              <label class="check-row">
+                <input type="radio" name="padmode" value="square" checked />Carré
+                — une seule valeur
+              </label>
+              <label class="check-row">
+                <input type="radio" name="padmode" value="individual" />Individuel
+                — quatre valeurs
+              </label>
+              <div class="row" id="padding-fields">
+                <div class="col-4">
+                  <label for="pad-top">Haut</label>
+                  <input type="number" id="pad-top" value="0" min="0" />
+                </div>
+                <div class="col-4">
+                  <label for="pad-right">Droite</label>
+                  <input type="number" id="pad-right" value="0" min="0" />
+                </div>
+                <div class="col-4">
+                  <label for="pad-bottom">Bas</label>
+                  <input type="number" id="pad-bottom" value="0" min="0" />
+                </div>
+                <div class="col-4">
+                  <label for="pad-left">Gauche</label>
+                  <input type="number" id="pad-left" value="0" min="0" />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div id="messages"></div>
       </div>
 
       <div class="panel-footer">
-        <button class="button primary" id="export" disabled>
+        <button class="button primary" id="open-export" disabled>
           Exporter le package logo
         </button>
+      </div>
+
+      <!-- Modale d'export -->
+      <div class="veil" id="export-veil">
+        <div class="dialog">
+          <h3>Exporter le package</h3>
+          <label class="field-label" for="client-name">Nom du client</label>
+          <input type="text" id="client-name" placeholder="Ma Marque" />
+          <button class="button small" id="choose-folder">
+            Choisir le dossier&hellip;
+          </button>
+          <p class="destination empty" id="destination">Aucun dossier choisi</p>
+          <p class="summary" id="export-summary"></p>
+          <div id="export-error"></div>
+          <div class="row">
+            <div class="col">
+              <button class="button small" id="cancel-export">Annuler</button>
+            </div>
+            <div class="col">
+              <button class="button primary small" id="start-export" disabled>
+                Exporter
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Progression -->
+      <div class="veil" id="progress-veil">
+        <div class="dialog">
+          <h3 id="progress-title">Export en cours</h3>
+          <div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
+          <p class="progress-label" id="progress-label">Préparation&hellip;</p>
+          <div id="progress-result"></div>
+          <button class="button small" id="abort-export">Annuler</button>
+        </div>
       </div>
     </div>
 
     <!--
       CSInterface, quand l'hôte le met à disposition. Le panneau n'en dépend
-      pas : il parle directement à `window.__adobe_cep__`, que CEP injecte et
-      sur lequel CSInterface n'est qu'une surcouche. Un 404 sur cette ligne est
-      donc sans conséquence.
+      pas : il parle directement à window.__adobe_cep__, sur lequel CSInterface
+      n'est qu'une surcouche. Un 404 sur cette ligne est sans conséquence.
     -->
     <script src="./CSInterface.js"></script>
+    <script src="./js/export-engine.js"></script>
 
     <script>
       ;(function () {
@@ -523,10 +809,6 @@
 
         /* ---------------------------------------------------------------- *
          * Filet de diagnostic
-         *
-         * Un panneau muet est le pire des symptômes : toute erreur non
-         * interceptée s'affiche donc dans le panneau lui-même, la console
-         * distante CEP n'étant pas toujours joignable.
          * ---------------------------------------------------------------- */
 
         function showError(title, detail) {
@@ -559,7 +841,6 @@
           showError('Erreur JavaScript :', describe(error || message))
         }
 
-        /** Exécute une fonction en signalant toute erreur, sans la propager. */
         function guard(label, fn) {
           try {
             return fn()
@@ -569,19 +850,29 @@
           }
         }
 
+        // Le moteur est un fichier séparé : sans lui, on le dit plutôt que de
+        // laisser un bouton inerte.
+        if (typeof LogoForgeEngine === 'undefined') {
+          showError(
+            'Moteur introuvable :',
+            'js/export-engine.js ne s’est pas chargé. Vérifiez que le dossier ' +
+              'js/ accompagne index.html dans l’extension.'
+          )
+          return
+        }
+        var engine = LogoForgeEngine
+
         /* ---------------------------------------------------------------- *
-         * Pont Illustrator
+         * Environnement
          * ---------------------------------------------------------------- */
 
-        // Repli demandé pour le développement hors CEP.
         if (typeof CSInterface === 'undefined') {
           window.CSInterface = function () {}
-          window.CSInterface.prototype.evalScript = function (script, callback) {
-            if (callback) callback('')
+          window.CSInterface.prototype.evalScript = function (script, cb) {
+            if (cb) cb('')
           }
         }
 
-        /** Environnement d'exécution : 'cep', 'uxp' ou 'dev'. */
         function detectEnvironment() {
           if (typeof window.__adobe_cep__ !== 'undefined') return 'cep'
           try {
@@ -593,206 +884,141 @@
         }
 
         var ENVIRONMENT = detectEnvironment()
-
-        var ENVIRONMENT_LABEL = {
+        var ENV_LABEL = {
           cep: { dot: 'on', text: 'CEP' },
-          uxp: { dot: 'on', text: 'UXP' },
+          uxp: { dot: 'partial', text: 'UXP' },
           dev: { dot: 'off', text: 'Dev' },
         }
 
-        /**
-         * Évalue un script ExtendScript dans Illustrator.
-         *
-         * On passe par `__adobe_cep__` plutôt que par CSInterface : c'est ce que
-         * CSInterface appelle en interne, et cela évite de dépendre d'un fichier
-         * qui peut manquer.
-         */
-        function evalScript(script, callback) {
-          if (ENVIRONMENT === 'cep' && window.__adobe_cep__) {
-            window.__adobe_cep__.evalScript(script, callback)
-            return
-          }
-          var bridge = new CSInterface()
-          bridge.evalScript(script, callback)
-        }
-
-        /** Script ExtendScript : nom du document actif et nombre de plans de travail. */
-        var DOCUMENT_SCRIPT =
-          'var r = "";' +
-          'try {' +
-          '  if (app.documents.length > 0) {' +
-          '    var d = app.activeDocument;' +
-          '    r = d.name + "|" + d.artboards.length;' +
-          '  }' +
-          '} catch (e) { r = ""; }' +
-          'r;'
-
-        /**
-         * Lit le document actif.
-         * @param callback reçoit `{name, artboards}` ou `null`.
-         */
-        function readDocument(callback) {
-          if (ENVIRONMENT === 'dev') {
-            callback(null)
-            return
-          }
-
-          evalScript(DOCUMENT_SCRIPT, function (result) {
-            if (!result || result === 'EvalScript error.' || result === 'undefined') {
-              callback(null)
-              return
-            }
-            var parts = String(result).split('|')
-            if (!parts[0]) {
-              callback(null)
-              return
-            }
-            callback({
-              name: parts[0],
-              artboards: parseInt(parts[1], 10) || 1,
-            })
-          })
-        }
-
-        /**
-         * Ouvre un sélecteur de dossier.
-         * @param callback reçoit le chemin natif, ou `null` si annulé.
-         */
-        function chooseFolder(callback) {
-          // API de fichiers CEP, disponible dès CEP 5.
-          if (window.cep && window.cep.fs && window.cep.fs.showOpenDialog) {
-            var result = window.cep.fs.showOpenDialog(
-              false,
-              true,
-              'Dossier de destination du pack',
-              '',
-              null
-            )
-            if (result && result.data && result.data.length > 0) {
-              callback(result.data[0])
-              return
-            }
-            callback(null)
-            return
-          }
-
-          // Repli ExtendScript.
-          evalScript(
-            'var f = Folder.selectDialog("Dossier de destination du pack"); f ? f.fsName : "";',
-            function (path) {
-              callback(path && path.length > 0 ? path : null)
-            }
-          )
-        }
-
         /* ---------------------------------------------------------------- *
-         * Données
-         *
-         * Les huit préréglages reprennent ceux de `src/core/presets.ts`. Ce
-         * fichier étant autonome par construction, la liste y est recopiée :
-         * toute modification là-bas doit être répercutée ici.
+         * État
          * ---------------------------------------------------------------- */
 
-        var PRESETS = [
-          { id: 'sources', emoji: '📦', label: 'Sources', summary: 'AI natif' },
-          { id: 'web', emoji: '🌐', label: 'Web', summary: 'SVG + PNG 72 ppp' },
-          {
-            id: 'print',
-            emoji: '🖨️',
-            label: 'Impression',
-            summary: 'PDF + EPS 300 ppp',
-          },
-          {
-            id: 'social',
-            emoji: '📱',
-            label: 'Social',
-            summary: 'PNG par plateforme',
-          },
-          {
-            id: 'favicon',
-            emoji: '⭐',
-            label: 'Favicon',
-            summary: 'ICO + PNG multi-tailles',
-          },
-          {
-            id: 'office',
-            emoji: '📄',
-            label: 'Bureautique',
-            summary: 'PNG 150 ppp',
-          },
-          {
-            id: 'appIcons',
-            emoji: '📲',
-            label: 'Icônes App',
-            summary: 'PNG multi-tailles',
-          },
-          {
-            id: 'video',
-            emoji: '🎬',
-            label: 'Vidéo',
-            summary: 'PNG 1920 × 1080',
-          },
+        var DEFAULT_COMPONENTS = [
+          'Logo',
+          'Logo Mark',
+          'Logotype',
+          'Stacked Logo',
+          'Vertical Logo',
+          'Centered Logo',
         ]
 
         var SCHEMES = [
-          { id: 'full-color', label: 'Full Color' },
-          { id: 'black', label: 'Black' },
-          { id: 'white', label: 'White' },
-          { id: 'grayscale', label: 'Grayscale' },
+          { id: 'fullColor', label: 'Full Color', swatch: '#2680eb' },
+          { id: 'black', label: 'Black', swatch: '#000000' },
+          { id: 'white', label: 'White', swatch: '#ffffff' },
+          { id: 'inverted', label: 'Inverted', swatch: '#d97fd9' },
+          { id: 'grayscale', label: 'Grayscale', swatch: '#909090' },
         ]
 
-        /** Formats qu'Illustrator ne sait pas produire par script. */
-        var UNSUPPORTED = { favicon: 'ICO' }
+        var FORMATS = [
+          { id: 'ai', label: 'AI — source Illustrator' },
+          { id: 'svg', label: 'SVG — vectoriel web' },
+          { id: 'png', label: 'PNG — matriciel transparent' },
+          { id: 'pdf', label: 'PDF — imprimeur' },
+          { id: 'eps', label: 'EPS — imprimeur historique' },
+        ]
 
         var state = {
           document: null,
-          presets: { sources: true, web: true },
-          schemes: { 'full-color': true },
-          packageName: '',
-          nameEdited: false,
+          components: [],
+          schemes: { fullColor: true, black: true, white: true, inverted: true },
+          customs: [],
+          formats: { ai: true, svg: true, png: true, pdf: true, eps: false },
+          favicon: true,
+          separator: '-',
+          scales: [
+            { type: 'web', width: 900, resolution: 72 },
+            { type: 'print', width: 2400, resolution: 300 },
+          ],
+          padding: { mode: 'square', top: 0, right: 0, bottom: 0, left: 0 },
+          clientName: '',
           destination: null,
+          running: null,
+        }
+
+        for (var d = 0; d < DEFAULT_COMPONENTS.length; d += 1) {
+          state.components.push({
+            name: DEFAULT_COMPONENTS[d],
+            artboardIndex: Math.min(d, 0),
+          })
         }
 
         /* ---------------------------------------------------------------- *
-         * Rendu
+         * Aides
          * ---------------------------------------------------------------- */
 
         function byId(id) {
           return document.getElementById(id)
         }
 
-        function selectedPresets() {
-          var list = []
-          for (var i = 0; i < PRESETS.length; i += 1) {
-            if (state.presets[PRESETS[i].id]) list.push(PRESETS[i])
-          }
-          return list
+        function escapeHtml(text) {
+          return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
         }
 
-        function selectedSchemes() {
+        function scaleLabel(scale) {
+          return scale.width + 'px'
+        }
+
+        /** Déclinaisons retenues, personnalisées comprises. */
+        function activeSchemes() {
           var list = []
           for (var i = 0; i < SCHEMES.length; i += 1) {
-            if (state.schemes[SCHEMES[i].id]) list.push(SCHEMES[i])
+            if (state.schemes[SCHEMES[i].id]) list.push({ id: SCHEMES[i].id })
+          }
+          for (var j = 0; j < state.customs.length; j += 1) {
+            list.push({
+              id: 'custom',
+              name: state.customs[j].name,
+              hex: state.customs[j].hex,
+            })
           }
           return list
         }
 
-        /** Retire l'extension d'un nom de fichier. */
-        function stripExtension(name) {
-          var dot = name.lastIndexOf('.')
-          return dot <= 0 ? name : name.slice(0, dot)
+        /** Configuration transmise au moteur. */
+        function buildConfig() {
+          var scales = []
+          for (var i = 0; i < state.scales.length; i += 1) {
+            scales.push({
+              type: state.scales[i].type,
+              label: scaleLabel(state.scales[i]),
+              width: state.scales[i].width,
+              resolution: state.scales[i].resolution,
+            })
+          }
+          return {
+            clientName: state.clientName,
+            outputFolder: state.destination,
+            components: state.components,
+            colorSchemes: activeSchemes(),
+            formats: state.formats,
+            scales: scales,
+            favicon: state.favicon,
+            separator: state.separator,
+            padding: state.padding,
+          }
         }
 
-        /** Tronque un chemin par le milieu, en gardant volume et dossier. */
-        function truncatePath(path, max) {
-          if (path.length <= max) return path
-          var head = Math.ceil((max - 1) / 2)
-          var tail = Math.floor((max - 1) / 2)
-          return path.slice(0, head) + '…' + path.slice(path.length - tail)
+        /** Nombre de fichiers prévus par le plan courant. */
+        function plannedCount() {
+          try {
+            return engine.planExport(buildConfig()).length
+          } catch (error) {
+            return 0
+          }
         }
+
+        /* ---------------------------------------------------------------- *
+         * Rendu
+         * ---------------------------------------------------------------- */
 
         function renderStatus() {
-          var info = ENVIRONMENT_LABEL[ENVIRONMENT]
+          var info = ENV_LABEL[ENVIRONMENT]
           byId('status-dot').className = 'status-dot ' + info.dot
           byId('status-label').innerHTML = info.text
         }
@@ -802,191 +1028,264 @@
           if (state.document) {
             card.className = 'card'
             card.innerHTML =
-              '<p class="doc-name"></p><p class="doc-meta"></p>'
-            card.childNodes[0].appendChild(
-              document.createTextNode(state.document.name)
-            )
-            card.childNodes[1].appendChild(
-              document.createTextNode(
-                state.document.artboards +
-                  ' plan' +
-                  (state.document.artboards > 1 ? 's' : '') +
-                  ' de travail'
-              )
-            )
+              '<p class="doc-name">' +
+              escapeHtml(state.document.name) +
+              '</p><p class="doc-meta">' +
+              state.document.artboardCount +
+              ' plan' +
+              (state.document.artboardCount > 1 ? 's' : '') +
+              ' de travail</p>'
           } else {
             card.className = 'card empty'
             card.innerHTML =
               '<p class="doc-name">Aucun document ouvert</p>' +
-              '<p class="doc-meta">Ouvrez le logo à exporter dans Illustrator, ' +
-              'puis actualisez.</p>'
+              '<p class="doc-meta">Ouvrez et enregistrez le logo dans ' +
+              'Illustrator, puis actualisez.</p>'
           }
         }
 
-        function renderPresets() {
+        function renderComponents() {
+          var count = state.document ? state.document.artboardCount : 1
           var html = ''
-          for (var i = 0; i < PRESETS.length; i += 1) {
-            var preset = PRESETS[i]
-            var on = state.presets[preset.id] ? ' on' : ''
+          for (var i = 0; i < state.components.length; i += 1) {
+            var comp = state.components[i]
+            var options = ''
+            for (var a = 0; a < count; a += 1) {
+              options +=
+                '<option value="' +
+                a +
+                '"' +
+                (comp.artboardIndex === a ? ' selected' : '') +
+                '>Plan ' +
+                (a + 1) +
+                '</option>'
+            }
             html +=
-              '<div class="preset-cell">' +
-              '<button type="button" class="preset-tile' +
-              on +
-              '" data-preset="' +
-              preset.id +
+              '<div class="comp-cell"><div class="comp-card">' +
+              '<button class="comp-remove" data-remove="' +
+              i +
+              '" title="Supprimer">&times;</button>' +
+              '<div class="comp-preview">Plan ' +
+              (comp.artboardIndex + 1) +
+              '</div>' +
+              '<input class="comp-name" type="text" data-name="' +
+              i +
+              '" value="' +
+              escapeHtml(comp.name) +
+              '" />' +
+              '<select class="comp-board" data-board="' +
+              i +
               '">' +
-              '<span class="preset-emoji">' +
-              preset.emoji +
-              '</span>' +
-              '<span class="preset-label">' +
-              preset.label +
-              '</span>' +
-              '<span class="preset-summary">' +
-              preset.summary +
-              '</span>' +
-              '<span class="preset-switch"><span class="preset-knob"></span></span>' +
-              '</button>' +
-              '</div>'
+              options +
+              '</select>' +
+              '</div></div>'
           }
-          byId('preset-grid').innerHTML = html
-          byId('preset-count').innerHTML =
-            selectedPresets().length + ' / ' + PRESETS.length
+          byId('comp-grid').innerHTML = html
+          byId('comp-count').innerHTML = state.components.length + ' composants'
         }
 
         function renderSchemes() {
           var html = ''
           for (var i = 0; i < SCHEMES.length; i += 1) {
             var scheme = SCHEMES[i]
-            var checked = state.schemes[scheme.id] ? ' checked' : ''
             html +=
-              '<label class="check-row">' +
-              '<input type="checkbox" data-scheme="' +
+              '<label class="check-row"><input type="checkbox" data-scheme="' +
               scheme.id +
               '"' +
-              checked +
-              ' />' +
+              (state.schemes[scheme.id] ? ' checked' : '') +
+              ' /><span class="swatch" style="background:' +
+              scheme.swatch +
+              '"></span>' +
               scheme.label +
               '</label>'
           }
-          html +=
-            '<label class="check-row disabled">' +
-            '<input type="checkbox" disabled />Custom' +
-            '<span class="badge">v1.1</span>' +
-            '</label>'
           byId('scheme-list').innerHTML = html
+
+          var customs = ''
+          for (var j = 0; j < state.customs.length; j += 1) {
+            customs +=
+              '<div class="list-row"><span class="swatch" style="background:' +
+              escapeHtml(state.customs[j].hex) +
+              '"></span><span class="label">' +
+              escapeHtml(state.customs[j].name) +
+              '</span><span class="meta">' +
+              escapeHtml(state.customs[j].hex) +
+              '</span><button class="kill" data-custom="' +
+              j +
+              '">&times;</button></div>'
+          }
+          byId('custom-list').innerHTML =
+            customs || '<p class="summary">Aucune couleur personnalisée.</p>'
         }
 
-        function renderDestination() {
-          var element = byId('destination')
-          if (state.destination) {
-            element.className = 'destination'
-            element.innerHTML = ''
-            element.appendChild(
-              document.createTextNode(truncatePath(state.destination, 44))
-            )
-            element.title = state.destination
-          } else {
-            element.className = 'destination empty'
-            element.innerHTML = 'Aucun dossier choisi'
-            element.title = ''
+        function renderFormats() {
+          var html = ''
+          for (var i = 0; i < FORMATS.length; i += 1) {
+            html +=
+              '<label class="check-row"><input type="checkbox" data-format="' +
+              FORMATS[i].id +
+              '"' +
+              (state.formats[FORMATS[i].id] ? ' checked' : '') +
+              ' />' +
+              FORMATS[i].label +
+              '</label>'
           }
+          byId('format-list').innerHTML = html
+        }
+
+        function renderScales() {
+          var html = ''
+          for (var i = 0; i < state.scales.length; i += 1) {
+            var scale = state.scales[i]
+            html +=
+              '<div class="list-row"><span class="label">' +
+              (scale.type === 'print' ? 'Print' : 'Web') +
+              '</span><span class="meta">' +
+              scale.width +
+              ' px · ' +
+              scale.resolution +
+              ' ppp</span><button class="kill" data-scale="' +
+              i +
+              '">&times;</button></div>'
+          }
+          byId('scale-list').innerHTML =
+            html || '<p class="summary">Aucune échelle : pas de PNG.</p>'
+        }
+
+        function renderNamePreview() {
+          var sep = state.separator
+          byId('name-preview').innerHTML =
+            'Aperçu : ' + escapeHtml('Logo' + sep + 'FullColor' + sep + '900px.png')
         }
 
         function renderMessages() {
-          var presets = selectedPresets()
-          var schemes = selectedSchemes()
           var html = ''
+          var schemes = activeSchemes()
 
-          if (presets.length === 0) {
-            html += '<p class="notice">Activez au moins un préréglage.</p>'
+          if (state.components.length === 0) {
+            html += '<p class="notice">Ajoutez au moins un composant.</p>'
           }
           if (schemes.length === 0) {
             html += '<p class="notice">Cochez au moins une déclinaison.</p>'
           }
-
-          for (var i = 0; i < presets.length; i += 1) {
-            var format = UNSUPPORTED[presets[i].id]
-            if (format) {
-              html +=
-                '<p class="notice">Illustrator ne sait pas exporter ' +
-                format +
-                ' par script : assemblez ces fichiers depuis les PNG produits.</p>'
-            }
+          if (state.document && !state.document.path) {
+            html +=
+              '<p class="notice">Enregistrez le document : Logo Forge exporte ' +
+              'depuis une copie du fichier.</p>'
           }
 
-          if (presets.length > 0 && schemes.length > 0) {
+          var total = plannedCount()
+          if (total > 0) {
             html +=
               '<p class="summary">' +
-              presets.length +
-              ' préréglage' +
-              (presets.length > 1 ? 's' : '') +
-              ' · ' +
+              total +
+              ' fichiers prévus · ' +
+              state.components.length +
+              ' composants × ' +
               schemes.length +
-              ' déclinaison' +
-              (schemes.length > 1 ? 's' : '') +
-              '</p>'
+              ' déclinaisons</p>'
           }
-
           byId('messages').innerHTML = html
         }
 
         function renderExportButton() {
           var ready =
             state.document !== null &&
-            selectedPresets().length > 0 &&
-            selectedSchemes().length > 0 &&
-            state.packageName.replace(/^\s+|\s+$/g, '').length > 0
-          byId('export').disabled = !ready
+            state.document.path !== '' &&
+            state.components.length > 0 &&
+            activeSchemes().length > 0 &&
+            plannedCount() > 0
+          byId('open-export').disabled = !ready
+        }
+
+        function renderDestination() {
+          var element = byId('destination')
+          if (state.destination) {
+            element.className = 'destination'
+            element.innerHTML = escapeHtml(state.destination)
+            element.title = state.destination
+          } else {
+            element.className = 'destination empty'
+            element.innerHTML = 'Aucun dossier choisi'
+          }
+          byId('start-export').disabled = !(
+            state.destination && state.clientName.replace(/^\s+|\s+$/g, '')
+          )
+          byId('export-summary').innerHTML =
+            plannedCount() + ' fichiers seront écrits.'
         }
 
         function renderAll() {
           renderStatus()
           renderDocument()
-          renderPresets()
+          renderComponents()
           renderSchemes()
-          renderDestination()
+          renderFormats()
+          renderScales()
+          renderNamePreview()
           renderMessages()
           renderExportButton()
         }
 
         /* ---------------------------------------------------------------- *
+         * Onglets
+         * ---------------------------------------------------------------- */
+
+        function switchTabs(container, attribute, prefix) {
+          container.onclick = function (event) {
+            var key = event.target.getAttribute(attribute)
+            if (!key) return
+            var buttons = container.getElementsByTagName('button')
+            for (var i = 0; i < buttons.length; i += 1) {
+              buttons[i].className =
+                buttons[i].getAttribute(attribute) === key ? 'tab on' : 'tab'
+            }
+            var panes = document.querySelectorAll('[id^="' + prefix + '"]')
+            for (var j = 0; j < panes.length; j += 1) {
+              panes[j].className =
+                panes[j].id === prefix + key ? 'pane on' : 'pane'
+            }
+          }
+        }
+
+        switchTabs(byId('tabs'), 'data-tab', 'pane-')
+        switchTabs(byId('subtabs'), 'data-sub', 'sub-')
+
+        /* ---------------------------------------------------------------- *
          * Interactions
          * ---------------------------------------------------------------- */
 
-        function applyDocument(next) {
-          var before = state.document ? state.document.name : null
-          var after = next ? next.name : null
-          if (before === after) return
-
-          state.document = next
-          if (!state.nameEdited) {
-            state.packageName = next ? stripExtension(next.name) : ''
-            byId('package-name').value = state.packageName
-          }
-          renderDocument()
+        byId('comp-grid').onclick = function (event) {
+          var remove = event.target.getAttribute('data-remove')
+          if (remove === null) return
+          state.components.splice(parseInt(remove, 10), 1)
+          renderComponents()
+          renderMessages()
           renderExportButton()
         }
 
-        function refreshDocument() {
-          guard('lecture du document', function () {
-            readDocument(function (next) {
-              guard('affichage du document', function () {
-                applyDocument(next)
-              })
-            })
-          })
+        byId('comp-grid').onchange = function (event) {
+          var board = event.target.getAttribute('data-board')
+          if (board === null) return
+          state.components[parseInt(board, 10)].artboardIndex = parseInt(
+            event.target.value,
+            10
+          )
+          renderComponents()
         }
 
-        byId('preset-grid').onclick = function (event) {
-          var node = event.target
-          while (node && node !== this && !node.getAttribute('data-preset')) {
-            node = node.parentNode
-          }
-          if (!node || node === this) return
+        byId('comp-grid').oninput = function (event) {
+          var name = event.target.getAttribute('data-name')
+          if (name === null) return
+          state.components[parseInt(name, 10)].name = event.target.value
+        }
 
-          var id = node.getAttribute('data-preset')
-          state.presets[id] = !state.presets[id]
-          renderPresets()
+        byId('add-component').onclick = function () {
+          state.components.push({
+            name: 'Composant ' + (state.components.length + 1),
+            artboardIndex: 0,
+          })
+          renderComponents()
           renderMessages()
           renderExportButton()
         }
@@ -999,13 +1298,176 @@
           renderExportButton()
         }
 
-        byId('package-name').oninput = function () {
-          state.nameEdited = true
-          state.packageName = this.value
+        byId('custom-list').onclick = function (event) {
+          var index = event.target.getAttribute('data-custom')
+          if (index === null) return
+          state.customs.splice(parseInt(index, 10), 1)
+          renderSchemes()
+          renderMessages()
           renderExportButton()
         }
 
+        byId('add-custom').onclick = function () {
+          var name = byId('custom-name').value
+          var hex = byId('custom-hex').value
+          if (!name || !/^#[0-9a-fA-F]{6}$/.test(hex)) {
+            byId('messages').innerHTML =
+              '<p class="notice">Donnez un nom et une couleur #rrggbb.</p>'
+            return
+          }
+          state.customs.push({ name: name, hex: hex })
+          byId('custom-name').value = ''
+          renderSchemes()
+          renderMessages()
+          renderExportButton()
+        }
+
+        byId('format-list').onclick = function (event) {
+          var id = event.target.getAttribute('data-format')
+          if (!id) return
+          state.formats[id] = event.target.checked
+          renderMessages()
+          renderExportButton()
+        }
+
+        byId('want-favicon').onchange = function () {
+          state.favicon = this.checked
+          renderMessages()
+        }
+
+        byId('separator').onchange = function () {
+          state.separator = this.value
+          renderNamePreview()
+        }
+
+        byId('scale-list').onclick = function (event) {
+          var index = event.target.getAttribute('data-scale')
+          if (index === null) return
+          state.scales.splice(parseInt(index, 10), 1)
+          renderScales()
+          renderMessages()
+          renderExportButton()
+        }
+
+        byId('add-scale').onclick = function () {
+          var width = parseInt(byId('scale-width').value, 10)
+          var dpi = parseInt(byId('scale-dpi').value, 10)
+          if (!width || width <= 0) return
+          state.scales.push({
+            type: byId('scale-type').value,
+            width: width,
+            resolution: dpi || 72,
+          })
+          renderScales()
+          renderMessages()
+          renderExportButton()
+        }
+
+        byId('scale-preset').onchange = function () {
+          if (this.value === 'web') {
+            state.scales = [{ type: 'web', width: 900, resolution: 72 }]
+          } else if (this.value === 'print') {
+            state.scales = [{ type: 'print', width: 2400, resolution: 300 }]
+          } else {
+            state.scales = [
+              { type: 'web', width: 900, resolution: 72 },
+              { type: 'print', width: 2400, resolution: 300 },
+            ]
+          }
+          renderScales()
+          renderMessages()
+          renderExportButton()
+        }
+
+        function readPadding() {
+          var mode = document.querySelector('input[name="padmode"]:checked').value
+          var top = parseFloat(byId('pad-top').value) || 0
+          if (mode === 'square') {
+            state.padding = {
+              mode: mode,
+              top: top,
+              right: top,
+              bottom: top,
+              left: top,
+            }
+            byId('pad-right').value = top
+            byId('pad-bottom').value = top
+            byId('pad-left').value = top
+            return
+          }
+          state.padding = {
+            mode: mode,
+            top: top,
+            right: parseFloat(byId('pad-right').value) || 0,
+            bottom: parseFloat(byId('pad-bottom').value) || 0,
+            left: parseFloat(byId('pad-left').value) || 0,
+          }
+        }
+
+        byId('padding-fields').oninput = readPadding
+        byId('pane-settings').onchange = function (event) {
+          if (event.target.name === 'padmode') readPadding()
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Document
+         * ---------------------------------------------------------------- */
+
+        function applyDocument(next) {
+          var before = state.document ? state.document.name : null
+          var after = next ? next.name : null
+          var boardsBefore = state.document ? state.document.artboardCount : 0
+          var boardsAfter = next ? next.artboardCount : 0
+          if (before === after && boardsBefore === boardsAfter) return
+
+          state.document = next
+          if (!state.clientName && next) {
+            var dot = next.name.lastIndexOf('.')
+            state.clientName = dot > 0 ? next.name.substring(0, dot) : next.name
+            byId('client-name').value = state.clientName
+          }
+          renderDocument()
+          renderComponents()
+          renderMessages()
+          renderExportButton()
+        }
+
+        function refreshDocument() {
+          guard('lecture du document', function () {
+            engine.readDocumentInfo(function (info) {
+              guard('affichage du document', function () {
+                applyDocument(info)
+              })
+            })
+          })
+        }
+
         byId('refresh').onclick = refreshDocument
+
+        /* ---------------------------------------------------------------- *
+         * Choix du dossier
+         * ---------------------------------------------------------------- */
+
+        function chooseFolder(callback) {
+          if (window.cep && window.cep.fs && window.cep.fs.showOpenDialog) {
+            var result = window.cep.fs.showOpenDialog(
+              false,
+              true,
+              'Dossier de destination du pack',
+              '',
+              null
+            )
+            callback(result && result.data && result.data.length ? result.data[0] : null)
+            return
+          }
+          engine.call(
+            'lfPathExists',
+            [''],
+            function () {
+              callback(null)
+            }
+          )
+        }
 
         byId('choose-folder').onclick = function () {
           guard('choix du dossier', function () {
@@ -1017,43 +1479,99 @@
           })
         }
 
-        byId('export').onclick = function () {
-          var messages = byId('messages')
-          if (!state.destination) {
-            messages.innerHTML =
-              '<p class="notice">Choisissez d\'abord un dossier de destination.</p>'
-            return
-          }
-          // Le moteur d'export reste à brancher sur ce panneau : il vit dans
-          // src/illustrator/, côté TypeScript.
-          messages.innerHTML =
-            '<p class="notice">Moteur d\'export non encore relié au panneau CEP. ' +
-            'Pack prévu : ' +
-            selectedPresets().length +
-            ' préréglages × ' +
-            selectedSchemes().length +
-            ' déclinaisons vers ' +
-            state.destination +
-            '</p>'
+        byId('client-name').oninput = function () {
+          state.clientName = this.value
+          renderDestination()
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Export
+         * ---------------------------------------------------------------- */
+
+        byId('open-export').onclick = function () {
+          byId('export-error').innerHTML = ''
+          renderDestination()
+          byId('export-veil').className = 'veil on'
+        }
+
+        byId('cancel-export').onclick = function () {
+          byId('export-veil').className = 'veil'
+        }
+
+        byId('abort-export').onclick = function () {
+          if (state.running) state.running.cancel()
+          byId('progress-veil').className = 'veil'
+        }
+
+        byId('start-export').onclick = function () {
+          guard('export', function () {
+            byId('export-veil').className = 'veil'
+            byId('progress-veil').className = 'veil on'
+            byId('progress-title').innerHTML = 'Export en cours'
+            byId('progress-result').innerHTML = ''
+            byId('progress-bar').style.width = '0'
+            byId('abort-export').innerHTML = 'Annuler'
+
+            state.running = engine.runFullExport(buildConfig(), {
+              onProgress: function (done, total, label) {
+                byId('progress-bar').style.width =
+                  Math.round((done / total) * 100) + '%'
+                byId('progress-label').innerHTML =
+                  escapeHtml(label) + ' (' + done + '/' + total + ')'
+              },
+              onDone: function (result) {
+                state.running = null
+                byId('progress-bar').style.width = '100%'
+                byId('progress-title').innerHTML = result.cancelled
+                  ? 'Export interrompu'
+                  : 'Export terminé'
+                byId('progress-label').innerHTML =
+                  result.written.length +
+                  ' fichiers écrits en ' +
+                  engine.formatDuration(result.durationMs)
+
+                var html = ''
+                if (result.failures.length > 0) {
+                  html +=
+                    '<p class="notice error">' +
+                    result.failures.length +
+                    ' échecs. Détail dans le rapport.</p>'
+                }
+                if (result.reportPath) {
+                  html +=
+                    '<p class="notice ok">Rapport : ' +
+                    escapeHtml(engine.FOLDERS.report) +
+                    '/export-rapport.html</p>'
+                }
+                byId('progress-result').innerHTML = html
+                byId('abort-export').innerHTML = 'Fermer'
+              },
+              onError: function (message) {
+                state.running = null
+                byId('progress-veil').className = 'veil'
+                byId('export-veil').className = 'veil on'
+                byId('export-error').innerHTML =
+                  '<p class="notice error">' + escapeHtml(message) + '</p>'
+              },
+            })
+          })
         }
 
         /* ---------------------------------------------------------------- *
          * Démarrage
          * ---------------------------------------------------------------- */
 
-        /** Période de relecture du document, en millisecondes. */
         var POLL_MS = 3000
-        /** Échecs consécutifs au-delà desquels la relecture s'arrête. */
         var POLL_FAILURE_LIMIT = 3
-
         var failures = 0
         var timer = null
 
         function poll() {
+          if (state.running) return
           try {
-            readDocument(function (next) {
+            engine.readDocumentInfo(function (info) {
               try {
-                applyDocument(next)
+                applyDocument(info)
                 failures = 0
               } catch (inner) {
                 failures += 1
@@ -1062,7 +1580,6 @@
           } catch (error) {
             failures += 1
           }
-
           if (failures >= POLL_FAILURE_LIMIT && timer !== null) {
             clearInterval(timer)
             timer = null
@@ -1072,6 +1589,7 @@
 
         guard('démarrage', function () {
           renderAll()
+          renderDestination()
           refreshDocument()
           timer = setInterval(poll, POLL_MS)
         })

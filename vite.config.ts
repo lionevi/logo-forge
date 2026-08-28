@@ -31,6 +31,16 @@ function copyStaticFiles(): Plugin {
       // La version React reste livrée à côté, pour l'hôte UXP.
       copyFileSync(resolve(root, 'index.html'), resolve(outDir, 'panel-react.html'))
 
+      // Les deux couches du moteur CEP : orchestration côté panneau, et
+      // ExtendScript côté Illustrator. CEP charge la seconde via <ScriptPath>.
+      mkdirSync(resolve(outDir, 'js'), { recursive: true })
+      copyFileSync(
+        resolve(root, 'js/export-engine.js'),
+        resolve(outDir, 'js/export-engine.js'),
+      )
+      mkdirSync(resolve(outDir, 'jsx'), { recursive: true })
+      copyFileSync(resolve(root, 'jsx/main.jsx'), resolve(outDir, 'jsx/main.jsx'))
+
       // CEP cherche son descripteur dans `CSXS/manifest.xml`, à la racine de
       // l'extension. Le `.debug` autorise le débogage distant d'une extension
       // non signée ; il est sans effet sur une extension signée.

@@ -32,6 +32,8 @@
       <DispatchInfo>
         <Resources>
           <MainPath>./index.html</MainPath>
+          <!-- Chargé dans le moteur ExtendScript au démarrage du panneau. -->
+          <ScriptPath>./jsx/main.jsx</ScriptPath>
           <CEFCommandLine>
             <Parameter>--allow-file-access</Parameter>
             <Parameter>--allow-file-access-from-files</Parameter>

@@ -24,7 +24,9 @@ module.exports = {
   settings: {
     react: { version: '18.3' },
   },
-  ignorePatterns: ['dist', 'coverage', 'node_modules', '*.cjs'],
+  // src/jsx et src/js sont en ES5 pur pour CEP et ExtendScript : leur
+  // conformité est vérifiée par tests/exportEngine.test.ts, pas par ESLint.
+  ignorePatterns: ['dist', 'coverage', 'node_modules', '*.cjs', 'src/jsx', 'src/js'],
   rules: {
     '@typescript-eslint/no-unused-vars': [
       'error',

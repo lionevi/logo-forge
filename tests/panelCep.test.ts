@@ -39,6 +39,14 @@ describe('autonomie', () => {
     expect(HTML).not.toMatch(/src="\.\/index\.js"/)
   })
 
+  it('charge le moteur d export depuis js/export-engine.js', () => {
+    expect(HTML).toContain('src="./js/export-engine.js"')
+  })
+
+  it('signale un moteur manquant plutot que de laisser un bouton inerte', () => {
+    expect(SCRIPT).toContain("typeof LogoForgeEngine === 'undefined'")
+  })
+
   it('embarque exactement un script inline et sa feuille de style', () => {
     expect(INLINE_SCRIPTS).toHaveLength(1)
     expect(STYLE.length).toBeGreaterThan(1000)
@@ -83,40 +91,70 @@ describe('éléments attendus par le script', () => {
     'status-label',
     'document-card',
     'refresh',
-    'preset-grid',
-    'preset-count',
+    'tabs',
+    'subtabs',
+    'comp-grid',
+    'comp-count',
+    'add-component',
     'scheme-list',
-    'package-name',
+    'custom-list',
+    'add-custom',
+    'format-list',
+    'scale-list',
+    'add-scale',
+    'separator',
+    'padding-fields',
+    'client-name',
     'choose-folder',
     'destination',
     'messages',
-    'export',
+    'open-export',
+    'start-export',
+    'cancel-export',
+    'abort-export',
+    'progress-bar',
+    'progress-label',
+    'progress-title',
+    'export-veil',
+    'progress-veil',
   ]
 
   it.each(IDS)('déclare #%s dans le balisage', (id) => {
     expect(HTML).toContain(`id="${id}"`)
   })
 
-  it('référence les huit préréglages', () => {
-    for (const id of [
-      'sources',
-      'web',
-      'print',
-      'social',
-      'favicon',
-      'office',
-      'appIcons',
-      'video',
-    ]) {
+  it('référence les cinq déclinaisons', () => {
+    for (const id of ['fullColor', 'black', 'white', 'inverted', 'grayscale']) {
       expect(SCRIPT, id).toContain(`id: '${id}'`)
     }
   })
 
-  it('référence les quatre déclinaisons actives et le badge de la cinquième', () => {
-    for (const id of ['full-color', 'black', 'white', 'grayscale']) {
+  it('référence les cinq formats exportables', () => {
+    for (const id of ['ai', 'svg', 'png', 'pdf', 'eps']) {
       expect(SCRIPT, id).toContain(`id: '${id}'`)
     }
-    expect(HTML).toContain('v1.1')
+  })
+
+  it('propose les six composants par défaut', () => {
+    for (const name of [
+      'Logo',
+      'Logo Mark',
+      'Logotype',
+      'Stacked Logo',
+      'Vertical Logo',
+      'Centered Logo',
+    ]) {
+      expect(SCRIPT, name).toContain(`'${name}'`)
+    }
+  })
+
+  it('déclare les trois onglets et les quatre sous-onglets de réglages', () => {
+    for (const tab of ['components', 'colors', 'settings']) {
+      expect(HTML, tab).toContain(`data-tab="${tab}"`)
+    }
+    for (const sub of ['files', 'names', 'scales', 'padding']) {
+      expect(HTML, sub).toContain(`data-sub="${sub}"`)
+    }
   })
 })
 
