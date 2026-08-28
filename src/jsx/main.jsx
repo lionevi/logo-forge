@@ -851,6 +851,239 @@ var LogoForge = (function () {
   }
 
   /* ---------------------------------------------------------------------- *
+   * Contrôle de production
+   *
+   * L'inspection ne modifie jamais rien : elle compte, elle décrit, elle rend
+   * la main. Les corrections sont des fonctions distinctes, appelées une par
+   * une et seulement sur demande explicite.
+   * ---------------------------------------------------------------------- */
+
+  /** Un tracé d'un seul point, vestige d'un clic manqué. */
+  function isStrayPoint(item) {
+    try {
+      return item.typename === 'PathItem' && item.pathPoints.length < 2
+    } catch (e) {
+      return false
+    }
+  }
+
+  /**
+   * Un tracé sans fond ni contour.
+   *
+   * Un masque d'écrêtage est légitimement dépourvu des deux : le supprimer
+   * révélerait tout ce qu'il masque. On l'écarte donc du décompte.
+   */
+  function isUnpainted(item) {
+    try {
+      if (item.typename !== 'PathItem') return false
+      if (item.clipping) return false
+      if (item.guides) return false
+      return !item.filled && !item.stroked
+    } catch (e) {
+      return false
+    }
+  }
+
+  /** Un bloc de texte sans contenu visible. */
+  function isEmptyText(frame) {
+    try {
+      var text = String(frame.contents)
+      return text.replace(/^\s+|\s+$/g, '') === ''
+    } catch (e) {
+      return false
+    }
+  }
+
+  /**
+   * Contrôle de production du document actif.
+   *
+   * @param mode `print` ou `web` : le mode colorimétrique attendu en dépend.
+   * @returns une ligne par contrôle, « identifiant:décompte:détail ».
+   */
+  function preflightDocument(mode) {
+    try {
+      if (app.documents.length === 0) return err('aucun document ouvert')
+
+      var doc = app.activeDocument
+      var wanted = String(mode).toLowerCase() === 'print' ? 'cmyk' : 'rgb'
+      var actual =
+        doc.documentColorSpace === DocumentColorSpace.CMYK ? 'cmyk' : 'rgb'
+
+      var findings = []
+      function report(id, count, detail) {
+        findings.push(id + ':' + count + ':' + (detail === undefined ? '' : detail))
+      }
+
+      report('colorMode', actual === wanted ? 0 : 1, actual + '/' + wanted)
+
+      var strays = 0
+      var unpainted = 0
+      var stroked = 0
+      var overprint = 0
+      var richBlack = 0
+
+      var paths = doc.pathItems
+      for (var i = 0; i < paths.length; i += 1) {
+        var item = paths[i]
+        try {
+          if (isStrayPoint(item)) strays += 1
+          if (isUnpainted(item)) unpainted += 1
+          if (item.stroked) stroked += 1
+          if (item.fillOverprint || item.strokeOverprint) overprint += 1
+          if (item.filled) {
+            var color = item.fillColor
+            if (
+              color &&
+              color.typename === 'CMYKColor' &&
+              color.black > 90 &&
+              (color.cyan > 0 || color.magenta > 0 || color.yellow > 0)
+            ) {
+              richBlack += 1
+            }
+          }
+        } catch (itemError) {
+          /* élément inaccessible : il ne fausse aucun décompte */
+        }
+      }
+
+      report('strayPoints', strays)
+      report('unpainted', unpainted)
+      report('strokes', stroked)
+      report('overprint', overprint)
+      if (wanted === 'print') report('richBlack', richBlack)
+
+      var emptyText = 0
+      var frames = doc.textFrames
+      for (var t = 0; t < frames.length; t += 1) {
+        if (isEmptyText(frames[t])) emptyText += 1
+      }
+      report('emptyText', emptyText)
+      report('liveText', frames.length - emptyText)
+
+      var lockedLayers = 0
+      var hiddenLayers = 0
+      for (var l = 0; l < doc.layers.length; l += 1) {
+        try {
+          if (doc.layers[l].locked) lockedLayers += 1
+          if (!doc.layers[l].visible) hiddenLayers += 1
+        } catch (layerError) {
+          /* calque inaccessible */
+        }
+      }
+      report('lockedLayers', lockedLayers)
+      report('hiddenLayers', hiddenLayers)
+
+      // Nuanciers inutilisés : comparés aux couleurs réellement employées.
+      var used = {}
+      for (var u = 0; u < paths.length; u += 1) {
+        try {
+          if (paths[u].filled) {
+            var fill = toRgb(paths[u].fillColor)
+            if (fill) used[toHex(fill)] = true
+          }
+          if (paths[u].stroked) {
+            var line = toRgb(paths[u].strokeColor)
+            if (line) used[toHex(line)] = true
+          }
+        } catch (usedError) {
+          /* élément inaccessible */
+        }
+      }
+
+      var unusedSwatches = 0
+      try {
+        for (var w = 0; w < doc.swatches.length; w += 1) {
+          var swatch = doc.swatches[w]
+          // « [Sans] » et le repérage ne sont pas des couleurs de travail.
+          if (swatch.name === '[None]' || swatch.name === '[Registration]') {
+            continue
+          }
+          var rgb = toRgb(swatch.color)
+          if (rgb && !used[toHex(rgb)]) unusedSwatches += 1
+        }
+      } catch (swatchError) {
+        /* nuancier inaccessible : le contrôle reste muet plutôt que faux */
+      }
+      report('unusedSwatches', unusedSwatches)
+
+      // Blanc tournant : proportion du plan de travail que l'artwork n'occupe pas.
+      var whitespace = 0
+      var items = topLevelItems(doc)
+      if (items.length > 0) {
+        var rect = doc.artboards[0].artboardRect
+        var boardArea =
+          Math.abs(rect[2] - rect[0]) * Math.abs(rect[1] - rect[3])
+        var frame = selectionBounds(items)
+        var artArea =
+          Math.abs(frame[2] - frame[0]) * Math.abs(frame[1] - frame[3])
+        if (boardArea > 0) {
+          whitespace = Math.round((1 - artArea / boardArea) * 100)
+          if (whitespace < 0) whitespace = 0
+        }
+      }
+      report('whitespace', whitespace > 25 ? 1 : 0, String(whitespace))
+
+      report('items', items.length)
+
+      return ok(findings.join(UNIT))
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
+  /**
+   * Corrections sûres, appliquées au document actif sur demande explicite.
+   *
+   * Chacune est réversible par l'annulation d'Illustrator, et aucune ne touche
+   * à l'apparence de ce qui est visible : elles ne retirent que des objets qui
+   * ne peignent rien.
+   */
+  function cleanDocument(what) {
+    try {
+      if (app.documents.length === 0) return err('aucun document ouvert')
+      var doc = app.activeDocument
+      var kind = String(what)
+      var removed = 0
+
+      if (kind === 'strayPoints' || kind === 'unpainted') {
+        var paths = doc.pathItems
+        // Parcours à rebours : retirer un élément décale les suivants.
+        for (var i = paths.length - 1; i >= 0; i -= 1) {
+          var item = paths[i]
+          var matches =
+            kind === 'strayPoints' ? isStrayPoint(item) : isUnpainted(item)
+          if (!matches) continue
+          try {
+            item.remove()
+            removed += 1
+          } catch (removeError) {
+            /* élément verrouillé : compté par différence */
+          }
+        }
+        return ok(String(removed))
+      }
+
+      if (kind === 'emptyText') {
+        var frames = doc.textFrames
+        for (var t = frames.length - 1; t >= 0; t -= 1) {
+          if (!isEmptyText(frames[t])) continue
+          try {
+            frames[t].remove()
+            removed += 1
+          } catch (frameError) {
+            /* bloc verrouillé */
+          }
+        }
+        return ok(String(removed))
+      }
+
+      return err('correction inconnue : ' + kind)
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
+  /* ---------------------------------------------------------------------- *
    * Composants
    *
    * Un composant est une sélection de l'utilisateur promue en document
@@ -1590,6 +1823,8 @@ var LogoForge = (function () {
     resetSession: resetSession,
     applyColorScheme: applyColorScheme,
     listDocumentColors: listDocumentColors,
+    preflightDocument: preflightDocument,
+    cleanDocument: cleanDocument,
     describeSelection: describeSelection,
     setComponent: setComponent,
     renderComponentThumbnail: renderComponentThumbnail,
@@ -1650,6 +1885,14 @@ function lfEndSession() {
 function lfResetSession() {
   return LogoForge.resetSession()
 }
+function lfPreflight(mode) {
+  return LogoForge.preflightDocument(mode)
+}
+
+function lfClean(what) {
+  return LogoForge.cleanDocument(what)
+}
+
 function lfListColors(limit) {
   return LogoForge.listDocumentColors(limit)
 }

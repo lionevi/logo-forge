@@ -378,6 +378,58 @@ describe('planche de revue', () => {
   })
 })
 
+describe('contrôle de production', () => {
+  it('expose un onglet dédié et sa commande', () => {
+    expect(HTML).toContain('data-tab="preflight"')
+    for (const id of [
+      'pane-preflight',
+      'run-preflight',
+      'preflight-mode',
+      'preflight-result',
+      'preflight-manual',
+    ]) {
+      expect(HTML, id).toContain(`id="${id}"`)
+    }
+  })
+
+  it('délègue règles et gravités au moteur', () => {
+    expect(SCRIPT).toContain("'lfPreflight'")
+    expect(SCRIPT).toContain('engine.evaluatePreflight(')
+    expect(SCRIPT).toContain('engine.PREFLIGHT_MANUAL')
+  })
+
+  it('demande confirmation avant toute correction', () => {
+    // La correction porte sur le document ouvert du designer.
+    const block = SCRIPT.slice(SCRIPT.indexOf('function applyPreflightFix('))
+    expect(block.slice(0, 900)).toContain('window.confirm')
+  })
+
+  it('recontrôle après correction plutôt que de croire le décompte', () => {
+    const block = SCRIPT.slice(
+      SCRIPT.indexOf('function applyPreflightFix('),
+      SCRIPT.indexOf('function renderPreflight('),
+    )
+    expect(block).toContain('runPreflight()')
+  })
+
+  it('invalide le rapport quand la destination change', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf("byId('preflight-mode').onchange"))
+    expect(block.slice(0, 400)).toContain('state.preflight = null')
+  })
+
+  it('peut refuser l export, sur réglage explicite', () => {
+    expect(HTML).toContain('id="block-on-preflight"')
+    expect(SCRIPT).toContain('function preflightBlocks(')
+    expect(SCRIPT).toContain('!preflightBlocks()')
+  })
+
+  it('distingue les cinq états à la pastille', () => {
+    for (const status of ['pass', 'info', 'warning', 'error', 'unknown']) {
+      expect(STYLE, status).toContain(`.dot.${status}`)
+    }
+  })
+})
+
 describe('couleurs', () => {
   it('lit les couleurs réellement présentes dans le document', () => {
     expect(SCRIPT).toContain("'lfListColors'")

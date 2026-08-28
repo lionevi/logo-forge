@@ -57,6 +57,31 @@ export class FakeItem {
   /** Conteneur : un calque pour un objet de premier niveau, sinon un groupe. */
   parent: FakeLayer | FakeGroup | null = null
 
+  /* Attributs lus par le contrôle de production. */
+  pathPoints: unknown[] = [{}, {}]
+  filled = true
+  stroked = false
+  clipping = false
+  guides = false
+  fillOverprint = false
+  strokeOverprint = false
+  fillColor: unknown = { typename: 'RGBColor', red: 0, green: 0, blue: 0 }
+  strokeColor: unknown = { typename: 'RGBColor', red: 0, green: 0, blue: 0 }
+  /** Collection d'où l'objet se retire lui-même. */
+  collection: FakeItem[] | null = null
+
+  remove(): void {
+    if (this.collection) {
+      const index = this.collection.indexOf(this)
+      if (index >= 0) this.collection.splice(index, 1)
+    }
+    if (this.parent instanceof FakeLayer) {
+      const items = this.parent.items
+      const index = items.indexOf(this)
+      if (index >= 0) items.splice(index, 1)
+    }
+  }
+
   constructor(
     public typename: string,
     public visibleBounds: Bounds,
@@ -125,12 +150,24 @@ export class FakeGroup {
   }
 }
 
-/** Bloc de texte, réduit à ce que la planche en attend. */
+/** Bloc de texte, réduit à ce que la planche et le contrôle en attendent. */
 export class FakeTextFrame {
   typename = 'TextFrame'
   contents = ''
   position: [number, number] = [0, 0]
-  textRange = { characterAttributes: { size: 12 } }
+  textRange = {
+    characterAttributes: {
+      size: 12,
+      fillColor: { typename: 'RGBColor', red: 0, green: 0, blue: 0 },
+    },
+  }
+  collection: FakeTextFrame[] | null = null
+
+  remove(): void {
+    if (!this.collection) return
+    const index = this.collection.indexOf(this)
+    if (index >= 0) this.collection.splice(index, 1)
+  }
 }
 
 /** Objet sélectionné en mode édition de texte : aucune boîte englobante. */
@@ -220,7 +257,25 @@ export class FakeDocument {
     this.artboards = [new FakeArtboard([0, 0, width, -height])]
   }
 
-  textFrames = createCollection<FakeTextFrame>(() => new FakeTextFrame())
+  textFrames = createCollection<FakeTextFrame>(() => {
+    const frame = new FakeTextFrame()
+    frame.collection = this.textFrames
+    return frame
+  })
+
+  /** Nuanciers du document, pour le contrôle des couleurs inutilisées. */
+  swatches: Array<{ name: string; color: unknown }> = []
+
+  private paths: FakeItem[] = []
+
+  get pathItems(): FakeItem[] {
+    return this.paths
+  }
+
+  set pathItems(items: FakeItem[]) {
+    this.paths = items
+    for (const item of items) item.collection = this.paths
+  }
 
   get groupItems(): FakeGroup[] & { add: () => FakeGroup } {
     const layer = this.layers[0]
@@ -463,6 +518,9 @@ export function loadExtendScript(): Host {
     'lfAddLabel',
     'lfFinishPackage',
     'lfAbortPackage',
+    'lfPreflight',
+    'lfClean',
+    'lfListColors',
     'lfRemoveComponentFile',
     'lfApplyColorScheme',
     'lfExportPNG',

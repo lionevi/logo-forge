@@ -431,6 +431,52 @@
         font-size: 9px;
         vertical-align: middle;
       }
+      /* Ligne de contrôle : pastille, texte, correction éventuelle. */
+      .check-row.static {
+        margin: 0 0 6px;
+        overflow: hidden;
+        cursor: default;
+      }
+      .check-body {
+        display: block;
+        overflow: hidden;
+        padding-left: 6px;
+        color: #b9b9b9;
+        font-size: 10px;
+        line-height: 1.45;
+      }
+      .check-body .hint {
+        color: #6e6e6e;
+      }
+      .dot {
+        float: left;
+        width: 8px;
+        height: 8px;
+        margin-top: 4px;
+        border-radius: 50%;
+        background: #6e6e6e;
+      }
+      .dot.pass {
+        background: #2d9d78;
+      }
+      .dot.info {
+        background: #6a8fd8;
+      }
+      .dot.warning {
+        background: #e68619;
+      }
+      .dot.error {
+        background: #e34850;
+      }
+      .dot.unknown {
+        background: #4a4a4a;
+      }
+      .button.fix {
+        float: right;
+        width: auto;
+        margin-top: 3px;
+        padding: 2px 8px;
+      }
       .contrast-row {
         margin-bottom: 4px;
         overflow: hidden;
@@ -861,6 +907,7 @@
       <div class="tabs" id="tabs">
         <button class="tab on" data-tab="components">Components</button>
         <button class="tab" data-tab="colors">Colors</button>
+        <button class="tab" data-tab="preflight">Contrôle</button>
       </div>
 
       <div class="panel-body">
@@ -955,6 +1002,31 @@
               au-delà, elles sont déjà assez claires pour rester lisibles sur un
               fond sombre. À 100 tout bascule, à 0 rien ne bascule.
             </p>
+          </div>
+        </div>
+
+        <!-- Onglet Contrôle -->
+        <div class="pane" id="pane-preflight">
+          <div class="section">
+            <h2 class="section-title">Contrôle de production</h2>
+            <p class="summary">
+              Inspecte le document Illustrator actif. L'inspection ne modifie
+              rien ; les corrections sont proposées une par une.
+            </p>
+            <label class="field-label" for="preflight-mode">Destination</label>
+            <select id="preflight-mode">
+              <option value="print">Impression (CMJN)</option>
+              <option value="web">Web (RVB)</option>
+            </select>
+            <button class="button small" id="run-preflight">
+              Lancer le contrôle
+            </button>
+            <div id="preflight-result"></div>
+          </div>
+
+          <div class="section">
+            <h2 class="section-title">À vérifier à l'œil</h2>
+            <div id="preflight-manual"></div>
           </div>
         </div>
 
@@ -1107,6 +1179,15 @@
                 </div>
               </div>
               <p class="summary" id="grid-preview"></p>
+            </div>
+            <div class="section">
+              <h2 class="section-title">Contrôle avant export</h2>
+              <label class="check-row">
+                <input type="checkbox" id="block-on-preflight" />
+                <span class="check-label" style="width: auto"
+                  >Refuser l'export tant que le contrôle échoue</span
+                >
+              </label>
             </div>
           </div>
 
@@ -1355,6 +1436,9 @@
           threshold: 50,
           grid: {},
           documentColors: [],
+          preflight: null,
+          preflightMode: 'print',
+          blockOnPreflight: false,
           packageResult: null,
           formats: {
             print: { ai: true, pdf: true, eps: false, jpeg: false },
@@ -2064,6 +2148,148 @@
         }
 
         /* ---------------------------------------------------------------- *
+         * Contrôle de production
+         * ---------------------------------------------------------------- */
+
+        var STATUS_LABEL = {
+          pass: 'Conforme',
+          info: 'Information',
+          warning: 'À vérifier',
+          error: 'Bloquant',
+          unknown: 'Non contrôlé',
+        }
+
+        /**
+         * Lance l'inspection du document actif.
+         *
+         * L'inspection est en lecture seule : elle peut être relancée sans
+         * conséquence, autant de fois que le designer le souhaite.
+         */
+        function runPreflight() {
+          var button = byId('run-preflight')
+          button.disabled = true
+          button.innerHTML = 'Contrôle…'
+
+          engine.call('lfPreflight', [state.preflightMode], function (result) {
+            button.disabled = false
+            button.innerHTML = 'Lancer le contrôle'
+
+            if (!result.ok) {
+              state.preflight = null
+              state.lastError = result.value
+              renderPreflight()
+              renderMessages()
+              return
+            }
+
+            state.preflight = engine.evaluatePreflight(result.value)
+            state.lastError = ''
+            renderPreflight()
+            renderDerived()
+          })
+        }
+
+        /**
+         * Applique une correction sûre, après confirmation.
+         *
+         * La correction porte sur le document ouvert du designer : elle est
+         * annulable par Illustrator, mais elle doit être demandée.
+         */
+        function applyPreflightFix(fix, label) {
+          if (typeof window.confirm === 'function') {
+            if (
+              !window.confirm(
+                'Corriger « ' +
+                  label +
+                  ' » dans le document ouvert ? La modification reste annulable ' +
+                  'depuis Illustrator.'
+              )
+            ) {
+              return
+            }
+          }
+
+          var call =
+            fix === 'fitArtboard'
+              ? { name: 'lfFitArtboard', args: [0] }
+              : { name: 'lfClean', args: [fix] }
+
+          engine.call(call.name, call.args, function (result) {
+            if (!result.ok) {
+              state.lastError = result.value
+              renderMessages()
+              return
+            }
+            state.lastError = ''
+            // Le décompte n'a de sens qu'après une nouvelle inspection.
+            runPreflight()
+          })
+        }
+
+        function renderPreflight() {
+          var report = state.preflight
+          var manual = ''
+          var reference = report ? report.manual : engine.PREFLIGHT_MANUAL
+          for (var m = 0; m < reference.length; m += 1) {
+            manual +=
+              '<p class="check-row static"><span class="dot unknown"></span>' +
+              '<span class="check-body"><b>' +
+              escapeHtml(reference[m].label) +
+              '</b><br />' +
+              escapeHtml(reference[m].manual) +
+              '</span></p>'
+          }
+          byId('preflight-manual').innerHTML = manual
+
+          if (!report) {
+            byId('preflight-result').innerHTML =
+              '<p class="summary">Aucun contrôle effectué.</p>'
+            return
+          }
+
+          var html =
+            '<p class="notice ' +
+            (report.ready ? 'done' : 'error') +
+            '">' +
+            escapeHtml(
+              report.ready
+                ? 'Prêt pour l export — ' +
+                    report.counts.warning +
+                    ' point(s) à vérifier.'
+                : report.counts.error + ' défaut(s) bloquant(s).'
+            ) +
+            '</p>'
+
+          for (var i = 0; i < report.checks.length; i += 1) {
+            var check = report.checks[i]
+            html +=
+              '<p class="check-row static"><span class="dot ' +
+              check.status +
+              '" title="' +
+              escapeHtml(STATUS_LABEL[check.status]) +
+              '"></span><span class="check-body"><b>' +
+              escapeHtml(check.rule.label) +
+              '</b> — ' +
+              escapeHtml(check.message) +
+              (check.status === 'pass' || check.status === 'unknown'
+                ? ''
+                : '<br /><span class="hint">' +
+                  escapeHtml(check.rule.manual) +
+                  '</span>') +
+              '</span>' +
+              (check.fix
+                ? '<button class="button small fix" data-fix="' +
+                  check.fix +
+                  '" data-label="' +
+                  escapeHtml(check.rule.label) +
+                  '">Corriger</button>'
+                : '') +
+              '</p>'
+          }
+          byId('preflight-result').innerHTML = html
+        }
+
+        /* ---------------------------------------------------------------- *
          * Contraste
          * ---------------------------------------------------------------- */
 
@@ -2238,6 +2464,19 @@
             html += '<p class="notice">Cochez au moins une déclinaison.</p>'
           }
 
+          if (state.preflight && !state.preflight.ready) {
+            html +=
+              '<p class="notice ' +
+              (state.blockOnPreflight ? 'error' : '') +
+              '">Contrôle de production : ' +
+              state.preflight.counts.error +
+              ' défaut(s) bloquant(s)' +
+              (state.blockOnPreflight
+                ? ' — export refusé tant qu ils subsistent.'
+                : '. Corrigez-les avant de livrer.') +
+              '</p>'
+          }
+
           var critical = criticalSchemes()
           if (critical.length > 0) {
             html +=
@@ -2270,9 +2509,20 @@
           byId('messages').innerHTML = html
         }
 
+        /** Le contrôle interdit-il l'export ? */
+        function preflightBlocks() {
+          return !!(
+            state.blockOnPreflight &&
+            state.preflight &&
+            !state.preflight.ready
+          )
+        }
+
         function renderExportButton() {
           byId('open-export').disabled = !(
-            definedComponents().length > 0 && plannedCount() > 0
+            definedComponents().length > 0 &&
+            plannedCount() > 0 &&
+            !preflightBlocks()
           )
         }
 
@@ -2436,6 +2686,7 @@
           renderFormats()
           renderScales()
           renderNamePreview()
+          renderPreflight()
           renderDerived()
         }
 
@@ -2884,6 +3135,32 @@
             bottom: parseFloat(byId('pad-bottom').value) || 0,
             left: parseFloat(byId('pad-left').value) || 0,
           }
+        }
+
+        byId('run-preflight').onclick = function () {
+          guard('contrôle', runPreflight)
+        }
+
+        byId('preflight-mode').onchange = function () {
+          state.preflightMode = this.value
+          // Le mode change ce qu'on attend du document : le rapport précédent
+          // ne dit plus rien de juste.
+          state.preflight = null
+          renderPreflight()
+          renderDerived()
+        }
+
+        byId('preflight-result').onclick = function (event) {
+          var fix = event.target.getAttribute('data-fix')
+          if (fix === null) return
+          guard('correction', function () {
+            applyPreflightFix(fix, event.target.getAttribute('data-label'))
+          })
+        }
+
+        byId('block-on-preflight').onchange = function () {
+          state.blockOnPreflight = this.checked
+          renderDerived()
         }
 
         byId('grid-fields').oninput = readGridSettings

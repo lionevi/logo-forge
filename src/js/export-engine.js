@@ -870,6 +870,243 @@ var LogoForgeEngine = (function () {
   }
 
   /* ---------------------------------------------------------------------- *
+   * Contrôle de production
+   *
+   * La couche ExtendScript compte ; c'est ici qu'on décide ce que ces
+   * décomptes signifient, avec quelle gravité, et ce qu'on peut corriger sans
+   * dénaturer le travail du designer.
+   * ---------------------------------------------------------------------- */
+
+  /**
+   * Règles de contrôle.
+   *
+   * `severity` : gravité quand la règle est en défaut.
+   * `fix` : identifiant de la correction sûre, absent quand il n'en existe pas.
+   * `manual` : ce que le contrôle demande au designer, faute de correction.
+   */
+  var PREFLIGHT_RULES = [
+    {
+      id: 'colorMode',
+      label: 'Mode colorimétrique',
+      severity: 'error',
+      manual:
+        'Le document doit être en CMJN pour l impression, en RVB pour le web.',
+      describe: function (finding) {
+        var modes = String(finding.detail).split('/')
+        return 'document en ' + modes[0] + ', attendu ' + modes[1]
+      },
+    },
+    {
+      id: 'liveText',
+      label: 'Texte vectorisé',
+      severity: 'error',
+      manual:
+        'Vectorisez le texte (Texte > Vectoriser) : sans la police, le logo ' +
+        'ne s affichera pas à l identique.',
+      describe: function (finding) {
+        return finding.count + ' bloc(s) de texte encore vivant(s)'
+      },
+    },
+    {
+      id: 'strokes',
+      label: 'Contours vectorisés',
+      severity: 'warning',
+      manual:
+        'Vectorisez les contours (Objet > Décomposition) : leur épaisseur ' +
+        'varie autrement avec la mise à l échelle.',
+      describe: function (finding) {
+        return finding.count + ' objet(s) à contour'
+      },
+    },
+    {
+      id: 'strayPoints',
+      label: 'Points isolés',
+      severity: 'error',
+      fix: 'strayPoints',
+      manual: 'Supprimez les points isolés : ils faussent les cadrages.',
+      describe: function (finding) {
+        return finding.count + ' point(s) isolé(s)'
+      },
+    },
+    {
+      id: 'unpainted',
+      label: 'Objets non peints',
+      severity: 'error',
+      fix: 'unpainted',
+      manual:
+        'Supprimez les objets sans fond ni contour : ils occupent de la place ' +
+        'sans rien afficher.',
+      describe: function (finding) {
+        return finding.count + ' objet(s) invisible(s)'
+      },
+    },
+    {
+      id: 'emptyText',
+      label: 'Blocs de texte vides',
+      severity: 'error',
+      fix: 'emptyText',
+      manual: 'Supprimez les blocs de texte vides.',
+      describe: function (finding) {
+        return finding.count + ' bloc(s) vide(s)'
+      },
+    },
+    {
+      id: 'overprint',
+      label: 'Surimpression',
+      severity: 'warning',
+      manual:
+        'Vérifiez les objets en surimpression : à l impression, ils se ' +
+        'mélangent au fond au lieu de le masquer.',
+      describe: function (finding) {
+        return finding.count + ' objet(s) en surimpression'
+      },
+    },
+    {
+      id: 'richBlack',
+      label: 'Noir d impression',
+      severity: 'warning',
+      manual:
+        'Un noir de trait se compose C0 M0 J0 N100 : un noir riche bave au ' +
+        'calage.',
+      describe: function (finding) {
+        return finding.count + ' aplat(s) de noir composé'
+      },
+    },
+    {
+      id: 'unusedSwatches',
+      label: 'Nuanciers inutilisés',
+      severity: 'info',
+      manual:
+        'Nettoyez le nuancier : les couleurs inutilisées suivent le fichier ' +
+        'chez le client.',
+      describe: function (finding) {
+        return finding.count + ' nuancier(s) sans emploi'
+      },
+    },
+    {
+      id: 'whitespace',
+      label: 'Cadrage du plan de travail',
+      severity: 'warning',
+      fix: 'fitArtboard',
+      manual:
+        'Ajustez le plan de travail au logo : le blanc tournant se retrouve ' +
+        'dans chaque fichier exporté.',
+      describe: function (finding) {
+        return finding.detail + ' % du plan de travail est vide'
+      },
+    },
+    {
+      id: 'lockedLayers',
+      label: 'Calques verrouillés',
+      severity: 'info',
+      manual:
+        'Les calques verrouillés résistent au recolorage : déverrouillez-les ' +
+        'avant l export.',
+      describe: function (finding) {
+        return finding.count + ' calque(s) verrouillé(s)'
+      },
+    },
+    {
+      id: 'hiddenLayers',
+      label: 'Calques masqués',
+      severity: 'info',
+      manual:
+        'Un calque masqué est exporté vide : vérifiez qu il ne porte rien ' +
+        'd utile.',
+      describe: function (finding) {
+        return finding.count + ' calque(s) masqué(s)'
+      },
+    },
+  ]
+
+  /**
+   * Contrôles qu'aucun script ne peut trancher.
+   *
+   * L'expansion des apparences n'est pas lisible par le modèle objet
+   * d'Illustrator : l'annoncer conforme serait mentir, la taire serait pire.
+   */
+  var PREFLIGHT_MANUAL = [
+    {
+      id: 'appearance',
+      label: 'Apparences décomposées',
+      manual:
+        'Le modèle objet d Illustrator n expose pas les effets appliqués : ' +
+        'vérifiez à l œil (Objet > Décomposer l aspect) avant de livrer.',
+    },
+    {
+      id: 'inspection',
+      label: 'Inspection à fort grossissement',
+      manual:
+        'Zoomez sur les jonctions et les angles : un raccord ouvert ne se ' +
+        'voit qu à 800 %.',
+    },
+  ]
+
+  /** Relit la charge utile de `lfPreflight`. */
+  function parsePreflight(payload) {
+    var findings = {}
+    var lines = String(payload || '').split(UNIT)
+    for (var i = 0; i < lines.length; i += 1) {
+      if (!lines[i]) continue
+      var parts = lines[i].split(':')
+      if (parts.length < 2) continue
+      findings[parts[0]] = {
+        id: parts[0],
+        count: parseInt(parts[1], 10) || 0,
+        detail: parts.length > 2 ? parts.slice(2).join(':') : '',
+      }
+    }
+    return findings
+  }
+
+  /**
+   * Confronte les décomptes aux règles.
+   *
+   * Une règle sans décompte est absente du rapport plutôt que déclarée
+   * conforme : le contrôle n'a pas eu lieu, on ne prétend pas le contraire.
+   */
+  function evaluatePreflight(payload) {
+    var findings = parsePreflight(payload)
+    var checks = []
+    var counts = { pass: 0, info: 0, warning: 0, error: 0, unknown: 0 }
+
+    for (var i = 0; i < PREFLIGHT_RULES.length; i += 1) {
+      var rule = PREFLIGHT_RULES[i]
+      var finding = findings[rule.id]
+
+      if (!finding) {
+        checks.push({
+          rule: rule,
+          status: 'unknown',
+          message: 'contrôle non effectué',
+        })
+        counts.unknown += 1
+        continue
+      }
+
+      var failed = finding.count > 0
+      checks.push({
+        rule: rule,
+        status: failed ? rule.severity : 'pass',
+        count: finding.count,
+        detail: finding.detail,
+        message: failed ? rule.describe(finding) : 'conforme',
+        fix: failed ? rule.fix || null : null,
+      })
+      counts[failed ? rule.severity : 'pass'] += 1
+    }
+
+    return {
+      checks: checks,
+      manual: PREFLIGHT_MANUAL,
+      counts: counts,
+      items: findings.items ? findings.items.count : 0,
+      status: counts.error > 0 ? 'error' : counts.warning > 0 ? 'warning' : 'pass',
+      ready: counts.error === 0,
+    }
+  }
+
+  /* ---------------------------------------------------------------------- *
    * Couleurs
    *
    * Le calcul des couleurs vit ici, jamais dans l'interface : ce que le
@@ -1353,6 +1590,10 @@ var LogoForgeEngine = (function () {
     readDocumentInfo: readDocumentInfo,
     readArtboardNames: readArtboardNames,
     runFullExport: runFullExport,
+    PREFLIGHT_RULES: PREFLIGHT_RULES,
+    PREFLIGHT_MANUAL: PREFLIGHT_MANUAL,
+    parsePreflight: parsePreflight,
+    evaluatePreflight: evaluatePreflight,
     CONTRAST_BACKGROUNDS: CONTRAST_BACKGROUNDS,
     hexToRgb: hexToRgb,
     rgbToHex: rgbToHex,
