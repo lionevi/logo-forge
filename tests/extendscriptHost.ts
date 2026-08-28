@@ -37,12 +37,25 @@ export class FakeFileSystem {
 
 let filesystem = new FakeFileSystem()
 
+/** Union des boîtes englobantes, dans le repère d'Illustrator. */
+function unionBounds(all: Bounds[]): Bounds {
+  if (all.length === 0) return [0, 0, 0, 0]
+  return [
+    Math.min(...all.map((b) => b[0])),
+    Math.max(...all.map((b) => b[1])),
+    Math.max(...all.map((b) => b[2])),
+    Math.min(...all.map((b) => b[3])),
+  ]
+}
+
 /** Objet de page : ce que Logo Forge copie d'un document à l'autre. */
 export class FakeItem {
   hidden = false
   locked = false
   /** Refus de duplication, pour simuler un calque verrouillé. */
   refuseDuplicate = false
+  /** Conteneur : un calque pour un objet de premier niveau, sinon un groupe. */
+  parent: FakeLayer | FakeGroup | null = null
 
   constructor(
     public typename: string,
@@ -50,17 +63,74 @@ export class FakeItem {
     public label = '',
   ) {}
 
-  duplicate(layer: FakeLayer, placement: string): FakeItem {
+  duplicate(target: FakeLayer | FakeGroup, placement: string): FakeItem {
     if (this.refuseDuplicate) {
       throw new Error('objet verrouille : ' + this.label)
     }
     const copy = new FakeItem(this.typename, [...this.visibleBounds], this.label)
     copy.hidden = this.hidden
     copy.locked = this.locked
-    if (placement === 'PLACEATBEGINNING') layer.pageItems.unshift(copy)
-    else layer.pageItems.push(copy)
+    target.insert(copy, placement)
     return copy
   }
+}
+
+/**
+ * Groupe : conteneur déplaçable et redimensionnable d'un seul tenant.
+ *
+ * Simplification assumée : `resize` et `position` déplacent la boîte du groupe
+ * sans recalculer celle de ses enfants. Ce qui est vérifié ici est le
+ * placement du groupe dans sa cellule, pas la géométrie interne.
+ */
+export class FakeGroup {
+  typename = 'GroupItem'
+  pageItems: FakeItem[] = []
+  hidden = false
+  locked = false
+  parent: FakeLayer | null = null
+  visibleBounds: Bounds = [0, 0, 0, 0]
+  /** Facteur cumulé appliqué par `resize`, en pourcentage. */
+  scale = 100
+
+  insert(item: FakeItem, placement: string): void {
+    item.parent = this
+    if (placement === 'PLACEATBEGINNING') this.pageItems.unshift(item)
+    else this.pageItems.push(item)
+    this.visibleBounds = unionBounds(this.pageItems.map((child) => child.visibleBounds))
+  }
+
+  resize(horizontal: number, vertical: number): void {
+    const [left, top, right, bottom] = this.visibleBounds
+    const width = (right - left) * (horizontal / 100)
+    const height = (top - bottom) * (vertical / 100)
+    this.visibleBounds = [left, top, left + width, top - height]
+    this.scale = (this.scale * horizontal) / 100
+  }
+
+  get position(): [number, number] {
+    return [this.visibleBounds[0], this.visibleBounds[1]]
+  }
+
+  set position(value: [number, number]) {
+    const [left, top, right, bottom] = this.visibleBounds
+    const width = right - left
+    const height = top - bottom
+    this.visibleBounds = [value[0], value[1], value[0] + width, value[1] - height]
+  }
+
+  remove(): void {
+    if (!this.parent) return
+    const index = this.parent.groups.indexOf(this)
+    if (index >= 0) this.parent.groups.splice(index, 1)
+  }
+}
+
+/** Bloc de texte, réduit à ce que la planche en attend. */
+export class FakeTextFrame {
+  typename = 'TextFrame'
+  contents = ''
+  position: [number, number] = [0, 0]
+  textRange = { characterAttributes: { size: 12 } }
 }
 
 /** Objet sélectionné en mode édition de texte : aucune boîte englobante. */
@@ -72,13 +142,62 @@ export class FakeTextRange {
 }
 
 export class FakeLayer {
-  pageItems: FakeItem[] = []
+  typename = 'Layer'
+  /** Groupes de premier niveau, suivis à part de leurs enfants. */
+  groups: FakeGroup[] = []
   locked = false
   visible = true
+
+  private direct: FakeItem[] = []
+
+  /**
+   * Comme dans Illustrator, cette collection descend dans les groupes : c'est
+   * précisément ce qui oblige le code à filtrer sur le parent.
+   */
+  get pageItems(): Array<FakeItem | FakeGroup> {
+    const out: Array<FakeItem | FakeGroup> = []
+    for (const item of this.direct) out.push(item)
+    for (const group of this.groups) {
+      out.push(group)
+      for (const child of group.pageItems) out.push(child)
+    }
+    return out
+  }
+
+  set pageItems(items: Array<FakeItem | FakeGroup>) {
+    this.direct = items as FakeItem[]
+    for (const item of this.direct) item.parent = this
+  }
+
+  insert(item: FakeItem, placement: string): void {
+    item.parent = this
+    if (placement === 'PLACEATBEGINNING') this.direct.unshift(item)
+    else this.direct.push(item)
+  }
+
+  /** Objets directs du calque, sans descendre dans les groupes. */
+  get items(): FakeItem[] {
+    return this.direct
+  }
+
+  set items(items: FakeItem[]) {
+    this.pageItems = items
+  }
 }
 
 export class FakeArtboard {
   constructor(public artboardRect: Bounds) {}
+}
+
+/** Collection Illustrator : un tableau doté d'une méthode `add`. */
+function createCollection<T>(factory: () => T): T[] & { add: () => T } {
+  const collection = [] as unknown as T[] & { add: () => T }
+  collection.add = () => {
+    const created = factory()
+    collection.push(created)
+    return created
+  }
+  return collection
 }
 
 export class FakeDocument {
@@ -101,8 +220,24 @@ export class FakeDocument {
     this.artboards = [new FakeArtboard([0, 0, width, -height])]
   }
 
-  get pageItems(): FakeItem[] {
-    const all: FakeItem[] = []
+  textFrames = createCollection<FakeTextFrame>(() => new FakeTextFrame())
+
+  get groupItems(): FakeGroup[] & { add: () => FakeGroup } {
+    const layer = this.layers[0]
+    const collection = [...layer.groups] as FakeGroup[] & {
+      add: () => FakeGroup
+    }
+    collection.add = () => {
+      const group = new FakeGroup()
+      group.parent = layer
+      layer.groups.push(group)
+      return group
+    }
+    return collection
+  }
+
+  get pageItems(): Array<FakeItem | FakeGroup> {
+    const all: Array<FakeItem | FakeGroup> = []
     for (const layer of this.layers) all.push(...layer.pageItems)
     return all
   }
@@ -148,7 +283,17 @@ class FakeApp {
     })
   }
 
+  /** Document que le prochain `open` renverra, pour scénariser un composant. */
+  nextOpened: FakeDocument | null = null
+
   open(file: { fsName: string }): FakeDocument {
+    if (this.nextOpened) {
+      const prepared = this.nextOpened
+      this.nextOpened = null
+      this.documents.push(prepared)
+      this.activeDocument = prepared
+      return prepared
+    }
     const doc = new FakeDocument(
       file.fsName.split('/').pop() ?? 'ouvert',
       'RGB',
@@ -311,6 +456,13 @@ export function loadExtendScript(): Host {
     'lfSetComponent',
     'lfRenderThumbnail',
     'lfOpenComponent',
+    'lfFitArtboard',
+    'lfInspectDocument',
+    'lfCreatePackage',
+    'lfPlaceComponent',
+    'lfAddLabel',
+    'lfFinishPackage',
+    'lfAbortPackage',
     'lfRemoveComponentFile',
     'lfApplyColorScheme',
     'lfExportPNG',

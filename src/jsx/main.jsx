@@ -1072,6 +1072,325 @@ var LogoForge = (function () {
     }
   }
 
+  /**
+   * Objets de premier niveau d'un document.
+   *
+   * `document.pageItems` et `layer.pageItems` descendent dans les groupes :
+   * les recopier tels quels dupliquerait le contenu des groupes en plus des
+   * groupes eux-mêmes. Un objet de premier niveau se reconnaît à ce que son
+   * parent est un calque.
+   */
+  function topLevelItems(doc) {
+    var out = []
+    for (var l = 0; l < doc.layers.length; l += 1) {
+      var layer = doc.layers[l]
+      for (var i = 0; i < layer.pageItems.length; i += 1) {
+        var item = layer.pageItems[i]
+        var parent = null
+        try {
+          parent = item.parent
+        } catch (parentError) {
+          parent = null
+        }
+        if (parent && parent.typename === 'Layer') out.push(item)
+      }
+    }
+    return out
+  }
+
+  /**
+   * Ajuste un plan de travail à l'étendue visible de son contenu.
+   *
+   * Un plan de travail plus grand que le logo se traduit par du blanc autour
+   * de chaque fichier exporté, et par un logo qui paraît minuscule chez le
+   * client.
+   */
+  function fitArtboard(artboardIndex) {
+    try {
+      var doc = workingDocument()
+      if (!doc) return err('aucun document de travail')
+
+      var index = parseInt(artboardIndex, 10) || 0
+      if (index < 0 || index >= doc.artboards.length) {
+        return err('plan de travail ' + (index + 1) + ' inexistant')
+      }
+
+      var items = topLevelItems(doc)
+      if (items.length === 0) return err('le document ne contient aucun objet')
+
+      var frame = selectionBounds(items)
+      var width = Math.abs(frame[2] - frame[0])
+      var height = Math.abs(frame[1] - frame[3])
+      if (!width || !height) return err('contenu sans etendue visible')
+
+      doc.artboards[index].artboardRect = frame
+      return ok([width, height, items.length].join(UNIT))
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
+  /**
+   * Décrit un document de travail sans le modifier.
+   *
+   * Charge utile : objets de premier niveau, largeur et hauteur du plan de
+   * travail, objets débordant du plan de travail, plans de travail vides.
+   */
+  function inspectDocument(artboardIndex) {
+    try {
+      var doc = workingDocument()
+      if (!doc) return err('aucun document de travail')
+
+      var index = parseInt(artboardIndex, 10) || 0
+      if (index < 0 || index >= doc.artboards.length) {
+        return err('plan de travail ' + (index + 1) + ' inexistant')
+      }
+
+      var rect = doc.artboards[index].artboardRect
+      var items = topLevelItems(doc)
+      var outside = 0
+
+      for (var i = 0; i < items.length; i += 1) {
+        var b
+        try {
+          b = items[i].visibleBounds
+        } catch (boundsError) {
+          continue
+        }
+        // Une tolérance d'un point absorbe les arrondis de rendu.
+        if (
+          b[0] < rect[0] - 1 ||
+          b[2] > rect[2] + 1 ||
+          b[1] > rect[1] + 1 ||
+          b[3] < rect[3] - 1
+        ) {
+          outside += 1
+        }
+      }
+
+      return ok(
+        [
+          items.length,
+          Math.abs(rect[2] - rect[0]),
+          Math.abs(rect[1] - rect[3]),
+          outside,
+          doc.artboards.length,
+        ].join(UNIT)
+      )
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
+  /* ---------------------------------------------------------------------- *
+   * Document de package
+   *
+   * Une planche de revue : les composants en colonnes, les déclinaisons en
+   * lignes. Elle reste un document Illustrator natif et modifiable — c'est ce
+   * qui permet au designer de constater d'un coup d'œil ce que le client
+   * recevra, avant d'écrire le moindre fichier.
+   * ---------------------------------------------------------------------- */
+
+  /** Document de package en cours de construction, ou `null`. */
+  var packageDocument = null
+
+  /** Ouvre un document de package vide. */
+  function createPackageDocument(width, height, colorMode) {
+    try {
+      var w = parseFloat(width)
+      var h = parseFloat(height)
+      if (!(w > 0) || !(h > 0)) return err('dimensions de planche invalides')
+
+      var space =
+        String(colorMode).toLowerCase() === 'cmyk'
+          ? DocumentColorSpace.CMYK
+          : DocumentColorSpace.RGB
+
+      packageDocument = app.documents.add(space, w, h)
+      packageDocument.artboards[0].artboardRect = [0, 0, w, -h]
+      return ok([packageDocument.name, w, h].join(UNIT))
+    } catch (e) {
+      packageDocument = null
+      return err(describe(e))
+    }
+  }
+
+  /**
+   * Place un composant recoloré dans une cellule de la planche.
+   *
+   * @returns nombre d'objets réellement placés, largeur et hauteur obtenues.
+   */
+  function placeComponentAt(
+    path,
+    scheme,
+    hex,
+    threshold,
+    left,
+    top,
+    cellWidth,
+    cellHeight
+  ) {
+    try {
+      if (!packageDocument) return err('aucune planche ouverte')
+
+      var opened = openComponent(path)
+      if (opened.indexOf('OK') !== 0) return opened
+
+      if (scheme && scheme !== 'fullColor') {
+        var applied = applyColorScheme(scheme, hex, threshold)
+        if (applied.indexOf('OK') !== 0) {
+          endSession()
+          return applied
+        }
+      }
+
+      var doc = session.document
+      var items = topLevelItems(doc)
+      if (items.length === 0) {
+        endSession()
+        return err('composant sans objet : ' + path)
+      }
+
+      // Le document source doit être actif pour que la duplication aboutisse.
+      app.activeDocument = doc
+
+      var group = packageDocument.groupItems.add()
+      var placed = 0
+      for (var i = 0; i < items.length; i += 1) {
+        try {
+          items[i].duplicate(group, ElementPlacement.PLACEATEND)
+          placed += 1
+        } catch (dupError) {
+          /* objet refusé : compté par différence, jamais fatal */
+        }
+      }
+
+      endSession()
+
+      if (placed === 0) {
+        try {
+          group.remove()
+        } catch (removeError) {
+          /* groupe déjà retiré */
+        }
+        return err('aucun objet placé pour ' + path)
+      }
+
+      app.activeDocument = packageDocument
+
+      var bounds = group.visibleBounds
+      var width = Math.abs(bounds[2] - bounds[0])
+      var height = Math.abs(bounds[1] - bounds[3])
+      if (!width || !height) return err('composant sans etendue visible')
+
+      var box = Math.min(
+        parseFloat(cellWidth) / width,
+        parseFloat(cellHeight) / height
+      )
+      if (isFinite(box) && box > 0 && box !== 1) group.resize(box * 100, box * 100)
+
+      var placedBounds = group.visibleBounds
+      var placedWidth = Math.abs(placedBounds[2] - placedBounds[0])
+      var placedHeight = Math.abs(placedBounds[1] - placedBounds[3])
+
+      // Centré dans sa cellule : une grille alignée se relit d'un coup d'œil.
+      group.position = [
+        parseFloat(left) + (parseFloat(cellWidth) - placedWidth) / 2,
+        parseFloat(top) - (parseFloat(cellHeight) - placedHeight) / 2,
+      ]
+
+      return ok([placed, placedWidth, placedHeight].join(UNIT))
+    } catch (e) {
+      try {
+        endSession()
+      } catch (sessionError) {
+        /* session déjà refermée */
+      }
+      return err(describe(e))
+    }
+  }
+
+  /** Écrit un libellé sur la planche. */
+  function addLabelAt(text, left, top, size) {
+    try {
+      if (!packageDocument) return err('aucune planche ouverte')
+
+      var frame = packageDocument.textFrames.add()
+      frame.contents = String(text)
+      try {
+        frame.textRange.characterAttributes.size = parseFloat(size) || 12
+      } catch (attributeError) {
+        // Police manquante ou attribut refusé : le libellé reste lisible à sa
+        // taille par défaut, ce qui vaut mieux qu'une planche sans repères.
+      }
+      frame.position = [parseFloat(left), parseFloat(top)]
+      return ok('label')
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
+  /**
+   * Termine la planche et la vérifie.
+   *
+   * Charge utile : objets de premier niveau, largeur et hauteur du plan de
+   * travail, objets débordants.
+   */
+  function finishPackageDocument() {
+    try {
+      if (!packageDocument) return err('aucune planche ouverte')
+
+      app.activeDocument = packageDocument
+      var doc = packageDocument
+      var items = topLevelItems(doc)
+      if (items.length === 0) {
+        return err('la planche est vide')
+      }
+
+      var rect = doc.artboards[0].artboardRect
+      var outside = 0
+      for (var i = 0; i < items.length; i += 1) {
+        var b = items[i].visibleBounds
+        if (
+          b[0] < rect[0] - 1 ||
+          b[2] > rect[2] + 1 ||
+          b[1] > rect[1] + 1 ||
+          b[3] < rect[3] - 1
+        ) {
+          outside += 1
+        }
+      }
+
+      var name = doc.name
+      packageDocument = null
+
+      return ok(
+        [
+          items.length,
+          Math.abs(rect[2] - rect[0]),
+          Math.abs(rect[1] - rect[3]),
+          outside,
+          name,
+        ].join(UNIT)
+      )
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
+  /** Referme la planche en cours après un échec. */
+  function abortPackageDocument() {
+    try {
+      if (!packageDocument) return ok('idle')
+      packageDocument.close(SaveOptions.DONOTSAVECHANGES)
+      packageDocument = null
+      return ok('closed')
+    } catch (e) {
+      packageDocument = null
+      return err(describe(e))
+    }
+  }
+
   /** Ouvre le document d'un composant comme document de travail. */
   function openComponent(path) {
     try {
@@ -1143,6 +1462,13 @@ var LogoForge = (function () {
     describeSelection: describeSelection,
     setComponent: setComponent,
     renderComponentThumbnail: renderComponentThumbnail,
+    fitArtboard: fitArtboard,
+    inspectDocument: inspectDocument,
+    createPackageDocument: createPackageDocument,
+    placeComponentAt: placeComponentAt,
+    addLabelAt: addLabelAt,
+    finishPackageDocument: finishPackageDocument,
+    abortPackageDocument: abortPackageDocument,
     openComponent: openComponent,
     setDocumentColorMode: setDocumentColorMode,
     removeComponentFile: removeComponentFile,
@@ -1202,6 +1528,34 @@ function lfDescribeSelection() {
 
 function lfRenderThumbnail(path, outputPath) {
   return LogoForge.renderComponentThumbnail(path, outputPath)
+}
+
+function lfFitArtboard(index) {
+  return LogoForge.fitArtboard(index)
+}
+
+function lfInspectDocument(index) {
+  return LogoForge.inspectDocument(index)
+}
+
+function lfCreatePackage(width, height, colorMode) {
+  return LogoForge.createPackageDocument(width, height, colorMode)
+}
+
+function lfPlaceComponent(path, scheme, hex, threshold, left, top, w, h) {
+  return LogoForge.placeComponentAt(path, scheme, hex, threshold, left, top, w, h)
+}
+
+function lfAddLabel(text, left, top, size) {
+  return LogoForge.addLabelAt(text, left, top, size)
+}
+
+function lfFinishPackage() {
+  return LogoForge.finishPackageDocument()
+}
+
+function lfAbortPackage() {
+  return LogoForge.abortPackageDocument()
 }
 
 function lfSetComponent(componentId) {

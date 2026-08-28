@@ -580,6 +580,11 @@
         border-left-color: #e34850;
         color: #e34850;
       }
+      /* Un succès ne doit pas porter la couleur d'un avertissement. */
+      .notice.done {
+        border-left-color: #2d9d78;
+        color: #2d9d78;
+      }
       .notice.ok {
         border-left-color: #2d9d78;
         color: #2d9d78;
@@ -736,6 +741,15 @@
               + Ajouter un composant
             </button>
           </div>
+
+          <div class="section">
+            <h2 class="section-title">Planche de revue</h2>
+            <p class="summary" id="package-summary"></p>
+            <button class="button small" id="build-package" disabled>
+              Créer la planche
+            </button>
+            <div id="package-result"></div>
+          </div>
         </div>
 
         <!-- Onglet Colors -->
@@ -810,6 +824,7 @@
             <button class="tab" data-sub="names">Names</button>
             <button class="tab" data-sub="scales">Scales</button>
             <button class="tab" data-sub="padding">Padding</button>
+            <button class="tab" data-sub="grid">Grid</button>
           </div>
 
           <div class="pane on" id="sub-files">
@@ -907,6 +922,39 @@
                   <input type="number" id="pad-left" value="0" min="0" />
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div class="pane" id="sub-grid">
+            <div class="section">
+              <h2 class="section-title">Planche de revue (pt)</h2>
+              <div class="row" id="grid-fields">
+                <div class="col-4">
+                  <label for="grid-cellWidth">Cellule L</label>
+                  <input type="number" id="grid-cellWidth" min="20" />
+                </div>
+                <div class="col-4">
+                  <label for="grid-cellHeight">Cellule H</label>
+                  <input type="number" id="grid-cellHeight" min="20" />
+                </div>
+                <div class="col-4">
+                  <label for="grid-margin">Marge</label>
+                  <input type="number" id="grid-margin" min="0" />
+                </div>
+                <div class="col-4">
+                  <label for="grid-columnGap">Gouttière col.</label>
+                  <input type="number" id="grid-columnGap" min="0" />
+                </div>
+                <div class="col-4">
+                  <label for="grid-rowGap">Gouttière ligne</label>
+                  <input type="number" id="grid-rowGap" min="0" />
+                </div>
+                <div class="col-4">
+                  <label for="grid-labelSize">Libellés</label>
+                  <input type="number" id="grid-labelSize" min="4" />
+                </div>
+              </div>
+              <p class="summary" id="grid-preview"></p>
             </div>
           </div>
 
@@ -1122,6 +1170,8 @@
           customs: [],
           rememberSchemes: true,
           threshold: 50,
+          grid: {},
+          packageResult: null,
           formats: {
             print: { ai: true, pdf: true, eps: false, jpeg: false },
             web: { svg: true, png: true, jpeg: false, ai: false },
@@ -1350,6 +1400,7 @@
             separator: state.separator,
             padding: state.padding,
             threshold: state.threshold,
+            grid: state.grid,
           }
         }
 
@@ -1640,6 +1691,140 @@
             plannedCount() + ' fichiers seront écrits.'
         }
 
+        /* ---------------------------------------------------------------- *
+         * Planche de revue
+         * ---------------------------------------------------------------- */
+
+        /** Champs de réglage de la grille, dans l'ordre d'affichage. */
+        var GRID_FIELDS = [
+          'cellWidth',
+          'cellHeight',
+          'margin',
+          'columnGap',
+          'rowGap',
+          'labelSize',
+        ]
+
+        /** Recopie les réglages de grille effectifs dans le formulaire. */
+        function renderGridSettings() {
+          var settings = engine.gridSettings(state.grid)
+          for (var i = 0; i < GRID_FIELDS.length; i += 1) {
+            var field = byId('grid-' + GRID_FIELDS[i])
+            if (field) field.value = settings[GRID_FIELDS[i]]
+          }
+          var plan = engine.planPackageGrid(buildConfig())
+          byId('grid-preview').innerHTML =
+            plan.cells.length === 0
+              ? 'Aucune cellule : définissez un composant et une déclinaison.'
+              : plan.columns +
+                ' colonnes × ' +
+                plan.rows +
+                ' lignes · planche de ' +
+                Math.round(plan.width) +
+                ' × ' +
+                Math.round(plan.height) +
+                ' pt'
+        }
+
+        function readGridSettings() {
+          var next = {}
+          for (var i = 0; i < GRID_FIELDS.length; i += 1) {
+            var field = byId('grid-' + GRID_FIELDS[i])
+            if (!field) continue
+            var value = parseFloat(field.value)
+            if (!isNaN(value) && value >= 0) next[GRID_FIELDS[i]] = value
+          }
+          state.grid = next
+          renderGridSettings()
+        }
+
+        function renderPackage() {
+          var plan = engine.planPackageGrid(buildConfig())
+          byId('build-package').disabled = plan.cells.length === 0
+          byId('package-summary').innerHTML =
+            plan.cells.length === 0
+              ? 'Définissez au moins un composant et une déclinaison.'
+              : plan.columns +
+                ' composants × ' +
+                plan.rows +
+                ' déclinaisons — ' +
+                plan.cells.length +
+                ' cellules'
+
+          var result = state.packageResult
+          if (!result) {
+            byId('package-result').innerHTML = ''
+            return
+          }
+
+          var html =
+            '<p class="notice ' +
+            (result.ok ? 'done' : 'error') +
+            '">' +
+            escapeHtml(
+              result.ok
+                ? 'Planche créée : ' +
+                    result.report.placed +
+                    ' / ' +
+                    result.report.expected +
+                    ' cellules remplies.'
+                : 'Planche incomplète — ' + result.message
+            ) +
+            '</p>'
+
+          if (result.report.empty.length > 0) {
+            html +=
+              '<p class="summary">Cellules vides : ' +
+              escapeHtml(result.report.empty.join(', ')) +
+              '</p>'
+          }
+          if (result.report.outside > 0) {
+            html +=
+              '<p class="summary">' +
+              result.report.outside +
+              ' objet(s) débordent du plan de travail.</p>'
+          }
+          byId('package-result').innerHTML = html
+        }
+
+        /** Construit la planche, en rendant compte de sa progression. */
+        function buildPackage() {
+          var button = byId('build-package')
+          button.disabled = true
+          button.innerHTML = 'Construction…'
+          state.packageResult = null
+          state.lastError = ''
+
+          engine.runPackageBuild(buildConfig(), {
+            onProgress: function (done, total, label) {
+              button.innerHTML =
+                'Cellule ' + done + ' / ' + total + ' — ' + label
+            },
+            onDone: function (outcome) {
+              button.innerHTML = 'Créer la planche'
+              state.packageResult = outcome
+              if (!outcome.ok && outcome.report.expected === 0) {
+                state.lastError = outcome.message
+              }
+              renderPackage()
+              renderMessages()
+            },
+          })
+        }
+
+        /**
+         * Rendus qui dépendent des composants et des déclinaisons.
+         *
+         * Les regrouper évite qu'une section — la planche, typiquement — reste
+         * en arrière d'un changement parce qu'un appelant l'a oubliée.
+         */
+        function renderDerived() {
+          renderMessages()
+          renderExportButton()
+          renderPackage()
+          renderGridSettings()
+        }
+
         function renderAll() {
           renderStatus()
           renderDocument()
@@ -1649,8 +1834,7 @@
           renderFormats()
           renderScales()
           renderNamePreview()
-          renderMessages()
-          renderExportButton()
+          renderDerived()
         }
 
         /* ---------------------------------------------------------------- *
@@ -1767,8 +1951,7 @@
               : ''
 
             renderComponents()
-            renderMessages()
-            renderExportButton()
+            renderDerived()
           })
         }
 
@@ -1792,8 +1975,7 @@
                 component.copied = parseInt(fields[1], 10) || component.copied
               }
               renderComponents()
-              renderMessages()
-              renderExportButton()
+              renderDerived()
             }
           )
         }
@@ -1808,8 +1990,7 @@
               engine.call('lfRemoveComponentFile', [gone.path], function () {})
             }
             renderComponents()
-            renderMessages()
-            renderExportButton()
+            renderDerived()
             return
           }
 
@@ -1860,8 +2041,7 @@
           if (!id) return
           state.schemes[id] = event.target.checked
           persistSchemes()
-          renderMessages()
-          renderExportButton()
+          renderDerived()
         }
 
         byId('custom-list').onclick = function (event) {
@@ -1870,8 +2050,7 @@
             state.customs.splice(parseInt(kill, 10), 1)
             persistSchemes()
             renderSchemes()
-            renderMessages()
-            renderExportButton()
+            renderDerived()
             return
           }
           var chip = event.target.getAttribute('data-chip')
@@ -1904,8 +2083,7 @@
           byId('custom-name').value = ''
           persistSchemes()
           renderSchemes()
-          renderMessages()
-          renderExportButton()
+          renderDerived()
         }
 
         byId('remember-schemes').onchange = function () {
@@ -1936,8 +2114,7 @@
           var format = event.target.getAttribute('data-format')
           if (!pass || !format) return
           state.formats[pass][format] = event.target.checked
-          renderMessages()
-          renderExportButton()
+          renderDerived()
         }
         byId('print-formats').onclick = onFormatClick
         byId('web-formats').onclick = onFormatClick
@@ -1957,8 +2134,7 @@
           if (index === null) return
           state.scales.splice(parseInt(index, 10), 1)
           renderScales()
-          renderMessages()
-          renderExportButton()
+          renderDerived()
         }
 
         byId('add-scale').onclick = function () {
@@ -1970,8 +2146,7 @@
             resolution: parseInt(byId('scale-dpi').value, 10) || 72,
           })
           renderScales()
-          renderMessages()
-          renderExportButton()
+          renderDerived()
         }
 
         byId('scale-preset').onchange = function () {
@@ -1994,8 +2169,7 @@
             ]
           }
           renderScales()
-          renderMessages()
-          renderExportButton()
+          renderDerived()
         }
 
         function readPadding() {
@@ -2021,6 +2195,11 @@
             bottom: parseFloat(byId('pad-bottom').value) || 0,
             left: parseFloat(byId('pad-left').value) || 0,
           }
+        }
+
+        byId('grid-fields').oninput = readGridSettings
+        byId('build-package').onclick = function () {
+          guard('planche', buildPackage)
         }
 
         byId('padding-fields').oninput = readPadding

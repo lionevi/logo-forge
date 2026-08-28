@@ -269,6 +269,50 @@ describe('Set Component', () => {
   })
 })
 
+describe('planche de revue', () => {
+  it('expose la commande de construction et son compte rendu', () => {
+    for (const id of ['build-package', 'package-summary', 'package-result']) {
+      expect(HTML, id).toContain(`id="${id}"`)
+    }
+  })
+
+  it('règle la grille depuis les paramètres', () => {
+    expect(HTML).toContain('data-sub="grid"')
+    for (const field of [
+      'grid-cellWidth',
+      'grid-cellHeight',
+      'grid-margin',
+      'grid-columnGap',
+      'grid-rowGap',
+      'grid-labelSize',
+    ]) {
+      expect(HTML, field).toContain(`id="${field}"`)
+    }
+  })
+
+  it('délègue la construction au moteur, sans rien recalculer', () => {
+    expect(SCRIPT).toContain('engine.runPackageBuild(')
+    expect(SCRIPT).toContain('engine.planPackageGrid(')
+    expect(SCRIPT).toContain('engine.gridSettings(')
+  })
+
+  it('rend compte des cellules vides et des débordements', () => {
+    expect(SCRIPT).toContain('Cellules vides')
+    expect(SCRIPT).toContain('débordent du plan de travail')
+  })
+
+  it('distingue visuellement un succès d un avertissement', () => {
+    expect(STYLE).toContain('.notice.done')
+    expect(SCRIPT).toMatch(/result\.ok \? 'done' : 'error'/)
+  })
+
+  it('regroupe les rendus dérivés pour qu aucune section ne reste en arrière', () => {
+    expect(SCRIPT).toContain('function renderDerived(')
+    // Un appelant qui oublierait la planche laisserait un compte rendu périmé.
+    expect(SCRIPT.match(/renderExportButton\(\)/g) ?? []).toHaveLength(2)
+  })
+})
+
 describe('pont Illustrator', () => {
   it("parle à l'hôte par __adobe_cep__", () => {
     expect(SCRIPT).toContain('__adobe_cep__')

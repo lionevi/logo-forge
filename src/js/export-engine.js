@@ -216,10 +216,30 @@ var LogoForgeEngine = (function () {
     grayscale: 'Grayscale',
   }
 
+  /**
+   * Libellés lisibles, distincts des noms de dossiers.
+   *
+   * Un chemin ne doit pas contenir d'espace ; une planche de revue, elle, se
+   * lit à l'œil : « Full Color », pas « FullColor ».
+   */
+  var SCHEME_TITLE = {
+    fullColor: 'Full Color',
+    black: 'Black',
+    white: 'White',
+    inverted: 'Inverted',
+    grayscale: 'Grayscale',
+  }
+
   /** Libellé d'une déclinaison, personnalisée comprise. */
   function schemeLabel(scheme) {
     if (scheme.id === 'custom') return pascal(scheme.name)
     return SCHEME_LABEL[scheme.id] || pascal(scheme.id)
+  }
+
+  /** Nom d'une déclinaison tel qu'il s'affiche, espaces compris. */
+  function schemeTitle(scheme) {
+    if (scheme.id === 'custom') return scheme.name || 'Custom'
+    return SCHEME_TITLE[scheme.id] || scheme.id
   }
 
   /**
@@ -844,6 +864,274 @@ var LogoForgeEngine = (function () {
     }
   }
 
+  /* ---------------------------------------------------------------------- *
+   * Planche de revue — géométrie
+   *
+   * Le calcul reste ici, en JavaScript ordinaire : une grille fausse se
+   * découvre en une milliseconde de test, jamais en rouvrant Illustrator.
+   * ---------------------------------------------------------------------- */
+
+  /** Réglages de grille par défaut, en points. */
+  var GRID_DEFAULTS = {
+    margin: 48,
+    columnGap: 28,
+    rowGap: 28,
+    cellWidth: 220,
+    cellHeight: 140,
+    labelSize: 12,
+    labelGutter: 110,
+    headerHeight: 26,
+  }
+
+  /** Réglages de grille complétés par leurs valeurs par défaut. */
+  function gridSettings(overrides) {
+    var settings = {}
+    for (var key in GRID_DEFAULTS) {
+      if (!GRID_DEFAULTS.hasOwnProperty(key)) continue
+      var given = overrides ? parseFloat(overrides[key]) : NaN
+      settings[key] = isNaN(given) || given < 0 ? GRID_DEFAULTS[key] : given
+    }
+    return settings
+  }
+
+  /**
+   * Calcule la planche : composants en colonnes, déclinaisons en lignes.
+   *
+   * Les coordonnées sont celles d'Illustrator — origine en haut à gauche du
+   * plan de travail, ordonnées croissantes vers le haut, donc négatives vers
+   * le bas.
+   */
+  function planPackageGrid(config) {
+    var settings = gridSettings(config.grid)
+    var columns = []
+    var rows = config.colorSchemes || []
+
+    for (var c = 0; c < config.components.length; c += 1) {
+      if (config.components[c].path) columns.push(config.components[c])
+    }
+
+    var width =
+      settings.margin * 2 +
+      settings.labelGutter +
+      columns.length * settings.cellWidth +
+      Math.max(0, columns.length - 1) * settings.columnGap
+    var height =
+      settings.margin * 2 +
+      settings.headerHeight +
+      rows.length * settings.cellHeight +
+      Math.max(0, rows.length - 1) * settings.rowGap
+
+    var cells = []
+    var labels = []
+
+    if (columns.length === 0 || rows.length === 0) {
+      return {
+        width: width,
+        height: height,
+        columns: columns.length,
+        rows: rows.length,
+        cells: cells,
+        labels: labels,
+        settings: settings,
+      }
+    }
+
+    function columnLeft(index) {
+      return (
+        settings.margin +
+        settings.labelGutter +
+        index * (settings.cellWidth + settings.columnGap)
+      )
+    }
+
+    function rowTop(index) {
+      return -(
+        settings.margin +
+        settings.headerHeight +
+        index * (settings.cellHeight + settings.rowGap)
+      )
+    }
+
+    for (var h = 0; h < columns.length; h += 1) {
+      labels.push({
+        kind: 'column',
+        text: columns[h].name,
+        left: columnLeft(h),
+        top: -settings.margin,
+        size: settings.labelSize,
+      })
+    }
+
+    for (var r = 0; r < rows.length; r += 1) {
+      labels.push({
+        kind: 'row',
+        text: schemeTitle(rows[r]),
+        left: settings.margin,
+        // Aligné sur le milieu de la ligne, à la hauteur du texte près.
+        top: rowTop(r) - settings.cellHeight / 2 + settings.labelSize / 2,
+        size: settings.labelSize,
+      })
+
+      for (var k = 0; k < columns.length; k += 1) {
+        cells.push({
+          component: columns[k],
+          scheme: rows[r],
+          column: k,
+          row: r,
+          left: columnLeft(k),
+          top: rowTop(r),
+          width: settings.cellWidth,
+          height: settings.cellHeight,
+        })
+      }
+    }
+
+    return {
+      width: width,
+      height: height,
+      columns: columns.length,
+      rows: rows.length,
+      cells: cells,
+      labels: labels,
+      settings: settings,
+    }
+  }
+
+  /**
+   * Construit la planche dans Illustrator, cellule par cellule.
+   *
+   * Une cellule qui échoue est consignée et laissée vide : mieux vaut une
+   * planche incomplète et annotée qu'un abandon en cours de route. La planche
+   * n'est déclarée terminée qu'après vérification de son contenu.
+   */
+  function runPackageBuild(config, handlers) {
+    var plan = planPackageGrid(config)
+    var report = {
+      expected: plan.cells.length,
+      placed: 0,
+      empty: [],
+      failures: [],
+      width: plan.width,
+      height: plan.height,
+      outside: 0,
+      name: '',
+    }
+
+    if (plan.cells.length === 0) {
+      handlers.onDone({
+        ok: false,
+        message: 'aucun composant défini ou aucune déclinaison cochée',
+        report: report,
+      })
+      return
+    }
+
+    var threshold = typeof config.threshold === 'number' ? config.threshold : 100
+    // La planche adopte le mode colorimétrique de la passe d'impression quand
+    // elle est demandée : c'est celle qui contraint le plus les couleurs.
+    var colorMode = config.passes && config.passes.print !== false ? 'cmyk' : 'rgb'
+
+    function fail(message) {
+      call('lfAbortPackage', [], function () {
+        handlers.onDone({ ok: false, message: message, report: report })
+      })
+    }
+
+    var index = 0
+
+    function placeNext() {
+      if (index >= plan.cells.length) {
+        finish()
+        return
+      }
+
+      var cell = plan.cells[index]
+      index += 1
+      handlers.onProgress(index, plan.cells.length, cell.component.name)
+
+      call(
+        'lfPlaceComponent',
+        [
+          cell.component.path,
+          cell.scheme.id,
+          cell.scheme.hex || '',
+          threshold,
+          cell.left,
+          cell.top,
+          cell.width,
+          cell.height,
+        ],
+        function (result) {
+          if (result.ok) {
+            report.placed += 1
+          } else {
+            report.empty.push(
+              cell.component.name + ' / ' + schemeTitle(cell.scheme)
+            )
+            report.failures.push({ cell: cell, message: result.value })
+          }
+          setTimeout(placeNext, 0)
+        }
+      )
+    }
+
+    function labelNext(position) {
+      if (position >= plan.labels.length) {
+        placeNext()
+        return
+      }
+      var label = plan.labels[position]
+      call(
+        'lfAddLabel',
+        [label.text, label.left, label.top, label.size],
+        function (result) {
+          if (!result.ok) {
+            report.failures.push({ label: label.text, message: result.value })
+          }
+          labelNext(position + 1)
+        }
+      )
+    }
+
+    function finish() {
+      call('lfFinishPackage', [], function (result) {
+        if (!result.ok) {
+          fail('finalisation de la planche : ' + result.value)
+          return
+        }
+        var fields = result.value.split(UNIT)
+        report.outside = parseInt(fields[3], 10) || 0
+        report.name = fields[4] || ''
+
+        handlers.onDone({
+          // Une planche dont toutes les cellules ont échoué n'est pas un succès.
+          ok: report.placed > 0,
+          message:
+            report.placed === report.expected
+              ? ''
+              : report.expected - report.placed + ' cellule(s) non remplie(s)',
+          report: report,
+        })
+      })
+    }
+
+    call(
+      'lfCreatePackage',
+      [plan.width, plan.height, colorMode],
+      function (created) {
+        if (!created.ok) {
+          handlers.onDone({
+            ok: false,
+            message: 'création de la planche : ' + created.value,
+            report: report,
+          })
+          return
+        }
+        labelNext(0)
+      }
+    )
+  }
+
   return {
     FOLDERS: FOLDERS,
     FAVICON_SIZES: FAVICON_SIZES,
@@ -857,6 +1145,7 @@ var LogoForgeEngine = (function () {
     pascal: pascal,
     joinPath: joinPath,
     schemeLabel: schemeLabel,
+    schemeTitle: schemeTitle,
     buildFileName: buildFileName,
     planExport: planExport,
     planDirectories: planDirectories,
@@ -865,6 +1154,10 @@ var LogoForgeEngine = (function () {
     readDocumentInfo: readDocumentInfo,
     readArtboardNames: readArtboardNames,
     runFullExport: runFullExport,
+    GRID_DEFAULTS: GRID_DEFAULTS,
+    gridSettings: gridSettings,
+    planPackageGrid: planPackageGrid,
+    runPackageBuild: runPackageBuild,
   }
 })()
 

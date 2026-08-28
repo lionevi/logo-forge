@@ -23,7 +23,7 @@ let host: Host
 /** Document source contenant `labels`, du premier plan vers l'arrière-plan. */
 function openDocument(labels: string[]): FakeDocument {
   const doc = new FakeDocument('brand.ai', 'RGB', 600, 400)
-  doc.layers[0].pageItems = labels.map(
+  doc.layers[0].items = labels.map(
     (label, index) =>
       new FakeItem(
         'PathItem',
@@ -51,9 +51,9 @@ describe('sonde de sélection', () => {
 
   it('compte les objets cadrables, masqués et verrouillés', () => {
     const doc = openDocument(['fond', 'marque', 'texte'])
-    doc.layers[0].pageItems[0].hidden = true
-    doc.layers[0].pageItems[1].locked = true
-    doc.selection = [...doc.layers[0].pageItems, new FakeTextRange()]
+    doc.layers[0].items[0].hidden = true
+    doc.layers[0].items[1].locked = true
+    doc.selection = [...doc.layers[0].items, new FakeTextRange()]
 
     const result = parseResult(host.api.lfDescribeSelection())
 
@@ -89,12 +89,12 @@ describe('capture de la sélection', () => {
 
   it("préserve l'ordre de superposition de la sélection", () => {
     const doc = openDocument(['devant', 'milieu', 'derriere'])
-    doc.selection = [...doc.layers[0].pageItems]
+    doc.selection = [...doc.layers[0].items]
 
     expect(parseResult(host.api.lfSetComponent('c0')).ok).toBe(true)
 
     const created = host.app.created[0]
-    expect(created.layers[0].pageItems.map((item) => item.label)).toEqual([
+    expect(created.layers[0].items.map((item) => item.label)).toEqual([
       'devant',
       'milieu',
       'derriere',
@@ -103,33 +103,33 @@ describe('capture de la sélection', () => {
 
   it('rend visibles les copies des objets masqués', () => {
     const doc = openDocument(['fond', 'marque'])
-    doc.layers[0].pageItems[0].hidden = true
-    doc.layers[0].pageItems[1].locked = true
-    doc.selection = [...doc.layers[0].pageItems]
+    doc.layers[0].items[0].hidden = true
+    doc.layers[0].items[1].locked = true
+    doc.selection = [...doc.layers[0].items]
 
     expect(parseResult(host.api.lfSetComponent('c0')).ok).toBe(true)
 
-    const copies = host.app.created[0].layers[0].pageItems
+    const copies = host.app.created[0].layers[0].items
     expect(copies.every((item) => !item.hidden)).toBe(true)
     expect(copies.every((item) => !item.locked)).toBe(true)
   })
 
   it("ne modifie jamais les objets du document d'origine", () => {
     const doc = openDocument(['fond'])
-    doc.layers[0].pageItems[0].hidden = true
-    doc.layers[0].pageItems[0].locked = true
-    doc.selection = [...doc.layers[0].pageItems]
+    doc.layers[0].items[0].hidden = true
+    doc.layers[0].items[0].locked = true
+    doc.selection = [...doc.layers[0].items]
 
     host.api.lfSetComponent('c0')
 
-    expect(doc.layers[0].pageItems[0].hidden).toBe(true)
-    expect(doc.layers[0].pageItems[0].locked).toBe(true)
+    expect(doc.layers[0].items[0].hidden).toBe(true)
+    expect(doc.layers[0].items[0].locked).toBe(true)
   })
 
   it('poursuit malgré un objet refusé et le compte', () => {
     const doc = openDocument(['fond', 'verrouille', 'marque'])
-    doc.layers[0].pageItems[1].refuseDuplicate = true
-    doc.selection = [...doc.layers[0].pageItems]
+    doc.layers[0].items[1].refuseDuplicate = true
+    doc.selection = [...doc.layers[0].items]
 
     const result = parseResult(host.api.lfSetComponent('c0'))
 
@@ -140,8 +140,8 @@ describe('capture de la sélection', () => {
 
   it('échoue explicitement quand aucun objet ne peut être copié', () => {
     const doc = openDocument(['a', 'b'])
-    for (const item of doc.layers[0].pageItems) item.refuseDuplicate = true
-    doc.selection = [...doc.layers[0].pageItems]
+    for (const item of doc.layers[0].items) item.refuseDuplicate = true
+    doc.selection = [...doc.layers[0].items]
 
     const result = parseResult(host.api.lfSetComponent('c0'))
 
@@ -152,9 +152,9 @@ describe('capture de la sélection', () => {
 
   it('cadre le plan de travail sur les copies', () => {
     const doc = openDocument(['fond', 'marque'])
-    doc.layers[0].pageItems[0].visibleBounds = [10, 90, 110, -10]
-    doc.layers[0].pageItems[1].visibleBounds = [50, 120, 200, -40]
-    doc.selection = [...doc.layers[0].pageItems]
+    doc.layers[0].items[0].visibleBounds = [10, 90, 110, -10]
+    doc.layers[0].items[1].visibleBounds = [50, 120, 200, -40]
+    doc.selection = [...doc.layers[0].items]
 
     expect(parseResult(host.api.lfSetComponent('c0')).ok).toBe(true)
 
@@ -163,8 +163,8 @@ describe('capture de la sélection', () => {
 
   it('renvoie les dimensions réelles du cadrage, pas celles de la sélection', () => {
     const doc = openDocument(['marque'])
-    doc.layers[0].pageItems[0].visibleBounds = [0, 60, 480, -180]
-    doc.selection = [...doc.layers[0].pageItems]
+    doc.layers[0].items[0].visibleBounds = [0, 60, 480, -180]
+    doc.selection = [...doc.layers[0].items]
 
     const result = parseResult(host.api.lfSetComponent('c0'))
 
@@ -176,7 +176,7 @@ describe('capture de la sélection', () => {
 describe('vérification du résultat', () => {
   it('écrit un fichier de composant et en rapporte la taille', () => {
     const doc = openDocument(['marque'])
-    doc.selection = [...doc.layers[0].pageItems]
+    doc.selection = [...doc.layers[0].items]
 
     const result = parseResult(host.api.lfSetComponent('c0'))
 
@@ -189,7 +189,7 @@ describe('vérification du résultat', () => {
 
   it('rejette un fichier de composant vide plutôt que de le déclarer défini', () => {
     const doc = openDocument(['marque'])
-    doc.selection = [...doc.layers[0].pageItems]
+    doc.selection = [...doc.layers[0].items]
     // Illustrator peut écrire un fichier sans contenu : le composant ne doit
     // alors pas être déclaré défini.
     host.app.defaultSaveBytes = 0
@@ -203,7 +203,7 @@ describe('vérification du résultat', () => {
 
   it('produit une vignette PNG du composant', () => {
     const doc = openDocument(['marque'])
-    doc.selection = [...doc.layers[0].pageItems]
+    doc.selection = [...doc.layers[0].items]
 
     const result = parseResult(host.api.lfSetComponent('c0'))
     const thumbnail = result.fields[8]
@@ -215,7 +215,7 @@ describe('vérification du résultat', () => {
 
   it('referme le document du composant et rend la main à la source', () => {
     const doc = openDocument(['marque'])
-    doc.selection = [...doc.layers[0].pageItems]
+    doc.selection = [...doc.layers[0].items]
 
     expect(parseResult(host.api.lfSetComponent('c0')).ok).toBe(true)
 
@@ -225,8 +225,8 @@ describe('vérification du résultat', () => {
 
   it('rend la main à la source même après un échec', () => {
     const doc = openDocument(['a'])
-    doc.layers[0].pageItems[0].refuseDuplicate = true
-    doc.selection = [...doc.layers[0].pageItems]
+    doc.layers[0].items[0].refuseDuplicate = true
+    doc.selection = [...doc.layers[0].items]
 
     expect(parseResult(host.api.lfSetComponent('c0')).ok).toBe(false)
     expect(host.app.activeDocument).toBe(doc)
