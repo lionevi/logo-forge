@@ -185,6 +185,19 @@ var LogoForgeEngine = (function () {
     return out || 'Logo'
   }
 
+  /**
+   * Comme `pascal`, mais sans valeur de repli.
+   *
+   * Une variable de gabarit peut légitimement être absente : la remplacer par
+   * « Logo » — ou pire, par « Undefined » — écrirait dans le nom du fichier
+   * une information que personne n'a saisie.
+   */
+  function pascalOrEmpty(text) {
+    if (text === undefined || text === null || text === '') return ''
+    var out = pascal(text)
+    return out === 'Logo' && !/logo/i.test(String(text)) ? '' : out
+  }
+
   /** Assemble un chemin relatif interne au pack, toujours en `/`. */
   function joinFolder(parts) {
     var kept = []
@@ -267,17 +280,141 @@ var LogoForgeEngine = (function () {
    * n'apparaît que pour les formats matriciels, où elle distingue seule deux
    * fichiers par ailleurs identiques.
    */
-  function deliveryName(clientName, component, scheme, size, extension, separator) {
-    return buildFileName(
-      [
-        pascal(clientName),
-        pascal(component.name),
-        schemeLabel(scheme),
-        size ? size + 'px' : '',
-      ],
-      separator || '_',
+  /**
+   * Variables reconnues par le gabarit de nommage.
+   *
+   * La liste est affichée telle quelle dans les réglages : elle sert de
+   * documentation autant que de contrat.
+   */
+  var NAME_VARIABLES = [
+    { token: 'client', label: 'Nom du client' },
+    { token: 'brand', label: 'Marque, à défaut le client' },
+    { token: 'project', label: 'Projet' },
+    { token: 'component', label: 'Composant' },
+    { token: 'type', label: 'Type du composant' },
+    { token: 'scheme', label: 'Déclinaison' },
+    { token: 'profile', label: 'Profil colorimétrique (CMJN ou RVB)' },
+    { token: 'size', label: 'Largeur en pixels, quand elle s applique' },
+    { token: 'format', label: 'Format du fichier' },
+    { token: 'version', label: 'Version du pack' },
+    { token: 'date', label: 'Date de livraison, AAAA-MM-JJ' },
+  ]
+
+  /** Gabarit par défaut, exprimé avec le séparateur choisi. */
+  var DEFAULT_NAME_TEMPLATE = '{{client}}_{{component}}_{{scheme}}_{{size}}'
+
+  /**
+   * Gabarit par défaut adapté au séparateur.
+   *
+   * Tant que le designer n'écrit pas son propre gabarit, le réglage de
+   * séparateur continue de commander le nom. Dès qu'il en écrit un, ce sont
+   * ses propres caractères qui font foi.
+   */
+  function defaultTemplate(separator) {
+    return DEFAULT_NAME_TEMPLATE.replace(/_/g, separator || '_')
+  }
+
+  /** Date de livraison au format AAAA-MM-JJ. */
+  function deliveryDate(now) {
+    var date = now || new Date()
+    var month = date.getMonth() + 1
+    var day = date.getDate()
+    return (
+      date.getFullYear() +
+      '-' +
+      (month < 10 ? '0' : '') +
+      month +
+      '-' +
+      (day < 10 ? '0' : '') +
+      day
+    )
+  }
+
+  /**
+   * Rend un gabarit de nommage.
+   *
+   * Le gabarit alterne littéraux et variables. Un littéral n'est conservé que
+   * s'il sépare deux valeurs réellement écrites : une variable vide — la
+   * taille d'un fichier vectoriel, par exemple — ne doit pas laisser de
+   * séparateur orphelin. Quand plusieurs littéraux se suivent parce que les
+   * variables intercalées sont vides, seul le premier subsiste.
+   *
+   * Ce découpage préserve ce que le designer a délibérément écrit : un double
+   * tiret entre deux valeurs pleines reste un double tiret.
+   */
+  function renderNameTemplate(template, values, separator) {
+    var text = String(template || DEFAULT_NAME_TEMPLATE)
+    var parts = text.split(/(\{\{\s*[a-zA-Z]+\s*\}\})/)
+
+    var out = ''
+    var pending = null
+
+    for (var i = 0; i < parts.length; i += 1) {
+      var part = parts[i]
+      if (part === '') continue
+
+      var token = /^\{\{\s*([a-zA-Z]+)\s*\}\}$/.exec(part)
+      if (!token) {
+        // Premier littéral depuis la dernière valeur écrite : c'est lui qui
+        // servira de séparateur si une valeur suit.
+        if (pending === null) pending = part
+        continue
+      }
+
+      var value = values[token[1]]
+      value = value === undefined || value === null ? '' : String(value)
+      if (value === '') continue
+
+      if (out !== '' && pending !== null) out += pending
+      out += value
+      pending = null
+    }
+
+    return sanitize(out)
+  }
+
+  /** Valeurs des variables pour un fichier donné. */
+  function nameValues(config, component, scheme, size, format) {
+    var client = pascalOrEmpty(config.clientName)
+    return {
+      client: client,
+      brand: pascalOrEmpty(config.brandName) || client,
+      project: pascalOrEmpty(config.projectName),
+      component: pascal(component.name),
+      type: pascalOrEmpty(component.type),
+      scheme: schemeLabel(scheme),
+      profile: config.pass === 'print' ? 'CMJN' : 'RVB',
+      size: size ? size + 'px' : '',
+      format: String(format || '').toUpperCase(),
+      version: config.version ? 'v' + config.version : '',
+      date: deliveryDate(),
+    }
+  }
+
+  /** Nom d'un fichier livré, gabarit appliqué. */
+  function deliveryName(config, component, scheme, size, extension, pass) {
+    var values = nameValues(
+      {
+        clientName: config.clientName,
+        brandName: config.brandName,
+        projectName: config.projectName,
+        version: config.version,
+        pass: pass,
+      },
+      component,
+      scheme,
+      size,
       extension
     )
+    var separator = config.separator || '_'
+    var base = renderNameTemplate(
+      config.nameTemplate || defaultTemplate(separator),
+      values,
+      separator
+    )
+    // Un gabarit qui ne produirait rien laisserait un fichier sans nom.
+    if (!base) base = pascal(component.name) || 'logo'
+    return base + '.' + extension
   }
 
   /**
@@ -364,12 +501,12 @@ var LogoForgeEngine = (function () {
                   format: format === 'jpeg' ? 'jpg' : format,
                   folder: folder,
                   fileName: deliveryName(
-                    config.clientName,
+                    config,
                     component,
                     scheme,
                     scales[k].width,
                     format === 'jpeg' ? 'jpg' : format,
-                    separator
+                    pass
                   ),
                   width: scales[k].width,
                   resolution: scales[k].resolution,
@@ -385,14 +522,7 @@ var LogoForgeEngine = (function () {
               component: component,
               format: format,
               folder: folder,
-              fileName: deliveryName(
-                config.clientName,
-                component,
-                scheme,
-                0,
-                format,
-                separator
-              ),
+              fileName: deliveryName(config, component, scheme, 0, format, pass),
               resolution: pass === 'print' ? PRINT_RESOLUTION : 72,
             })
           }
@@ -552,6 +682,18 @@ var LogoForgeEngine = (function () {
       )
     }
 
+    var ignored = result.skipped || []
+    for (i = 0; i < ignored.length; i += 1) {
+      rows += reportRow(
+        'Ignore',
+        'warn',
+        ignored[i].component.name,
+        schemeLabel(ignored[i].scheme),
+        ignored[i].format,
+        ignored[i].folder + '/' + ignored[i].fileName + ' — deja livre'
+      )
+    }
+
     for (i = 0; i < result.failures.length; i += 1) {
       var failure = result.failures[i]
       // Un avertissement accompagne déjà la ligne du fichier écrit.
@@ -617,6 +759,7 @@ var LogoForgeEngine = (function () {
       stat(config.components.length, 'composants'),
       stat(config.colorSchemes.length, 'declinaisons'),
       stat(countWarnings(result.written), 'reserves'),
+      stat((result.skipped || []).length, 'ignores'),
       stat(countFailures(result.failures), 'echecs'),
       stat(formatDuration(result.durationMs), 'duree'),
       '</ul>',
@@ -663,8 +806,80 @@ var LogoForgeEngine = (function () {
   }
 
   /** Lance l'exportation d'une tâche unique. */
+  /**
+   * Politiques de collision.
+   *
+   * Écraser sans le dire ferait perdre une livraison précédente ; refuser
+   * sans recours bloquerait une relivraison légitime. Le designer choisit.
+   */
+  var COLLISION_POLICIES = [
+    { id: 'overwrite', label: 'Écraser le fichier existant' },
+    { id: 'version', label: 'Écrire une nouvelle version' },
+    { id: 'skip', label: 'Ne pas réécrire' },
+  ]
+
+  /** Insère un suffixe de version avant l'extension. */
+  function versionedName(fileName, attempt) {
+    var cut = fileName.lastIndexOf('.')
+    if (cut <= 0) return fileName + '-v' + attempt
+    return (
+      fileName.substring(0, cut) + '-v' + attempt + fileName.substring(cut)
+    )
+  }
+
+  /**
+   * Résout une collision selon la politique retenue.
+   *
+   * `exists` interroge l'hôte ; la recherche de version s'arrête à 99 pour ne
+   * pas transformer un dossier saturé en boucle sans fin.
+   */
+  function resolveCollision(path, fileName, policy, exists, done) {
+    exists(path, function (taken) {
+      if (!taken) {
+        done({ action: 'write', path: path, fileName: fileName })
+        return
+      }
+      if (policy === 'skip') {
+        done({ action: 'skip', path: path, fileName: fileName })
+        return
+      }
+      if (policy !== 'version') {
+        done({ action: 'write', path: path, fileName: fileName })
+        return
+      }
+
+      var attempt = 2
+      var folder = path.substring(0, path.length - fileName.length)
+
+      function tryNext() {
+        if (attempt > 99) {
+          done({
+            action: 'fail',
+            message: 'trop de versions du fichier ' + fileName,
+          })
+          return
+        }
+        var candidate = versionedName(fileName, attempt)
+        exists(folder + candidate, function (used) {
+          if (used) {
+            attempt += 1
+            tryNext()
+            return
+          }
+          done({
+            action: 'write',
+            path: folder + candidate,
+            fileName: candidate,
+          })
+        })
+      }
+
+      tryNext()
+    })
+  }
+
   function exportTask(root, task, done) {
-    var path = joinPath(root, task.folder.split('/').concat([task.fileName]))
+    var path = task.path || joinPath(root, task.folder.split('/').concat([task.fileName]))
     // Chaque composant est un document autonome : son unique plan de travail
     // porte l'index 0.
     var index = 0
@@ -743,6 +958,7 @@ var LogoForgeEngine = (function () {
 
     var written = []
     var failures = []
+    var skipped = []
     var cancelled = false
     var index = 0
 
@@ -777,6 +993,7 @@ var LogoForgeEngine = (function () {
         var result = {
           written: written,
           failures: failures,
+          skipped: skipped,
           cancelled: cancelled,
           durationMs: new Date().getTime() - startedAt,
           documentName: config.sourceName || '',
@@ -808,8 +1025,40 @@ var LogoForgeEngine = (function () {
       })
     }
 
+    /** Interroge l'hôte sur l'existence d'un chemin. */
+    function pathExists(path, done) {
+      call('lfPathExists', [path], function (result) {
+        done(result.ok && result.value === '1')
+      })
+    }
+
     function runTask(task) {
       task.status = JOB_STATUS.processing
+
+      var target = joinPath(root, task.folder.split('/').concat([task.fileName]))
+      var policy = config.collision || 'overwrite'
+
+      resolveCollision(target, task.fileName, policy, pathExists, function (
+        decision
+      ) {
+        if (decision.action === 'skip') {
+          task.status = JOB_STATUS.skipped
+          skipped.push(task)
+          setTimeout(step, 0)
+          return
+        }
+        if (decision.action === 'fail') {
+          fail(task, decision.message)
+          return
+        }
+
+        task.path = decision.path
+        task.fileName = decision.fileName
+        writeTask(task)
+      })
+    }
+
+    function writeTask(task) {
       exportTask(root, task, function (result) {
         if (!result.ok) {
           task.status = JOB_STATUS.failed
@@ -1690,10 +1939,17 @@ var LogoForgeEngine = (function () {
     WEB_FORMATS: WEB_FORMATS,
     joinFolder: joinFolder,
     deliveryName: deliveryName,
+    NAME_VARIABLES: NAME_VARIABLES,
+    DEFAULT_NAME_TEMPLATE: DEFAULT_NAME_TEMPLATE,
+    defaultTemplate: defaultTemplate,
+    renderNameTemplate: renderNameTemplate,
+    nameValues: nameValues,
+    deliveryDate: deliveryDate,
     call: call,
     quote: quote,
     sanitize: sanitize,
     pascal: pascal,
+    pascalOrEmpty: pascalOrEmpty,
     joinPath: joinPath,
     schemeLabel: schemeLabel,
     schemeTitle: schemeTitle,
@@ -1707,6 +1963,9 @@ var LogoForgeEngine = (function () {
     countWarnings: countWarnings,
     countFailures: countFailures,
     JOB_STATUS: JOB_STATUS,
+    COLLISION_POLICIES: COLLISION_POLICIES,
+    versionedName: versionedName,
+    resolveCollision: resolveCollision,
     readDocumentInfo: readDocumentInfo,
     readArtboardNames: readArtboardNames,
     runFullExport: runFullExport,

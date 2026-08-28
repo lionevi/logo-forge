@@ -477,6 +477,27 @@
         margin-top: 3px;
         padding: 2px 8px;
       }
+      /* Variables du gabarit : cliquables, pour éviter la faute de frappe. */
+      .var-chip {
+        float: left;
+        margin: 0 4px 4px 0;
+        padding: 2px 6px;
+        border: 1px solid #3e3e3e;
+        border-radius: 3px;
+        background: #383838;
+        color: #b9b9b9;
+        font-family: monospace;
+        font-size: 9px;
+        cursor: pointer;
+      }
+      .var-chip:hover {
+        border-color: #2680eb;
+        color: #e3e3e3;
+      }
+      #name-variables {
+        overflow: hidden;
+        margin: 6px 0 4px;
+      }
       .scope-title {
         margin: 10px 0 4px;
         color: #909090;
@@ -1094,7 +1115,37 @@
                 <option value="-">Tiret</option>
                 <option value=" ">Espace</option>
               </select>
+            </div>
+
+            <div class="section">
+              <h2 class="section-title">Identité</h2>
+              <div class="row">
+                <div class="col">
+                  <label for="brand-name">Marque</label>
+                  <input type="text" id="brand-name" placeholder="Nova" />
+                </div>
+                <div class="col">
+                  <label for="project-name">Projet</label>
+                  <input type="text" id="project-name" placeholder="Refonte" />
+                </div>
+              </div>
+              <label class="field-label" for="pack-version">Version du pack</label>
+              <input type="text" id="pack-version" placeholder="1" />
+            </div>
+
+            <div class="section">
+              <h2 class="section-title">Gabarit de nom</h2>
+              <input type="text" id="name-template" />
+              <div id="name-variables"></div>
               <p class="summary" id="name-preview"></p>
+              <button class="button small" id="reset-template">
+                Revenir au gabarit par défaut
+              </button>
+            </div>
+
+            <div class="section">
+              <h2 class="section-title">Fichier déjà présent</h2>
+              <select id="collision-policy"></select>
             </div>
           </div>
 
@@ -1470,6 +1521,11 @@
           grid: {},
           documentColors: [],
           scope: { components: {}, schemes: {} },
+          brandName: '',
+          projectName: '',
+          version: '',
+          nameTemplate: '',
+          collision: 'overwrite',
           preflight: null,
           preflightMode: 'print',
           blockOnPreflight: false,
@@ -1747,6 +1803,22 @@
           return keys
         }
 
+        function renderCollisionPolicy() {
+          var html = ''
+          for (var i = 0; i < engine.COLLISION_POLICIES.length; i += 1) {
+            var policy = engine.COLLISION_POLICIES[i]
+            html +=
+              '<option value="' +
+              policy.id +
+              '"' +
+              (state.collision === policy.id ? ' selected' : '') +
+              '>' +
+              escapeHtml(policy.label) +
+              '</option>'
+          }
+          byId('collision-policy').innerHTML = html
+        }
+
         function renderScope() {
           var defined = definedComponents()
           var html = ''
@@ -1794,6 +1866,11 @@
             passes: state.passes,
             favicon: state.favicon,
             separator: state.separator,
+            brandName: state.brandName,
+            projectName: state.projectName,
+            version: state.version,
+            nameTemplate: state.nameTemplate,
+            collision: state.collision,
             padding: state.padding,
             threshold: state.threshold,
             grid: state.grid,
@@ -2576,11 +2653,53 @@
             html || '<p class="summary">Aucune échelle : pas de matriciel.</p>'
         }
 
+        /**
+         * Aperçu du nom, calculé par le moteur.
+         *
+         * L'aperçu passe par la même fonction que l'export : le montrer
+         * autrement reviendrait à promettre un nom que le pack ne portera pas.
+         */
         function renderNamePreview() {
-          var sep = state.separator
-          byId('name-preview').innerHTML =
-            'Aperçu : ' +
-            escapeHtml('MaMarque' + sep + 'Logo' + sep + 'Black' + sep + '900px.png')
+          byId('name-template').value =
+            state.nameTemplate || engine.defaultTemplate(state.separator)
+
+          var chips = ''
+          for (var i = 0; i < engine.NAME_VARIABLES.length; i += 1) {
+            var variable = engine.NAME_VARIABLES[i]
+            chips +=
+              '<button class="var-chip" data-variable="' +
+              variable.token +
+              '" title="' +
+              escapeHtml(variable.label) +
+              '">{{' +
+              variable.token +
+              '}}</button>'
+          }
+          byId('name-variables').innerHTML = chips
+
+          var defined = definedComponents()
+          var schemes = activeSchemes()
+          var sample = deliveryPreview(
+            defined.length ? defined[0] : { name: 'Logo', type: 'logo' },
+            schemes.length ? schemes[0] : { id: 'black' }
+          )
+          byId('name-preview').innerHTML = 'Aperçu : ' + escapeHtml(sample)
+        }
+
+        /** Nom qu'un fichier PNG porterait, avec les réglages courants. */
+        function deliveryPreview(component, scheme) {
+          try {
+            return engine.deliveryName(
+              buildConfig(),
+              component,
+              scheme,
+              900,
+              'png',
+              'web'
+            )
+          } catch (error) {
+            return '—'
+          }
         }
 
         function renderMessages() {
@@ -2825,6 +2944,7 @@
           renderFormats()
           renderScales()
           renderNamePreview()
+          renderCollisionPolicy()
           renderPreflight()
           renderDerived()
         }
@@ -3306,6 +3426,50 @@
           for (var i = 0; i < keys.length; i += 1) setScope(kind, keys[i], value)
           renderScope()
           renderDestination()
+        }
+
+        byId('name-template').oninput = function () {
+          state.nameTemplate = this.value
+          renderNamePreview()
+        }
+
+        byId('name-variables').onclick = function (event) {
+          var variable = event.target.getAttribute('data-variable')
+          if (variable === null) return
+          var field = byId('name-template')
+          // Insérer plutôt qu'écraser : le gabarit se compose morceau par
+          // morceau, sans reprendre la saisie depuis le début. Le séparateur
+          // courant s'intercale, faute de quoi les variables se collent.
+          var current = field.value
+          var joiner =
+            current === '' || /[\s._-]$/.test(current) ? '' : state.separator
+          field.value = current + joiner + '{{' + variable + '}}'
+          state.nameTemplate = field.value
+          renderNamePreview()
+        }
+
+        byId('reset-template').onclick = function () {
+          state.nameTemplate = ''
+          renderNamePreview()
+        }
+
+        byId('collision-policy').onchange = function () {
+          state.collision = this.value
+        }
+
+        byId('brand-name').oninput = function () {
+          state.brandName = this.value
+          renderNamePreview()
+        }
+
+        byId('project-name').oninput = function () {
+          state.projectName = this.value
+          renderNamePreview()
+        }
+
+        byId('pack-version').oninput = function () {
+          state.version = this.value
+          renderNamePreview()
         }
 
         byId('run-preflight').onclick = function () {

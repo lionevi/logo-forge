@@ -378,6 +378,43 @@ describe('planche de revue', () => {
   })
 })
 
+describe('nommage', () => {
+  it('expose le gabarit, ses variables et sa remise à zéro', () => {
+    for (const id of [
+      'name-template',
+      'name-variables',
+      'name-preview',
+      'reset-template',
+      'collision-policy',
+    ]) {
+      expect(HTML, id).toContain(`id="${id}"`)
+    }
+  })
+
+  it('recueille marque, projet et version', () => {
+    for (const id of ['brand-name', 'project-name', 'pack-version']) {
+      expect(HTML, id).toContain(`id="${id}"`)
+    }
+  })
+
+  it("calcule l'aperçu avec la fonction qui nomme les fichiers", () => {
+    // Un aperçu calculé à part promettrait un nom que le pack ne porte pas.
+    expect(SCRIPT).toContain('engine.deliveryName(')
+    expect(SCRIPT).toContain('engine.defaultTemplate(')
+    expect(SCRIPT).toContain('engine.NAME_VARIABLES')
+  })
+
+  it('intercale le séparateur en composant le gabarit', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf("byId('name-variables').onclick"))
+    expect(block.slice(0, 700)).toContain('state.separator')
+  })
+
+  it('laisse choisir la conduite à tenir devant un fichier existant', () => {
+    expect(SCRIPT).toContain('engine.COLLISION_POLICIES')
+    expect(SCRIPT).toContain('collision: state.collision')
+  })
+})
+
 describe("portée d'export", () => {
   it('laisse choisir composants et déclinaisons du lot', () => {
     for (const id of ['scope-components', 'scope-schemes']) {

@@ -129,7 +129,7 @@ describe('nommage', () => {
   it('applique la convention Client_Composant_Couleur_Taille', () => {
     expect(
       engine.deliveryName(
-        'Ma Marque',
+        { clientName: 'Ma Marque' },
         { name: 'Logo Mark' },
         { id: 'black' },
         900,
@@ -142,7 +142,7 @@ describe('nommage', () => {
   it('omet la taille pour un format vectoriel', () => {
     expect(
       engine.deliveryName(
-        'Ma Marque',
+        { clientName: 'Ma Marque' },
         { name: 'Logo' },
         { id: 'white' },
         0,
@@ -154,7 +154,14 @@ describe('nommage', () => {
 
   it('respecte le séparateur choisi', () => {
     expect(
-      engine.deliveryName('Acme', { name: 'Logo' }, { id: 'black' }, 0, 'pdf', '-'),
+      engine.deliveryName(
+        { clientName: 'Acme', separator: '-' },
+        { name: 'Logo' },
+        { id: 'black' },
+        0,
+        'pdf',
+        '-',
+      ),
     ).toBe('Acme-Logo-Black.pdf')
   })
 
