@@ -362,6 +362,107 @@
         background: #252525;
         outline: none;
       }
+      .custom-entry {
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #3e3e3e;
+      }
+      .list-row .row-name {
+        float: left;
+        width: 50%;
+        height: 20px;
+        padding: 0 5px;
+        border: 1px solid #3e3e3e;
+        border-radius: 3px;
+        background: #383838;
+        color: #e3e3e3;
+        font-size: 11px;
+      }
+      .custom-entry .bar {
+        margin: 6px 0 4px;
+      }
+      /* Correspondance source → cible d'une couleur personnalisée. */
+      .map-row {
+        margin: 2px 0 2px 18px;
+        overflow: hidden;
+        line-height: 16px;
+      }
+      .map-row .swatch {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 1px solid #4a4a4a;
+        border-radius: 2px;
+        vertical-align: middle;
+      }
+      .map-row .arrow {
+        display: inline-block;
+        width: 18px;
+        color: #6e6e6e;
+        text-align: center;
+        vertical-align: middle;
+      }
+      .map-row .arrow .icon {
+        width: 11px;
+        height: 11px;
+      }
+      .map-row .kill {
+        float: right;
+        width: 18px;
+        height: 16px;
+        padding: 0;
+        border: 0;
+        border-radius: 3px;
+        background: transparent;
+        color: #6e6e6e;
+        cursor: pointer;
+      }
+      .map-row .kill:hover {
+        background: #e34850;
+        color: #ffffff;
+      }
+      .map-row .kill .icon {
+        width: 11px;
+        height: 11px;
+      }
+      .map-row .map-text {
+        margin-left: 6px;
+        color: #909090;
+        font-size: 9px;
+        vertical-align: middle;
+      }
+      .contrast-row {
+        margin-bottom: 4px;
+        overflow: hidden;
+        line-height: 16px;
+      }
+      .contrast-row .label {
+        display: inline-block;
+        width: 96px;
+        color: #b9b9b9;
+        font-size: 10px;
+        vertical-align: middle;
+      }
+      /* Un verdict se lit à sa bordure, jamais à sa seule couleur de fond :
+         le fond, ici, est celui qu'on teste. */
+      .verdict {
+        display: inline-block;
+        width: 22px;
+        height: 14px;
+        margin-right: 4px;
+        border: 2px solid #6e6e6e;
+        border-radius: 2px;
+        vertical-align: middle;
+      }
+      .verdict.good {
+        border-color: #2d9d78;
+      }
+      .verdict.warning {
+        border-color: #e68619;
+      }
+      .verdict.critical {
+        border-color: #e34850;
+      }
       .comp-type {
         width: 100%;
         margin-bottom: 3px;
@@ -820,6 +921,19 @@
           </div>
 
           <div class="section">
+            <h2 class="section-title">Contraste</h2>
+            <p class="summary">
+              Vérifie que chaque déclinaison reste lisible sur les fonds où le
+              logo sera posé.
+            </p>
+            <label class="check-row">
+              <input type="color" id="contrast-custom" value="#2680eb" />
+              <span class="check-label" style="width: auto">Fond personnalisé</span>
+            </label>
+            <div id="contrast-list"></div>
+          </div>
+
+          <div class="section">
             <h2 class="section-title">Inversion</h2>
             <label class="field-label" for="threshold">
               Seuil de détection clair / sombre :
@@ -1173,6 +1287,7 @@
           empty: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="2.5" />'),
           remove: svg('<path d="M6 6l12 12" /><path d="M18 6L6 18" />'),
           up: svg('<path d="M12 19V5" /><path d="M6 11l6-6 6 6" />'),
+          arrow: svg('<path d="M5 12h14" /><path d="M13 6l6 6-6 6" />'),
           down: svg('<path d="M12 5v14" /><path d="M18 13l-6 6-6-6" />'),
           duplicate: svg(
             '<rect x="9" y="9" width="11" height="11" rx="2" />' +
@@ -1239,6 +1354,7 @@
           rememberSchemes: true,
           threshold: 50,
           grid: {},
+          documentColors: [],
           packageResult: null,
           formats: {
             print: { ai: true, pdf: true, eps: false, jpeg: false },
@@ -1305,62 +1421,32 @@
          * Couleurs — prévisualisation sans Illustrator
          * ---------------------------------------------------------------- */
 
-        function hexToRgb(hex) {
-          var clean = String(hex).replace('#', '')
-          return [
-            parseInt(clean.substring(0, 2), 16),
-            parseInt(clean.substring(2, 4), 16),
-            parseInt(clean.substring(4, 6), 16),
-          ]
-        }
-
-        function rgbToHex(rgb) {
-          var out = '#'
-          for (var i = 0; i < 3; i += 1) {
-            var v = Math.max(0, Math.min(255, Math.round(rgb[i]))).toString(16)
-            out += v.length === 1 ? '0' + v : v
-          }
-          return out
-        }
-
-        /** Luminance perçue, de 0 (noir) à 255 (blanc). */
-        function luminance(rgb) {
-          return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
-        }
-
         /**
          * Applique une déclinaison à une couleur, pour la prévisualisation.
          *
          * Ce calcul reproduit celui de la couche ExtendScript : ce que le
          * panneau montre doit être ce que l'export produira.
          */
-        function previewColor(hex, schemeId, threshold) {
-          var rgb = hexToRgb(hex)
-          if (schemeId === 'fullColor') return hex
-          if (schemeId === 'black') return '#000000'
-          if (schemeId === 'white') return '#ffffff'
-          if (schemeId === 'grayscale') {
-            var level = Math.round(luminance(rgb))
-            return rgbToHex([level, level, level])
-          }
-          if (schemeId === 'inverted') {
-            // Au-delà du seuil la couleur est déjà claire : elle reste
-            // lisible sur un fond sombre, donc on n'y touche pas. Les
-            // couleurs plus sombres basculent vers leur complément.
-            if (luminance(rgb) >= (threshold / 100) * 255) return hex
-            return rgbToHex([255 - rgb[0], 255 - rgb[1], 255 - rgb[2]])
-          }
-          return hex
+        /**
+         * Applique une déclinaison à une couleur, pour la prévisualisation.
+         *
+         * Le calcul appartient au moteur : le panneau ne doit pas en tenir un
+         * second, sans quoi l'aperçu et l'export finiraient par diverger.
+         */
+        function previewColor(hex, scheme, threshold) {
+          return engine.inkColor(
+            typeof scheme === 'string' ? { id: scheme } : scheme,
+            hex,
+            threshold
+          )
         }
 
         /** Remplit une barre de quatre échantillons pour une déclinaison. */
-        function fillBar(element, schemeId, customHex) {
+        function fillBar(element, scheme) {
           var html = ''
           for (var i = 0; i < SAMPLE.length; i += 1) {
-            var color = customHex
-              ? customHex
-              : previewColor(SAMPLE[i], schemeId, state.threshold)
-            html += '<span style="background:' + color + '"></span>'
+            var color = previewColor(SAMPLE[i], scheme, state.threshold)
+            html += '<span style="background:' + escapeHtml(color) + '"></span>'
           }
           element.innerHTML = html
         }
@@ -1441,6 +1527,7 @@
               id: 'custom',
               name: state.customs[j].name,
               hex: state.customs[j].hex,
+              map: state.customs[j].map || [],
             })
           }
           return list
@@ -1804,34 +1891,282 @@
 
           var bars = byId('scheme-list').querySelectorAll('[data-bar]')
           for (var b = 0; b < bars.length; b += 1) {
-            fillBar(bars[b], bars[b].getAttribute('data-bar'), null)
+            fillBar(bars[b], bars[b].getAttribute('data-bar'))
           }
 
           var customs = ''
           for (var j = 0; j < state.customs.length; j += 1) {
-            customs +=
-              '<div class="list-row">' +
-              '<button class="chip" data-chip="' +
-              j +
-              '" style="background:' +
-              escapeHtml(state.customs[j].hex) +
-              '" title="Changer la couleur"></button>' +
-              '<span class="label">' +
-              escapeHtml(state.customs[j].name) +
-              '</span><button class="kill" data-custom="' +
-              j +
-              '" aria-label="Supprimer">' +
-              ICONS.remove +
-              '</button></div>'
+            customs += customRow(state.customs[j], j)
           }
           byId('custom-list').innerHTML =
             customs || '<p class="summary">Aucune couleur personnalisée.</p>'
+
+          var customBars = byId('custom-list').querySelectorAll('[data-custom-bar]')
+          for (var c = 0; c < customBars.length; c += 1) {
+            var index = parseInt(
+              customBars[c].getAttribute('data-custom-bar'),
+              10
+            )
+            fillBar(customBars[c], customScheme(state.customs[index]))
+          }
+        }
+
+        /** Déclinaison correspondant à une couleur personnalisée. */
+        function customScheme(custom) {
+          return {
+            id: 'custom',
+            name: custom.name,
+            hex: custom.hex,
+            map: custom.map || [],
+          }
+        }
+
+        /** Ligne d'une couleur personnalisée, avec sa table de correspondance. */
+        function customRow(custom, index) {
+          var html =
+            '<div class="custom-entry"><div class="list-row">' +
+            '<button class="chip" data-chip="' +
+            index +
+            '" style="background:' +
+            escapeHtml(custom.hex) +
+            '" title="Changer la couleur" aria-label="Changer la couleur"></button>' +
+            '<input class="row-name" data-custom-name="' +
+            index +
+            '" value="' +
+            escapeHtml(custom.name) +
+            '" aria-label="Nom de la couleur" />' +
+            '<button class="kill" data-duplicate-custom="' +
+            index +
+            '" title="Dupliquer" aria-label="Dupliquer la couleur">' +
+            ICONS.duplicate +
+            '</button>' +
+            '<button class="kill" data-custom="' +
+            index +
+            '" aria-label="Supprimer la couleur">' +
+            ICONS.remove +
+            '</button></div>' +
+            '<span class="bar" data-custom-bar="' +
+            index +
+            '"></span>'
+
+          var map = custom.map || []
+          for (var m = 0; m < map.length; m += 1) {
+            html +=
+              '<div class="map-row">' +
+              '<span class="swatch" style="background:' +
+              escapeHtml(map[m].from) +
+              '"></span><span class="arrow">' +
+              ICONS.arrow +
+              '</span>' +
+              '<span class="swatch" style="background:' +
+              escapeHtml(map[m].to) +
+              '"></span>' +
+              '<span class="map-text">' +
+              escapeHtml(map[m].from) +
+              ' vers ' +
+              escapeHtml(map[m].to) +
+              '</span>' +
+              '<button class="kill" data-unmap="' +
+              index +
+              ':' +
+              m +
+              '" aria-label="Retirer la correspondance">' +
+              ICONS.remove +
+              '</button></div>'
+          }
+
+          html +=
+            '<button class="button small" data-map="' +
+            index +
+            '">+ Correspondance depuis le document</button></div>'
+
+          return html
+        }
+
+        /** Copie défensive d'une table de correspondance. */
+        function cloneMap(map) {
+          var copy = []
+          for (var i = 0; map && i < map.length; i += 1) {
+            copy.push({ from: map[i].from, to: map[i].to })
+          }
+          return copy
+        }
+
+        /**
+         * Relit les couleurs employées par le document actif.
+         *
+         * Elles servent d'échantillons au contrôle de contraste et de sources
+         * proposées à la table de correspondance : deviner ces valeurs serait
+         * inutilisable pour le designer.
+         */
+        function readDocumentColors(done) {
+          engine.call('lfListColors', [24], function (result) {
+            var colors = []
+            if (result.ok && result.value) {
+              var parts = result.value.split(String.fromCharCode(31))
+              for (var i = 0; i < parts.length; i += 1) {
+                var hex = parts[i].split(':')[0]
+                if (hex) colors.push(hex)
+              }
+            }
+            state.documentColors = colors
+            renderDerived()
+            if (done) done(colors)
+          })
+        }
+
+        /**
+         * Ajoute une correspondance source → cible à une couleur personnalisée.
+         *
+         * La source vient du document, jamais d'une saisie libre : une couleur
+         * que l'artwork ne contient pas ne serait jamais remplacée.
+         */
+        function addColorMapping(index) {
+          var custom = state.customs[index]
+          if (!custom) return
+          if (!custom.map) custom.map = []
+
+          readDocumentColors(function (colors) {
+            if (colors.length === 0) {
+              state.lastError =
+                'Aucune couleur lisible dans le document : ouvrez le logo, ' +
+                'puis réessayez.'
+              renderMessages()
+              return
+            }
+
+            // La première couleur non encore associée, la plus fréquente
+            // d'abord : c'est celle que le designer voudra retoucher.
+            var chosen = null
+            for (var i = 0; i < colors.length && !chosen; i += 1) {
+              var taken = false
+              for (var m = 0; m < custom.map.length; m += 1) {
+                if (custom.map[m].from.toLowerCase() === colors[i].toLowerCase()) {
+                  taken = true
+                }
+              }
+              if (!taken) chosen = colors[i]
+            }
+
+            if (!chosen) {
+              state.lastError =
+                'Toutes les couleurs du document sont déjà associées.'
+              renderMessages()
+              return
+            }
+
+            custom.map.push({ from: chosen, to: custom.hex })
+            state.lastError = ''
+            persistSchemes()
+            renderSchemes()
+            renderDerived()
+          })
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Contraste
+         * ---------------------------------------------------------------- */
+
+        var VERDICT_LABEL = {
+          good: 'Lisible',
+          warning: 'Contraste faible',
+          critical: 'Illisible',
+        }
+
+        /** Fonds de contrôle, dont celui choisi par le designer. */
+        function contrastBackgrounds() {
+          var grounds = []
+          for (var i = 0; i < engine.CONTRAST_BACKGROUNDS.length; i += 1) {
+            grounds.push(engine.CONTRAST_BACKGROUNDS[i])
+          }
+          grounds.push({
+            id: 'custom',
+            label: 'Fond personnalisé',
+            hex: byId('contrast-custom').value,
+          })
+          return grounds
+        }
+
+        /**
+         * Contrôle chaque déclinaison active.
+         *
+         * Les couleurs du document servent d'échantillons quand elles sont
+         * connues : contrôler des teintes qui ne figurent pas dans le logo
+         * donnerait un verdict sans rapport avec le fichier livré.
+         */
+        function contrastReports() {
+          var samples = state.documentColors.length ? state.documentColors : SAMPLE
+          var grounds = contrastBackgrounds()
+          var reports = []
+          var schemes = activeSchemes()
+
+          for (var i = 0; i < schemes.length; i += 1) {
+            reports.push(
+              engine.checkContrast(
+                schemes[i],
+                samples,
+                state.threshold,
+                grounds
+              )
+            )
+          }
+          return reports
+        }
+
+        function renderContrast() {
+          var reports = contrastReports()
+          if (reports.length === 0) {
+            byId('contrast-list').innerHTML =
+              '<p class="summary">Cochez une déclinaison pour la contrôler.</p>'
+            return
+          }
+
+          var html = ''
+          for (var i = 0; i < reports.length; i += 1) {
+            var report = reports[i]
+            html +=
+              '<div class="contrast-row"><span class="label">' +
+              escapeHtml(engine.schemeTitle(report.scheme)) +
+              '</span>'
+            for (var r = 0; r < report.results.length; r += 1) {
+              var entry = report.results[r]
+              html +=
+                '<span class="verdict ' +
+                entry.verdict +
+                '" title="' +
+                escapeHtml(
+                  entry.background.label +
+                    ' — ' +
+                    VERDICT_LABEL[entry.verdict] +
+                    ' (' +
+                    entry.ratio.toFixed(1) +
+                    ':1)'
+                ) +
+                '" style="background:' +
+                escapeHtml(entry.background.hex) +
+                '"></span>'
+            }
+            html += '</div>'
+          }
+          byId('contrast-list').innerHTML = html
+        }
+
+        /** Déclinaisons jugées illisibles sur au moins un fond. */
+        function criticalSchemes() {
+          var reports = contrastReports()
+          var names = []
+          for (var i = 0; i < reports.length; i += 1) {
+            if (reports[i].worst && reports[i].worst.verdict === 'critical') {
+              names.push(engine.schemeTitle(reports[i].scheme))
+            }
+          }
+          return names
         }
 
         function renderInversion() {
           byId('threshold-value').innerHTML = state.threshold
-          fillBar(byId('invert-before'), 'fullColor', null)
-          fillBar(byId('invert-after'), 'inverted', null)
+          fillBar(byId('invert-before'), 'fullColor')
+          fillBar(byId('invert-after'), 'inverted')
         }
 
         function renderFormats() {
@@ -1901,6 +2236,14 @@
           }
           if (activeSchemes().length === 0) {
             html += '<p class="notice">Cochez au moins une déclinaison.</p>'
+          }
+
+          var critical = criticalSchemes()
+          if (critical.length > 0) {
+            html +=
+              '<p class="notice">Illisible sur au moins un fond : ' +
+              escapeHtml(critical.join(', ')) +
+              '. Vérifiez avant de livrer.</p>'
           }
 
           var missing = missingComponents()
@@ -2077,6 +2420,7 @@
          * en arrière d'un changement parce qu'un appelant l'a oubliée.
          */
         function renderDerived() {
+          renderContrast()
           renderMessages()
           renderExportButton()
           renderPackage()
@@ -2337,7 +2681,9 @@
         }
 
         byId('custom-list').onclick = function (event) {
-          var kill = event.target.getAttribute('data-custom')
+          var target = event.target
+
+          var kill = target.getAttribute('data-custom')
           if (kill !== null) {
             state.customs.splice(parseInt(kill, 10), 1)
             persistSchemes()
@@ -2345,7 +2691,41 @@
             renderDerived()
             return
           }
-          var chip = event.target.getAttribute('data-chip')
+
+          var copy = target.getAttribute('data-duplicate-custom')
+          if (copy !== null) {
+            var source = state.customs[parseInt(copy, 10)]
+            state.customs.splice(parseInt(copy, 10) + 1, 0, {
+              name: source.name + ' (copie)',
+              hex: source.hex,
+              map: cloneMap(source.map),
+            })
+            persistSchemes()
+            renderSchemes()
+            renderDerived()
+            return
+          }
+
+          var unmap = target.getAttribute('data-unmap')
+          if (unmap !== null) {
+            var coordinates = unmap.split(':')
+            var owner = state.customs[parseInt(coordinates[0], 10)]
+            owner.map.splice(parseInt(coordinates[1], 10), 1)
+            persistSchemes()
+            renderSchemes()
+            renderDerived()
+            return
+          }
+
+          var mapping = target.getAttribute('data-map')
+          if (mapping !== null) {
+            guard('correspondance', function () {
+              addColorMapping(parseInt(mapping, 10))
+            })
+            return
+          }
+
+          var chip = target.getAttribute('data-chip')
           if (chip !== null) {
             // Le sélecteur natif est le seul disponible dans CEP.
             var picker = byId('custom-hex')
@@ -2353,6 +2733,19 @@
             picker.setAttribute('data-editing', chip)
             picker.click()
           }
+        }
+
+        byId('custom-list').oninput = function (event) {
+          var renamed = event.target.getAttribute('data-custom-name')
+          if (renamed === null) return
+          state.customs[parseInt(renamed, 10)].name = event.target.value
+          persistSchemes()
+          renderDerived()
+        }
+
+        byId('contrast-custom').onchange = function () {
+          renderContrast()
+          renderMessages()
         }
 
         byId('custom-hex').onchange = function () {
@@ -2371,7 +2764,11 @@
               '<p class="notice">Donnez un nom à la couleur.</p>'
             return
           }
-          state.customs.push({ name: name, hex: byId('custom-hex').value })
+          state.customs.push({
+            name: name,
+            hex: byId('custom-hex').value,
+            map: [],
+          })
           byId('custom-name').value = ''
           persistSchemes()
           renderSchemes()
@@ -2532,6 +2929,7 @@
           refreshDocument()
           guard('vérification des composants', function () {
             verifyComponents()
+            readDocumentColors()
           })
         }
 
@@ -2733,6 +3131,7 @@
           renderDestination()
           refreshDocument()
           verifyComponents()
+          readDocumentColors()
           timer = setInterval(poll, POLL_MS)
         })
       })()

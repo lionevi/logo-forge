@@ -308,7 +308,17 @@ describe('planche de revue', () => {
   it('refuse de placer un composant hors planche', () => {
     registerComponent('/tmp/Logo.ai')
     const result = parseResult(
-      host.api.lfPlaceComponent('/tmp/Logo.ai', 'fullColor', '', 100, 0, 0, 200, 100),
+      host.api.lfPlaceComponent(
+        '/tmp/Logo.ai',
+        'fullColor',
+        '',
+        100,
+        '',
+        0,
+        0,
+        200,
+        100,
+      ),
     )
 
     expect(result.ok).toBe(false)
@@ -329,6 +339,7 @@ describe('planche de revue', () => {
         'fullColor',
         '',
         100,
+        '',
         100,
         -50,
         100,
@@ -372,7 +383,17 @@ describe('planche de revue', () => {
     const opened = new FakeDocument('Logo.ai', 'RGB', 200, 100)
     opened.layers[0].items = [new FakeItem('PathItem', [0, 100, 200, 0], 'marque')]
     host.app.nextOpened = opened
-    host.api.lfPlaceComponent('/tmp/Logo.ai', 'fullColor', '', 100, 10, -10, 100, 100)
+    host.api.lfPlaceComponent(
+      '/tmp/Logo.ai',
+      'fullColor',
+      '',
+      100,
+      '',
+      10,
+      -10,
+      100,
+      100,
+    )
 
     const result = parseResult(host.api.lfFinishPackage())
 

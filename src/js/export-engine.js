@@ -754,7 +754,12 @@ var LogoForgeEngine = (function () {
       var threshold = typeof config.threshold === 'number' ? config.threshold : 100
       call(
         'lfApplyColorScheme',
-        [task.scheme.id, task.scheme.hex || '', threshold],
+        [
+          task.scheme.id,
+          task.scheme.hex || '',
+          threshold,
+          formatColorMap(task.scheme.map),
+        ],
         function (applied) {
           if (!applied.ok) {
             fail(task, 'recolorage : ' + applied.value)
@@ -862,6 +867,199 @@ var LogoForgeEngine = (function () {
         cancelled = true
       },
     }
+  }
+
+  /* ---------------------------------------------------------------------- *
+   * Couleurs
+   *
+   * Le calcul des couleurs vit ici, jamais dans l'interface : ce que le
+   * panneau prévisualise et ce que la couche ExtendScript applique doivent
+   * sortir de la même fonction, sans quoi l'aperçu ment.
+   * ---------------------------------------------------------------------- */
+
+  /** Décompose une couleur #rrggbb. Renvoie `null` si elle est illisible. */
+  function hexToRgb(hex) {
+    var clean = String(hex).replace(/^#/, '')
+    if (!/^[0-9a-fA-F]{6}$/.test(clean)) return null
+    return [
+      parseInt(clean.substring(0, 2), 16),
+      parseInt(clean.substring(2, 4), 16),
+      parseInt(clean.substring(4, 6), 16),
+    ]
+  }
+
+  /** Recompose une couleur #rrggbb, composantes bornées. */
+  function rgbToHex(rgb) {
+    var out = '#'
+    for (var i = 0; i < 3; i += 1) {
+      var value = Math.max(0, Math.min(255, Math.round(rgb[i]))).toString(16)
+      out += value.length === 1 ? '0' + value : value
+    }
+    return out
+  }
+
+  /** Luminance perçue, de 0 à 255 — sert au gris et au seuil d'inversion. */
+  function perceivedLuminance(rgb) {
+    return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]
+  }
+
+  /** Luminance relative WCAG, de 0 à 1. */
+  function relativeLuminance(rgb) {
+    var parts = []
+    for (var i = 0; i < 3; i += 1) {
+      var channel = rgb[i] / 255
+      parts.push(
+        channel <= 0.03928
+          ? channel / 12.92
+          : Math.pow((channel + 0.055) / 1.055, 2.4)
+      )
+    }
+    return 0.2126 * parts[0] + 0.7152 * parts[1] + 0.0722 * parts[2]
+  }
+
+  /** Rapport de contraste WCAG entre deux couleurs, de 1 à 21. */
+  function contrastRatio(foreground, background) {
+    var a = hexToRgb(foreground)
+    var b = hexToRgb(background)
+    if (!a || !b) return 0
+    var la = relativeLuminance(a)
+    var lb = relativeLuminance(b)
+    var lighter = Math.max(la, lb)
+    var darker = Math.min(la, lb)
+    return (lighter + 0.05) / (darker + 0.05)
+  }
+
+  /**
+   * Verdict de lisibilité.
+   *
+   * Un logo est un objet graphique, pas du texte : le seuil retenu est celui
+   * des composants non textuels, 3:1. En deçà de 1,5 le logo se confond avec
+   * son fond.
+   */
+  function contrastVerdict(ratio) {
+    if (ratio >= 3) return 'good'
+    if (ratio >= 1.5) return 'warning'
+    return 'critical'
+  }
+
+  /**
+   * Couleur obtenue en appliquant une déclinaison à une couleur source.
+   *
+   * @param scheme `{id, hex, map}` — `map` étant la table source → cible d'une
+   *   couleur personnalisée.
+   * @param threshold seuil d'inversion, de 0 à 100.
+   */
+  function inkColor(scheme, sourceHex, threshold) {
+    var rgb = hexToRgb(sourceHex)
+    if (!rgb) return sourceHex
+
+    var id = scheme.id
+    if (id === 'black') return '#000000'
+    if (id === 'white') return '#ffffff'
+    if (id === 'grayscale') {
+      var level = Math.round(perceivedLuminance(rgb))
+      return rgbToHex([level, level, level])
+    }
+    if (id === 'inverted') {
+      // Au-delà du seuil, la couleur est déjà assez claire pour rester
+      // lisible sur un fond sombre : elle ne bascule pas.
+      var limit = ((typeof threshold === 'number' ? threshold : 100) / 100) * 255
+      if (perceivedLuminance(rgb) >= limit) return rgbToHex(rgb)
+      return rgbToHex([255 - rgb[0], 255 - rgb[1], 255 - rgb[2]])
+    }
+    if (id === 'custom') {
+      var mapped = mappedColor(scheme.map, sourceHex)
+      if (mapped) return mapped
+      return scheme.hex || sourceHex
+    }
+    return rgbToHex(rgb)
+  }
+
+  /** Cherche une correspondance source → cible, à la casse près. */
+  function mappedColor(map, sourceHex) {
+    if (!map || !map.length) return null
+    var wanted = String(sourceHex).toLowerCase()
+    for (var i = 0; i < map.length; i += 1) {
+      if (String(map[i].from).toLowerCase() === wanted) return map[i].to
+    }
+    return null
+  }
+
+  /**
+   * Sérialise une table de correspondance pour la traversée d'`evalScript`.
+   *
+   * Le pont ne transporte que des chaînes : « source>cible;source>cible ».
+   */
+  function formatColorMap(map) {
+    var parts = []
+    for (var i = 0; map && i < map.length; i += 1) {
+      if (!hexToRgb(map[i].from) || !hexToRgb(map[i].to)) continue
+      parts.push(map[i].from + '>' + map[i].to)
+    }
+    return parts.join(';')
+  }
+
+  /** Relit une table de correspondance, en écartant les couleurs illisibles. */
+  function parseColorMap(text) {
+    var map = []
+    var parts = String(text || '').split(';')
+    for (var i = 0; i < parts.length; i += 1) {
+      var pair = parts[i].split('>')
+      if (pair.length !== 2) continue
+      var from = pair[0]
+      var to = pair[1]
+      if (!hexToRgb(from) || !hexToRgb(to)) continue
+      map.push({ from: from, to: to })
+    }
+    return map
+  }
+
+  /** Fonds de contrôle du contraste. */
+  var CONTRAST_BACKGROUNDS = [
+    { id: 'white', label: 'Fond blanc', hex: '#ffffff' },
+    { id: 'black', label: 'Fond noir', hex: '#000000' },
+    { id: 'gray', label: 'Fond gris', hex: '#808080' },
+  ]
+
+  /**
+   * Contrôle la lisibilité d'une déclinaison sur chaque fond.
+   *
+   * Sur un fond donné, c'est l'encre la PLUS contrastée qui décide : un logo
+   * est visible dès qu'une de ses parties se détache. Retenir la moins
+   * contrastée condamnerait tout logo comportant un aplat blanc — la réserve
+   * y est voulue, pas subie — et l'avertissement finirait ignoré.
+   *
+   * D'un fond à l'autre, en revanche, c'est le pire qui décide : une
+   * déclinaison n'est livrable que si elle tient partout où elle sera posée.
+   *
+   * @param samples couleurs représentatives du logo.
+   */
+  function checkContrast(scheme, samples, threshold, backgrounds) {
+    var grounds =
+      backgrounds && backgrounds.length ? backgrounds : CONTRAST_BACKGROUNDS
+    var results = []
+    var worst = null
+
+    for (var b = 0; b < grounds.length; b += 1) {
+      var ground = grounds[b]
+      var best = null
+
+      for (var s = 0; s < samples.length; s += 1) {
+        var ink = inkColor(scheme, samples[s], threshold)
+        var ratio = contrastRatio(ink, ground.hex)
+        if (best === null || ratio > best) best = ratio
+      }
+
+      var entry = {
+        background: ground,
+        ratio: best === null ? 0 : best,
+        verdict: contrastVerdict(best === null ? 0 : best),
+      }
+      results.push(entry)
+      if (!worst || entry.ratio < worst.ratio) worst = entry
+    }
+
+    return { scheme: scheme, results: results, worst: worst }
   }
 
   /* ---------------------------------------------------------------------- *
@@ -1056,6 +1254,7 @@ var LogoForgeEngine = (function () {
           cell.scheme.id,
           cell.scheme.hex || '',
           threshold,
+          formatColorMap(cell.scheme.map),
           cell.left,
           cell.top,
           cell.width,
@@ -1154,6 +1353,17 @@ var LogoForgeEngine = (function () {
     readDocumentInfo: readDocumentInfo,
     readArtboardNames: readArtboardNames,
     runFullExport: runFullExport,
+    CONTRAST_BACKGROUNDS: CONTRAST_BACKGROUNDS,
+    hexToRgb: hexToRgb,
+    rgbToHex: rgbToHex,
+    perceivedLuminance: perceivedLuminance,
+    relativeLuminance: relativeLuminance,
+    contrastRatio: contrastRatio,
+    contrastVerdict: contrastVerdict,
+    inkColor: inkColor,
+    formatColorMap: formatColorMap,
+    parseColorMap: parseColorMap,
+    checkContrast: checkContrast,
     GRID_DEFAULTS: GRID_DEFAULTS,
     gridSettings: gridSettings,
     planPackageGrid: planPackageGrid,

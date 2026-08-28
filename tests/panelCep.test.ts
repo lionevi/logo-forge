@@ -22,6 +22,18 @@ const INLINE_SCRIPTS = [
 
 const SCRIPT = INLINE_SCRIPTS.join('\n;\n')
 
+/**
+ * Document dépouillé de ses commentaires.
+ *
+ * Un commentaire n'est jamais rendu : les contrôles portant sur ce que
+ * l'utilisateur voit doivent l'ignorer, sinon ils interdisent d'écrire en
+ * français dans le code.
+ */
+const RENDERED = HTML.replace(/<!--[\s\S]*?-->/g, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '')
+  .replace(/^\s*\*.*$/gm, '')
+
 /** Feuille de style inline, dépouillée de ses commentaires. */
 const STYLE = (/<style>([\s\S]*?)<\/style>/.exec(HTML)?.[1] ?? '').replace(
   /\/\*[\s\S]*?\*\//g,
@@ -184,7 +196,7 @@ describe('iconographie', () => {
     for (const glyph of ['&#9881;', '&#8635;', '&#9681;', '&#9633;', '&times;']) {
       expect(HTML, glyph).not.toContain(glyph)
     }
-    expect(HTML).not.toMatch(/[\u2190-\u2BFF\u{1F300}-\u{1FAFF}]/u)
+    expect(RENDERED).not.toMatch(/[\u2190-\u2BFF\u{1F300}-\u{1FAFF}]/u)
   })
 
   it('dessine les icônes en SVG héritant de la couleur du texte', () => {
@@ -216,16 +228,11 @@ describe('flux Logo Package Express', () => {
     expect(SCRIPT).toContain("getContext('2d')")
   })
 
-  it('laisse le seuil agir sur la prévisualisation inversée', () => {
-    // Les deux branches doivent différer : un seuil sans effet visible
-    // rendrait le curseur mensonger.
-    const block = SCRIPT.slice(
-      SCRIPT.indexOf("if (schemeId === 'inverted')"),
-      SCRIPT.indexOf("if (schemeId === 'inverted')") + 400,
-    )
-    expect(block).toMatch(/luminance\(rgb\) >= \(threshold \/ 100\) \* 255/)
-    expect(block).toContain('return hex')
-    expect(block).toContain('255 - rgb[0]')
+  it('ne tient aucun second calcul de couleur', () => {
+    // Le panneau délègue au moteur : deux implémentations finiraient par
+    // diverger, et l'aperçu mentirait sur ce que l'export produit.
+    expect(SCRIPT).toContain('engine.inkColor(')
+    expect(SCRIPT).not.toMatch(/function (hexToRgb|rgbToHex|luminance)\(/)
   })
 
   it('propose les deux passes d export', () => {
@@ -368,6 +375,45 @@ describe('planche de revue', () => {
     expect(SCRIPT).toContain('function renderDerived(')
     // Un appelant qui oublierait la planche laisserait un compte rendu périmé.
     expect(SCRIPT.match(/renderExportButton\(\)/g) ?? []).toHaveLength(2)
+  })
+})
+
+describe('couleurs', () => {
+  it('lit les couleurs réellement présentes dans le document', () => {
+    expect(SCRIPT).toContain("'lfListColors'")
+    expect(SCRIPT).toContain('function readDocumentColors(')
+  })
+
+  it('nourrit la table de correspondance depuis le document', () => {
+    // Une source absente de l'artwork ne serait jamais remplacée.
+    expect(SCRIPT).toContain('function addColorMapping(')
+    expect(SCRIPT).toContain('data-map=')
+    expect(SCRIPT).toContain('data-unmap=')
+  })
+
+  it('permet de renommer et de dupliquer une couleur personnalisée', () => {
+    expect(SCRIPT).toContain('data-custom-name=')
+    expect(SCRIPT).toContain('data-duplicate-custom=')
+    expect(SCRIPT).toContain('function cloneMap(')
+  })
+
+  it('contrôle le contraste sur quatre fonds, dont un au choix', () => {
+    expect(HTML).toContain('id="contrast-custom"')
+    expect(HTML).toContain('id="contrast-list"')
+    expect(SCRIPT).toContain('engine.checkContrast(')
+    expect(SCRIPT).toContain('function contrastBackgrounds(')
+  })
+
+  it('avertit avant export sur une déclinaison illisible', () => {
+    expect(SCRIPT).toContain('function criticalSchemes(')
+    expect(SCRIPT).toContain('Illisible sur au moins un fond')
+  })
+
+  it('distingue les trois verdicts à la bordure, pas au seul fond', () => {
+    for (const verdict of ['.verdict.good', '.verdict.warning', '.verdict.critical']) {
+      expect(STYLE, verdict).toContain(verdict)
+    }
+    expect(STYLE).toMatch(/\.verdict\.good \{\s*border-color/)
   })
 })
 

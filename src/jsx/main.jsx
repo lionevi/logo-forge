@@ -332,6 +332,54 @@ var LogoForge = (function () {
     return null
   }
 
+  /** Formate un triplet en #rrggbb minuscule. */
+  function toHex(rgb) {
+    var out = '#'
+    for (var i = 0; i < 3; i += 1) {
+      var value = Math.max(0, Math.min(255, Math.round(rgb[i]))).toString(16)
+      out += value.length === 1 ? '0' + value : value
+    }
+    return out
+  }
+
+  /**
+   * Relit une table « source>cible;source>cible ».
+   *
+   * Le pont ne transporte que des chaînes : la table arrive sous cette forme,
+   * produite par le moteur du panneau.
+   */
+  function parseColorMap(text) {
+    var map = []
+    if (!text) return map
+    var parts = String(text).split(';')
+    for (var i = 0; i < parts.length; i += 1) {
+      var pair = parts[i].split('>')
+      if (pair.length !== 2) continue
+      var from = String(pair[0]).replace('#', '').toLowerCase()
+      var to = String(pair[1]).replace('#', '')
+      if (from.length !== 6 || to.length !== 6) continue
+      map.push({
+        from: from,
+        to: [
+          parseInt(to.substring(0, 2), 16),
+          parseInt(to.substring(2, 4), 16),
+          parseInt(to.substring(4, 6), 16),
+        ],
+      })
+    }
+    return map
+  }
+
+  /** Cherche la cible associée à une couleur source. */
+  function mappedTarget(map, rgb) {
+    if (!map || !map.length) return null
+    var wanted = toHex(rgb).replace('#', '')
+    for (var i = 0; i < map.length; i += 1) {
+      if (map[i].from === wanted) return map[i].to
+    }
+    return null
+  }
+
   /**
    * Calcule la couleur de remplacement d'un élément.
    *
@@ -341,13 +389,21 @@ var LogoForge = (function () {
    *   à 0 rien ne bascule.
    * @returns `null` quand l'élément doit rester tel quel.
    */
-  function schemeColor(scheme, current, custom, threshold) {
+  function schemeColor(scheme, current, custom, threshold, map) {
     if (scheme === 'fullColor') return null
     if (scheme === 'black') return blackColor()
     if (scheme === 'white') return whiteColor()
-    if (scheme === 'custom') return rgbColor(custom[0], custom[1], custom[2])
 
     var rgb = toRgb(current)
+
+    if (scheme === 'custom') {
+      // Une correspondance déclarée prime sur la couleur unique : c'est elle
+      // qui permet de retoucher une teinte sans aplatir tout le logo.
+      var target = rgb ? mappedTarget(map, rgb) : null
+      if (target) return rgbColor(target[0], target[1], target[2])
+      return rgbColor(custom[0], custom[1], custom[2])
+    }
+
     // Dégradés et motifs : on ne sait pas les convertir sans les dénaturer.
     if (!rgb) return null
 
@@ -365,14 +421,78 @@ var LogoForge = (function () {
     return null
   }
 
+  /**
+   * Inventorie les couleurs employées par le document de travail.
+   *
+   * Sans cet inventaire, la table source → cible se remplirait à l'aveugle :
+   * le designer ne peut pas deviner les valeurs exactes de son artwork.
+   *
+   * Charge utile : « hex:occurrences », de la plus fréquente à la plus rare.
+   */
+  function listDocumentColors(limit) {
+    try {
+      var doc = workingDocument()
+      if (!doc) return err('aucun document de travail')
+
+      var counts = {}
+      var order = []
+
+      function record(color) {
+        var rgb = toRgb(color)
+        if (!rgb) return
+        var hex = toHex(rgb)
+        if (counts[hex] === undefined) {
+          counts[hex] = 0
+          order.push(hex)
+        }
+        counts[hex] += 1
+      }
+
+      var paths = doc.pathItems
+      for (var i = 0; i < paths.length; i += 1) {
+        try {
+          if (paths[i].filled) record(paths[i].fillColor)
+          if (paths[i].stroked) record(paths[i].strokeColor)
+        } catch (pathError) {
+          /* élément inaccessible : on poursuit l'inventaire */
+        }
+      }
+
+      var frames = doc.textFrames
+      for (var t = 0; t < frames.length; t += 1) {
+        try {
+          record(frames[t].textRange.characterAttributes.fillColor)
+        } catch (frameError) {
+          /* bloc inaccessible : on poursuit */
+        }
+      }
+
+      // Tri par fréquence : les couleurs de marque arrivent en tête.
+      order.sort(function (a, b) {
+        return counts[b] - counts[a]
+      })
+
+      var max = parseInt(limit, 10)
+      if (isNaN(max) || max <= 0) max = 24
+
+      var parts = []
+      for (var k = 0; k < order.length && k < max; k += 1) {
+        parts.push(order[k] + ':' + counts[order[k]])
+      }
+      return ok(parts.join(UNIT))
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
   /** Applique une couleur aux tracés d'un document. */
-  function recolorPaths(doc, scheme, custom, threshold) {
+  function recolorPaths(doc, scheme, custom, threshold, map) {
     var items = doc.pathItems
     for (var i = 0; i < items.length; i += 1) {
       var item = items[i]
       try {
         if (item.filled) {
-          var fill = schemeColor(scheme, item.fillColor, custom, threshold)
+          var fill = schemeColor(scheme, item.fillColor, custom, threshold, map)
           if (fill) item.fillColor = fill
         }
         if (item.stroked) {
@@ -380,7 +500,8 @@ var LogoForge = (function () {
             scheme,
             item.strokeColor,
             custom,
-            threshold
+            threshold,
+            map
           )
           if (stroke) item.strokeColor = stroke
         }
@@ -391,12 +512,18 @@ var LogoForge = (function () {
   }
 
   /** Applique une couleur aux blocs de texte d'un document. */
-  function recolorText(doc, scheme, custom, threshold) {
+  function recolorText(doc, scheme, custom, threshold, map) {
     var frames = doc.textFrames
     for (var i = 0; i < frames.length; i += 1) {
       try {
         var attributes = frames[i].textRange.characterAttributes
-        var fill = schemeColor(scheme, attributes.fillColor, custom, threshold)
+        var fill = schemeColor(
+          scheme,
+          attributes.fillColor,
+          custom,
+          threshold,
+          map
+        )
         if (fill) attributes.fillColor = fill
       } catch (frameError) {
         /* bloc inaccessible : on poursuit */
@@ -410,8 +537,9 @@ var LogoForge = (function () {
    * @param scheme fullColor, black, white, grayscale, inverted ou custom.
    * @param hex couleur au format #rrggbb, requise pour custom.
    * @param threshold seuil d'inversion de 0 à 100 ; 100 par défaut.
+   * @param colorMap table « source>cible » des couleurs personnalisées.
    */
-  function applyColorScheme(scheme, hex, threshold) {
+  function applyColorScheme(scheme, hex, threshold, colorMap) {
     try {
       var doc = workingDocument()
       if (!doc) return err('aucun document de travail')
@@ -448,8 +576,9 @@ var LogoForge = (function () {
         /* certaines versions refusent : on tente quand même le recolorage */
       }
 
-      recolorPaths(doc, scheme, custom, level)
-      recolorText(doc, scheme, custom, level)
+      var map = parseColorMap(colorMap)
+      recolorPaths(doc, scheme, custom, level, map)
+      recolorText(doc, scheme, custom, level, map)
       return ok(scheme)
     } catch (e) {
       return err(describe(e))
@@ -1225,6 +1354,7 @@ var LogoForge = (function () {
     scheme,
     hex,
     threshold,
+    colorMap,
     left,
     top,
     cellWidth,
@@ -1237,7 +1367,7 @@ var LogoForge = (function () {
       if (opened.indexOf('OK') !== 0) return opened
 
       if (scheme && scheme !== 'fullColor') {
-        var applied = applyColorScheme(scheme, hex, threshold)
+        var applied = applyColorScheme(scheme, hex, threshold, colorMap)
         if (applied.indexOf('OK') !== 0) {
           endSession()
           return applied
@@ -1459,6 +1589,7 @@ var LogoForge = (function () {
     endSession: endSession,
     resetSession: resetSession,
     applyColorScheme: applyColorScheme,
+    listDocumentColors: listDocumentColors,
     describeSelection: describeSelection,
     setComponent: setComponent,
     renderComponentThumbnail: renderComponentThumbnail,
@@ -1519,8 +1650,12 @@ function lfEndSession() {
 function lfResetSession() {
   return LogoForge.resetSession()
 }
-function lfApplyColorScheme(scheme, hex, threshold) {
-  return LogoForge.applyColorScheme(scheme, hex, threshold)
+function lfListColors(limit) {
+  return LogoForge.listDocumentColors(limit)
+}
+
+function lfApplyColorScheme(scheme, hex, threshold, colorMap) {
+  return LogoForge.applyColorScheme(scheme, hex, threshold, colorMap)
 }
 function lfDescribeSelection() {
   return LogoForge.describeSelection()
@@ -1542,8 +1677,18 @@ function lfCreatePackage(width, height, colorMode) {
   return LogoForge.createPackageDocument(width, height, colorMode)
 }
 
-function lfPlaceComponent(path, scheme, hex, threshold, left, top, w, h) {
-  return LogoForge.placeComponentAt(path, scheme, hex, threshold, left, top, w, h)
+function lfPlaceComponent(path, scheme, hex, threshold, map, left, top, w, h) {
+  return LogoForge.placeComponentAt(
+    path,
+    scheme,
+    hex,
+    threshold,
+    map,
+    left,
+    top,
+    w,
+    h
+  )
 }
 
 function lfAddLabel(text, left, top, size) {
