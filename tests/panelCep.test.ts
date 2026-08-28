@@ -152,9 +152,15 @@ describe('éléments attendus par le script', () => {
     }
   })
 
-  it('propose quatre composants par défaut', () => {
-    for (const name of ['Logo', 'Logo Mark', 'Logotype', 'Stacked Logo']) {
-      expect(SCRIPT, name).toContain(`newComponent('${name}')`)
+  it('propose quatre composants par défaut, chacun typé', () => {
+    const defaults: Array<[string, string]> = [
+      ['Logo', 'logo'],
+      ['Logo Mark', 'logoMark'],
+      ['Logotype', 'logotype'],
+      ['Stacked Logo', 'stacked'],
+    ]
+    for (const [name, type] of defaults) {
+      expect(SCRIPT, name).toContain(`newComponent('${name}', '${type}')`)
     }
   })
 
@@ -266,6 +272,58 @@ describe('Set Component', () => {
   it('désactive la carte pendant la capture', () => {
     expect(SCRIPT).toContain('function setComponentBusy(')
     expect(SCRIPT).toContain("'Capture…'")
+  })
+})
+
+describe('gestion des composants', () => {
+  it('propose une taxonomie extensible, ouverte sur « personnalisé »', () => {
+    expect(SCRIPT).toContain('var COMPONENT_TYPES = [')
+    for (const id of ['logo', 'logoMark', 'logotype', 'tagline', 'custom']) {
+      expect(SCRIPT, id).toContain(`id: '${id}'`)
+    }
+  })
+
+  it('donne à chaque composant une identité et un horodatage', () => {
+    expect(SCRIPT).toContain('function nextComponentId(')
+    expect(SCRIPT).toMatch(/id: nextComponentId\(\)/)
+    expect(SCRIPT).toContain('createdAt:')
+    expect(SCRIPT).toContain('updatedAt:')
+  })
+
+  it('offre duplication, réordonnancement et suppression', () => {
+    expect(SCRIPT).toContain('function duplicateComponent(')
+    expect(SCRIPT).toContain('function moveComponent(')
+    expect(SCRIPT).toContain('function removeComponent(')
+    expect(SCRIPT).toContain('data-duplicate=')
+    expect(SCRIPT).toContain('data-move=')
+  })
+
+  it('demande confirmation avant une suppression destructrice', () => {
+    expect(SCRIPT).toContain('window.confirm')
+    expect(SCRIPT).toContain('Sa capture sera perdue')
+  })
+
+  it('vérifie que les captures existent encore', () => {
+    expect(SCRIPT).toContain('function verifyComponents(')
+    expect(SCRIPT).toContain("'lfPathExists'")
+    expect(SCRIPT).toContain('function missingComponents(')
+  })
+
+  it('exclut du plan un composant dont la capture a disparu', () => {
+    // Le compter reviendrait à annoncer des fichiers qui ne seront pas écrits.
+    const defined = SCRIPT.slice(
+      SCRIPT.indexOf('function definedComponents('),
+      SCRIPT.indexOf('function missingComponents('),
+    )
+    expect(defined).toContain('!component.missing')
+    expect(SCRIPT).toContain('components: definedComponents()')
+  })
+
+  it('garde le bouton de suppression au-dessus de la vignette', () => {
+    // Sans plan supérieur, l'image intercepte le clic et la carte devient
+    // impossible à supprimer.
+    const block = STYLE.slice(STYLE.indexOf('.comp-remove {'))
+    expect(block.slice(0, 400)).toMatch(/z-index:\s*2/)
   })
 })
 

@@ -362,6 +362,41 @@
         background: #252525;
         outline: none;
       }
+      .comp-type {
+        width: 100%;
+        margin-bottom: 3px;
+        padding: 2px 3px;
+        border: 1px solid #3e3e3e;
+        border-radius: 3px;
+        background: #383838;
+        color: #e3e3e3;
+        font-size: 10px;
+      }
+      .comp-actions {
+        margin-top: 4px;
+        overflow: hidden;
+      }
+      .comp-actions button {
+        float: left;
+        width: 33.33%;
+        padding: 2px 0;
+        border: 1px solid #3e3e3e;
+        border-radius: 3px;
+        background: transparent;
+        color: #909090;
+        cursor: pointer;
+      }
+      .comp-actions button:hover:enabled {
+        color: #e3e3e3;
+      }
+      .comp-actions button:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+      .comp-actions .icon {
+        width: 11px;
+        height: 11px;
+      }
       .comp-meta {
         /* Deux lignes réservées : le décompte d'objets est la preuve qu'une
            capture a abouti, le tronquer reviendrait à la masquer. */
@@ -374,6 +409,9 @@
       }
       .comp-remove {
         position: absolute;
+        /* La vignette est peinte après ce bouton dans le flux : sans plan
+           supérieur, elle l'intercepte et la suppression devient impossible. */
+        z-index: 2;
         top: 4px;
         right: 4px;
         width: 20px;
@@ -1134,7 +1172,37 @@
           contrast: svg('<circle cx="12" cy="12" r="9" /><path d="M12 3v18" />'),
           empty: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="2.5" />'),
           remove: svg('<path d="M6 6l12 12" /><path d="M18 6L6 18" />'),
+          up: svg('<path d="M12 19V5" /><path d="M6 11l6-6 6 6" />'),
+          down: svg('<path d="M12 5v14" /><path d="M18 13l-6 6-6-6" />'),
+          duplicate: svg(
+            '<rect x="9" y="9" width="11" height="11" rx="2" />' +
+              '<path d="M5 15V6a2 2 0 0 1 2-2h9" />'
+          ),
         }
+
+        /**
+         * Types de composants.
+         *
+         * La liste sert à qualifier ce qu'un composant représente, jamais à
+         * restreindre ce que le designer peut capturer : elle reste ouverte,
+         * et « Personnalisé » accueille tout ce qu'elle n'a pas prévu.
+         */
+        var COMPONENT_TYPES = [
+          { id: 'logo', label: 'Logo principal' },
+          { id: 'logoMark', label: 'Logo Mark' },
+          { id: 'logotype', label: 'Logotype' },
+          { id: 'tagline', label: 'Signature' },
+          { id: 'horizontal', label: 'Horizontal' },
+          { id: 'vertical', label: 'Vertical' },
+          { id: 'stacked', label: 'Empilé' },
+          { id: 'compact', label: 'Compact' },
+          { id: 'monogram', label: 'Monogramme' },
+          { id: 'symbol', label: 'Symbole' },
+          { id: 'wordmark', label: 'Wordmark' },
+          { id: 'favicon', label: 'Favicon' },
+          { id: 'socialAvatar', label: 'Avatar social' },
+          { id: 'custom', label: 'Personnalisé' },
+        ]
 
         var SCHEMES = [
           { id: 'fullColor', label: 'Full Color' },
@@ -1378,10 +1446,28 @@
           return list
         }
 
+        /**
+         * Composants exploitables : capturés, et dont le fichier existe encore.
+         *
+         * Un composant dont la capture a disparu ne doit pas gonfler le nombre
+         * de fichiers annoncé — il n'en produirait aucun.
+         */
         function definedComponents() {
           var list = []
           for (var i = 0; i < state.components.length; i += 1) {
-            if (state.components[i].path) list.push(state.components[i])
+            var component = state.components[i]
+            if (component.path && !component.missing) list.push(component)
+          }
+          return list
+        }
+
+        /** Composants dont la capture a disparu du disque. */
+        function missingComponents() {
+          var list = []
+          for (var i = 0; i < state.components.length; i += 1) {
+            if (state.components[i].path && state.components[i].missing) {
+              list.push(state.components[i])
+            }
           }
           return list
         }
@@ -1391,7 +1477,7 @@
             clientName: state.clientName,
             outputFolder: state.destination,
             sourceName: state.document ? state.document.name : '',
-            components: state.components,
+            components: definedComponents(),
             colorSchemes: activeSchemes(),
             formats: state.formats,
             scales: state.scales,
@@ -1466,6 +1552,166 @@
           return '<div class="comp-placeholder">' + ICONS.empty + '</div>'
         }
 
+        /* ---------------------------------------------------------------- *
+         * Opérations sur les composants
+         * ---------------------------------------------------------------- */
+
+        /**
+         * Supprime un composant, après confirmation.
+         *
+         * Une capture perdue se refait, mais elle demande de retrouver la
+         * sélection d'origine : l'opération mérite une question.
+         */
+        function removeComponent(index) {
+          var component = state.components[index]
+          if (!component) return
+
+          if (component.path && typeof window.confirm === 'function') {
+            if (
+              !window.confirm(
+                'Supprimer « ' +
+                  component.name +
+                  ' » ? Sa capture sera perdue, le document Illustrator reste intact.'
+              )
+            ) {
+              return
+            }
+          }
+
+          state.components.splice(index, 1)
+          if (component.path) {
+            engine.call('lfRemoveComponentFile', [component.path], function () {})
+          }
+          renderComponents()
+          renderDerived()
+        }
+
+        /** Déplace un composant, en bornant la position demandée. */
+        function moveComponent(from, to) {
+          if (to < 0 || to >= state.components.length) return
+          var moved = state.components.splice(from, 1)[0]
+          state.components.splice(to, 0, moved)
+          renderComponents()
+          renderDerived()
+        }
+
+        /**
+         * Duplique un composant.
+         *
+         * Le fichier de capture est partagé, jamais recopié : deux cartes qui
+         * pointent le même artwork suffisent à décliner un nom ou un type, et
+         * une copie de fichier ferait diverger les deux silencieusement. La
+         * copie repart donc sans capture, à réassigner explicitement.
+         */
+        function duplicateComponent(index) {
+          var source = state.components[index]
+          if (!source) return
+
+          var copy = newComponent(source.name + ' (copie)', source.type)
+          copy.dark = source.dark
+          state.components.splice(index + 1, 0, copy)
+          renderComponents()
+          renderDerived()
+        }
+
+        /**
+         * Vérifie que chaque capture existe encore sur le disque.
+         *
+         * Les fichiers de composants vivent dans le dossier temporaire : un
+         * redémarrage de la machine les emporte. Mieux vaut l'annoncer que
+         * d'échouer au milieu d'un export.
+         */
+        function verifyComponents(done) {
+          var index = 0
+
+          function next() {
+            while (
+              index < state.components.length &&
+              !state.components[index].path
+            ) {
+              index += 1
+            }
+            if (index >= state.components.length) {
+              renderComponents()
+              renderDerived()
+              if (done) done()
+              return
+            }
+
+            var component = state.components[index]
+            index += 1
+            engine.call('lfPathExists', [component.path], function (result) {
+              component.missing = !result.ok || result.value !== '1'
+              next()
+            })
+          }
+
+          next()
+        }
+
+        /** Sélecteur de type d'un composant. */
+        function typeSelect(component, index) {
+          var html =
+            '<select class="comp-type" data-type="' +
+            index +
+            '" aria-label="Type du composant">'
+          for (var i = 0; i < COMPONENT_TYPES.length; i += 1) {
+            var type = COMPONENT_TYPES[i]
+            html +=
+              '<option value="' +
+              type.id +
+              '"' +
+              (component.type === type.id ? ' selected' : '') +
+              '>' +
+              escapeHtml(type.label) +
+              '</option>'
+          }
+          return html + '</select>'
+        }
+
+        /**
+         * Ligne d'actions d'une carte.
+         *
+         * Réordonner sert à l'ordre des colonnes de la planche et des dossiers
+         * livrés : c'est un choix de présentation, pas un détail.
+         */
+        function componentActions(index, total) {
+          return (
+            '<div class="comp-actions">' +
+            '<button data-move="' +
+            (index - 1) +
+            '" data-from="' +
+            index +
+            '" title="Monter" aria-label="Monter le composant"' +
+            (index === 0 ? ' disabled' : '') +
+            '>' +
+            ICONS.up +
+            '</button>' +
+            '<button data-move="' +
+            (index + 1) +
+            '" data-from="' +
+            index +
+            '" title="Descendre" aria-label="Descendre le composant"' +
+            (index === total - 1 ? ' disabled' : '') +
+            '>' +
+            ICONS.down +
+            '</button>' +
+            '<button data-duplicate="' +
+            index +
+            '" title="Dupliquer" aria-label="Dupliquer le composant">' +
+            ICONS.duplicate +
+            '</button>' +
+            '</div>'
+          )
+        }
+
+        /** État d'un composant, tel qu'il s'affiche sur sa carte. */
+        function componentStatus(component) {
+          if (!component.path) return 'non défini'
+          if (component.missing) return 'fichier introuvable'
+          return componentSummary(component)
+        }
+
         /** Résumé chiffré d'un composant capturé. */
         function componentSummary(component) {
           var parts = [
@@ -1512,9 +1758,10 @@
               i +
               '" value="' +
               escapeHtml(comp.name) +
-              '" />' +
+              '" aria-label="Nom du composant" />' +
+              typeSelect(comp, i) +
               '<p class="comp-meta">' +
-              (isSet ? componentSummary(comp) : 'non défini') +
+              componentStatus(comp) +
               '</p>' +
               '<button class="button small" data-set="' +
               i +
@@ -1523,6 +1770,7 @@
               '>' +
               (isSet ? 'Réassigner' : 'Set Component') +
               '</button>' +
+              componentActions(i, state.components.length) +
               '</div></div>'
           }
           byId('comp-grid').innerHTML = html
@@ -1653,6 +1901,16 @@
           }
           if (activeSchemes().length === 0) {
             html += '<p class="notice">Cochez au moins une déclinaison.</p>'
+          }
+
+          var missing = missingComponents()
+          if (missing.length > 0) {
+            var names = []
+            for (var m = 0; m < missing.length; m += 1) names.push(missing[m].name)
+            html +=
+              '<p class="notice error">Capture introuvable pour ' +
+              escapeHtml(names.join(', ')) +
+              ' — réassignez ces composants.</p>'
           }
 
           var total = plannedCount()
@@ -1864,8 +2122,21 @@
          * Composants
          * ---------------------------------------------------------------- */
 
-        function newComponent(name) {
+        /** Identifiant unique, stable d'une session à l'autre. */
+        var componentSequence = 0
+
+        function nextComponentId() {
+          componentSequence += 1
+          return 'c' + new Date().getTime() + '-' + componentSequence
+        }
+
+        function newComponent(name, type) {
           return {
+            id: nextComponentId(),
+            type: type || 'custom',
+            createdAt: new Date().getTime(),
+            updatedAt: 0,
+            missing: false,
             name: name,
             path: '',
             width: 0,
@@ -1985,12 +2256,22 @@
 
           var remove = target.getAttribute('data-remove')
           if (remove !== null) {
-            var gone = state.components.splice(parseInt(remove, 10), 1)[0]
-            if (gone && gone.path) {
-              engine.call('lfRemoveComponentFile', [gone.path], function () {})
-            }
-            renderComponents()
-            renderDerived()
+            removeComponent(parseInt(remove, 10))
+            return
+          }
+
+          var move = target.getAttribute('data-move')
+          if (move !== null) {
+            moveComponent(
+              parseInt(target.getAttribute('data-from'), 10),
+              parseInt(move, 10)
+            )
+            return
+          }
+
+          var duplicate = target.getAttribute('data-duplicate')
+          if (duplicate !== null) {
+            duplicateComponent(parseInt(duplicate, 10))
             return
           }
 
@@ -2021,8 +2302,18 @@
         byId('comp-grid').oninput = function (event) {
           var name = event.target.getAttribute('data-name')
           if (name === null) return
-          state.components[parseInt(name, 10)].name = event.target.value
-          renderMessages()
+          var renamed = state.components[parseInt(name, 10)]
+          renamed.name = event.target.value
+          renamed.updatedAt = new Date().getTime()
+          renderDerived()
+        }
+
+        byId('comp-grid').onchange = function (event) {
+          var type = event.target.getAttribute('data-type')
+          if (type === null) return
+          var component = state.components[parseInt(type, 10)]
+          component.type = event.target.value
+          component.updatedAt = new Date().getTime()
         }
 
         byId('add-component').onclick = function () {
@@ -2030,6 +2321,7 @@
             newComponent('Composant ' + (state.components.length + 1))
           )
           renderComponents()
+          renderDerived()
         }
 
         /* ---------------------------------------------------------------- *
@@ -2238,7 +2530,9 @@
 
         byId('refresh').onclick = function () {
           refreshDocument()
-          renderComponents()
+          guard('vérification des composants', function () {
+            verifyComponents()
+          })
         }
 
         /* ---------------------------------------------------------------- *
@@ -2331,7 +2625,7 @@
               )
             }
           }
-          state.components = [newComponent('Logo')]
+          state.components = [newComponent('Logo', 'logo')]
           state.lastResult = null
           byId('progress-veil').className = 'veil'
           renderAll()
@@ -2430,14 +2724,15 @@
           byId('refresh').innerHTML = ICONS.refresh
           restoreSchemes()
           state.components = [
-            newComponent('Logo'),
-            newComponent('Logo Mark'),
-            newComponent('Logotype'),
-            newComponent('Stacked Logo'),
+            newComponent('Logo', 'logo'),
+            newComponent('Logo Mark', 'logoMark'),
+            newComponent('Logotype', 'logotype'),
+            newComponent('Stacked Logo', 'stacked'),
           ]
           renderAll()
           renderDestination()
           refreshDocument()
+          verifyComponents()
           timer = setInterval(poll, POLL_MS)
         })
       })()
