@@ -1316,3 +1316,60 @@ describe('refus d’ajout d’une couleur', () => {
     expect(SCRIPT).toContain("byId('custom-name').focus()")
   })
 })
+
+describe('traces après une capture', () => {
+  /**
+   * La planche est construite depuis le retour de `lfSetComponent`. Ses trois
+   * conditions d'abandon étaient muettes : décochée, fichier absent, aucune
+   * déclinaison active. Le journal restait vide, et l'appel paraissait n'avoir
+   * jamais eu lieu.
+   */
+  it('appelle la planche depuis le retour de la capture', () => {
+    const handler = SCRIPT.slice(
+      SCRIPT.indexOf('function setComponent(index)'),
+      SCRIPT.indexOf('function previewRows'),
+    )
+
+    expect(handler).toContain('updatePreview(component)')
+    // Après la lecture des champs, donc avec le chemin du fichier capturé.
+    expect(handler.indexOf('component.path = fields[1]')).toBeLessThan(
+      handler.indexOf('updatePreview(component)'),
+    )
+  })
+
+  it('écrit sa première ligne avant toute condition', () => {
+    const body = SCRIPT.slice(
+      SCRIPT.indexOf('function updatePreview(component)'),
+      SCRIPT.indexOf('function readPreviewTrace'),
+    )
+
+    expect(body.indexOf("preview-doc: début")).toBeLessThan(
+      body.indexOf('if (!state.livePreview)'),
+    )
+  })
+
+  it('dit pourquoi elle abandonne, à chacune des trois sorties', () => {
+    const body = SCRIPT.slice(
+      SCRIPT.indexOf('function updatePreview(component)'),
+      SCRIPT.indexOf('function readPreviewTrace'),
+    )
+
+    expect(body.match(/preview-doc: abandon/g)).toHaveLength(3)
+    expect(body).toContain('est décoché')
+    expect(body).toContain('n a pas de fichier capturé')
+    expect(body).toContain('aucune déclinaison active')
+  })
+})
+
+describe('journal de l’ajout d’une couleur', () => {
+  it('trace le début, le refus et l’ajout', () => {
+    const handler = SCRIPT.slice(
+      SCRIPT.indexOf("byId('add-custom').onclick"),
+      SCRIPT.indexOf("byId('add-custom').onclick") + 1200,
+    )
+
+    expect(handler).toContain("engine.log('add-color: début')")
+    expect(handler).toContain('add-color: refus')
+    expect(handler).toContain('add-color: ajoutée')
+  })
+})

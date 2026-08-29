@@ -975,3 +975,33 @@ Trois écarts entre la doublure Illustrator et le vrai DOM ont été trouvés en
 
 Une doublure trop indulgente ne fait pas échouer les épreuves — elle les fait
 réussir pour rien.
+
+## BUG-026 — Trois abandons muets faisaient croire à un appel absent
+
+Signalement : « après un Set Component réussi, la planche n'est jamais
+construite ; le journal ne montre aucune trace `preview-doc` ».
+
+L'appel existe et n'a jamais manqué : `updatePreview(component)` est exécuté
+dans le retour de `lfSetComponent`, juste après la lecture des champs — donc
+avec le chemin du fichier capturé. Ce que le journal ne disait pas, c'est
+qu'`updatePreview` pouvait renoncer **sans un mot**, à trois endroits :
+
+```js
+if (!state.livePreview || !component.path) return // avant
+var rows = previewRows()
+if (!rows) return
+```
+
+Trois sorties silencieuses — case « Tenir une planche à jour » décochée,
+composant sans fichier, aucune déclinaison active — se lisent, dans le
+journal, exactement comme un appel qui n'aurait jamais eu lieu.
+
+La première ligne est désormais écrite **avant toute condition**, et chaque
+abandon nomme sa raison. Une capture réussie laisse toujours une trace, même
+quand elle ne construit rien. Le nom cherché dans le journal était par ailleurs
+`lfCreatePreviewDocument` : la fonction s'appelle `lfBuildPreview`, et
+`lfCreatePreviewDocument` n'existe nulle part dans le dépôt.
+
+L'ajout d'une couleur personnalisée trace de même son début, son refus et son
+ajout — le bouton « + Color Scheme » a bien son gestionnaire, éprouvé par un
+clic réel dans le scénario navigateur.

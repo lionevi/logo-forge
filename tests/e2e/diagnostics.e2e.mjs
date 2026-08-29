@@ -84,9 +84,48 @@ export async function run(browser) {
   await page.waitForTimeout(200)
 
   const journal = await page.locator('#log-view').innerText()
-  for (const step of ['preview-doc: début', 'preview-doc: document créé']) {
+  for (const step of [
+    'add-color: début',
+    'add-color: ajoutée',
+    'preview-doc: début',
+    'preview-doc: demande',
+    'preview-doc: document créé',
+    'preview-doc: colonne Logo ajoutée',
+  ]) {
     scenario.contains('le journal porte « ' + step + ' »', journal, step)
   }
+
+  /* ------------------------------------------------------------------ *
+   * Planche décochée : l'abandon doit se dire, pas se taire
+   * ------------------------------------------------------------------ */
+
+  await page.click('#close-settings')
+  await page.waitForTimeout(150)
+  await page.click('.tab[data-tab="components"]')
+  await page.waitForTimeout(150)
+  await page.uncheck('#live-preview')
+  await page.evaluate(() => {
+    window.__lfCalls.length = 0
+  })
+  await page.locator('[data-set]').nth(1).click()
+  await page.waitForTimeout(500)
+
+  scenario.equal(
+    'aucune planche n est construite quand la case est décochée',
+    (await calls(page, 'lfBuildPreview')).length,
+    0,
+  )
+  await page.click('#open-settings')
+  await page.waitForTimeout(150)
+  await page.click('[data-sub="diag"]')
+  await page.waitForTimeout(150)
+  await page.click('#refresh-log')
+  await page.waitForTimeout(200)
+  scenario.contains(
+    'et le journal dit pourquoi',
+    await page.locator('#log-view').innerText(),
+    'preview-doc: abandon',
+  )
 
   /* ------------------------------------------------------------------ *
    * Essai d'export

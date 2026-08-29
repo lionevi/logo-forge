@@ -4728,10 +4728,32 @@
          * panneau le dit, et la planche se signale à part.
          */
         function updatePreview(component) {
-          if (!state.livePreview || !component.path) return
+          // Le premier mot du journal est écrit avant toute condition : une
+          // capture réussie doit toujours laisser une ligne, ne serait-ce que
+          // pour dire pourquoi la planche n'a pas été construite. Sans elle,
+          // un abandon silencieux se lit comme un appel qui n'a jamais eu lieu.
+          engine.log('preview-doc: début — ' + component.name)
+
+          if (!state.livePreview) {
+            engine.log(
+              'preview-doc: abandon — « Tenir une planche à jour » est décoché'
+            )
+            return
+          }
+          if (!component.path) {
+            engine.log(
+              'preview-doc: abandon — le composant n a pas de fichier capturé'
+            )
+            return
+          }
 
           var rows = previewRows()
-          if (!rows) return
+          if (!rows) {
+            engine.log(
+              'preview-doc: abandon — aucune déclinaison active à prévisualiser'
+            )
+            return
+          }
 
           engine.log('preview-doc: demande — ' + component.name)
           engine.call(
@@ -4974,9 +4996,11 @@
         }
 
         byId('add-custom').onclick = function () {
+          engine.log('add-color: début')
           var name = byId('custom-name').value
           var refusal = byId('custom-refusal')
           if (!name) {
+            engine.log('add-color: refus — aucun nom saisi')
             // Le refus se lit sous le bouton, pas au bas du panneau : c'est
             // là que regarde celui qui vient de cliquer. Placé ailleurs, il
             // passait inaperçu, et l'ajout paraissait sans effet.
@@ -4994,6 +5018,9 @@
             map: [],
           })
           byId('custom-name').value = ''
+          engine.log(
+            'add-color: ajoutée — ' + name + ' ' + byId('custom-hex').value
+          )
           persistProject()
           renderSchemes()
           renderDerived()
