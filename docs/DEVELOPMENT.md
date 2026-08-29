@@ -77,6 +77,28 @@ parti. Au moindre écart il sort en erreur : une vérification qui ne peut pas
 `LF_EXT_DIR` permet de viser un autre dossier — utile pour éprouver le script
 sans toucher à l'installation.
 
+### Mise en page compatible CEP
+
+```bash
+npm run check:css        # vérifie, échoue au moindre défaut
+npm run fix:css          # corrige la SOURCE, puis vérifie
+```
+
+`vh`, `dvh`, `svh` ne se résolvent pas sur la fenêtre d'un panneau CEP : une
+hauteur qui en dépend s'effondre à zéro, il ne reste que l'en-tête sur un fond
+gris, et rien n'en dit la cause. Le contrôle refuse ces unités et
+`position: fixed`, **et** exige ce qui les remplace : `html, body` en hauteur
+pleine, `.panel` et `.panel-body` bornés par leurs côtés.
+
+Il est une **étape du build**, pas seulement un test : un `npm run build`
+lancé à la main doit refuser de produire un panneau qui serait vide chez un
+tiers.
+
+`fix:css` corrige la source, jamais `dist/` : un correctif appliqué au
+livrable seul laisserait la source fautive, et le défaut reviendrait au build
+suivant. `calc(100vh - …)` n'est pas corrigé automatiquement — il demande une
+décision, pas une substitution.
+
 ### Compatibilité ExtendScript
 
 ```bash

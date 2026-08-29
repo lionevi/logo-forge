@@ -2255,6 +2255,22 @@ function lfPing() {
   // répondrait « OK » à tout ne prouverait rien.
   return 'OK|pong';
 }
+/**
+ * Langue de l'hôte, telle qu'Illustrator la déclare.
+ *
+ * `app.locale` rend par exemple `fr_FR` ou `en_US`. Un hôte qui ne
+ * l'exposerait pas ne doit pas empêcher le panneau de démarrer : l'anglais
+ * sert alors de repli, comme le fait Illustrator lui-même.
+ */
+function lfGetLocale() {
+  try {
+    var locale = String(app.locale || '');
+    return 'OK|' + (locale || 'en_US');
+  } catch (e) {
+    return 'OK|en_US';
+  }
+}
+
 function lfGetDocumentName() {
   return LogoForge.getDocumentName();
 }

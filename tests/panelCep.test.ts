@@ -1046,3 +1046,78 @@ describe('accord entre le panneau et le moteur', () => {
     expect(block.slice(0, 1400)).toContain("guard('affichage — '")
   })
 })
+
+describe('langue de l’hôte', () => {
+  it('demande sa langue à Illustrator au démarrage', () => {
+    expect(SCRIPT).toContain("engine.call('lfGetLocale'")
+    expect(SCRIPT).toContain('detectLanguage(renderAll)')
+  })
+
+  it('ne retient que les deux premières lettres', () => {
+    // `fr_FR`, `fr_CA`, `fr` : c'est la même langue.
+    expect(SCRIPT).toContain('locale.substring(0, 2).toLowerCase()')
+  })
+
+  it('retombe sur le français devant une langue inconnue', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function applyTranslations('))
+    expect(block.slice(0, 400)).toContain("TRANSLATIONS[lang] ? lang : 'fr'")
+  })
+
+  it('donne à chaque clé française sa contrepartie anglaise', () => {
+    const table = /var TRANSLATIONS = \{([\s\S]*?)\n {8}\}/.exec(SCRIPT)![1]
+    const [french, english] = table.split(/\n\s+en: \{/)
+    const keys = (block: string) =>
+      [...block.matchAll(/^\s{12}(\w+):/gm)].map((match) => match[1]).sort()
+
+    expect(keys(english)).toEqual(keys(french))
+    expect(keys(french).length).toBeGreaterThan(10)
+  })
+
+  it('traduit ce qui est marqué, et seulement cela', () => {
+    // La portée est assumée : un mélange visible vaut mieux qu'une traduction
+    // partielle qu'on croirait complète.
+    expect(HTML).toContain('data-t="components"')
+    expect(HTML).toContain('data-t="export"')
+    expect(SCRIPT).toContain("document.querySelectorAll('[data-t]')")
+    expect(SCRIPT).toContain('**Portée assumée.**')
+  })
+
+  it('nomme les déclinaisons dans la langue retenue', () => {
+    expect(SCRIPT).toContain('function schemeLabelFor(')
+    expect(SCRIPT).toContain('SCHEME_KEYS')
+  })
+})
+
+describe('silhouettes des types de composant', () => {
+  it('dessine plutôt que d’emprunter un glyphe', () => {
+    // Un pictogramme Unicode se rend différemment d'un système à l'autre —
+    // quand il se rend — et le projet s'interdit d'en faire une icône.
+    expect(SCRIPT).toContain('var TYPE_SHAPES = {')
+    expect(SCRIPT).toContain('function typeShape(')
+  })
+
+  it('couvre chaque type proposé au designer', () => {
+    // Bornée au tableau lui-même : au-delà viennent les déclinaisons, qui ne
+    // sont pas des types de composant.
+    const declaration = SCRIPT.slice(SCRIPT.indexOf('var COMPONENT_TYPES = ['))
+    const types = [
+      ...declaration
+        .slice(0, declaration.indexOf('\n        ]'))
+        .matchAll(/\{ id: '(\w+)'/g),
+    ].map((match) => match[1])
+    const shapes = SCRIPT.slice(
+      SCRIPT.indexOf('var TYPE_SHAPES = {'),
+      SCRIPT.indexOf('function typeShape('),
+    )
+
+    expect(types.length).toBeGreaterThan(10)
+    for (const type of types) {
+      expect(shapes, type).toContain(type + ':')
+    }
+  })
+
+  it('suit la couleur du thème', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function shape('))
+    expect(block.slice(0, 400)).toContain('stroke="currentColor"')
+  })
+})

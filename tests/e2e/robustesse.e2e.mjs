@@ -97,7 +97,7 @@ export async function run(browser) {
       Object.defineProperty(window.localStorage, 'setItem', { value: refuse })
     })
     scenario.equal('un stockage en refus ne bloque pas', await fatal(page), '')
-    await page.locator('button:has-text("Set Component")').first().click()
+    await page.locator('[data-set]').first().click()
     await page.waitForTimeout(300)
     scenario.equal(
       'et le travail continue',

@@ -211,7 +211,8 @@ describe('insertion dans le panneau', () => {
     const out = inlineBrand(PANEL, {})
 
     expect(out).toContain('var LF_BRAND = {}')
-    expect(out).toContain('LF_BRAND.illustration || ICONS.empty')
+    // Sans illustration de marque, la carte montre la silhouette de son type.
+    expect(out).toContain('LF_BRAND.illustration || typeShape(component.type)')
   })
 })
 
@@ -221,8 +222,8 @@ describe('emplacements dans le panneau', () => {
     expect(PANEL).toContain("if (LF_BRAND.icon) byId('brand-mark').innerHTML")
   })
 
-  it('retombe sur le pictogramme actuel dans une carte vide', () => {
-    expect(PANEL).toContain('LF_BRAND.illustration || ICONS.empty')
+  it('retombe sur la silhouette du type dans une carte vide', () => {
+    expect(PANEL).toContain('LF_BRAND.illustration || typeShape(component.type)')
   })
 
   it('fait suivre la couleur du thème', () => {

@@ -101,7 +101,7 @@ _Fenêtre → Extensions → Logo Forge_.
 | Commande                | Rôle                                             |
 | ----------------------- | ------------------------------------------------ |
 | `npm run build`         | Construit `dist/`                                |
-| `npm test`              | Suite complète (770 cas)                         |
+| `npm test`              | Suite complète (825 cas)                         |
 | `npm run test:e2e`      | Scénarios en navigateur sur le panneau construit |
 | `npm run test:coverage` | Couverture du cœur métier, seuils appliqués      |
 | `npm run lint`          | ESLint                                           |
@@ -113,6 +113,8 @@ _Fenêtre → Extensions → Logo Forge_.
 | `npm run verify`        | Lint, typecheck, ES3, tests, build               |
 
 ## Documentation
+
+- [INSTALL.md](INSTALL.md) — installation, pour qui n'a pas le dépôt
 
 - [docs/AUDIT.md](docs/AUDIT.md) — l'audit d'origine et les défauts corrigés
 - [docs/TEST-ILLUSTRATOR.md](docs/TEST-ILLUSTRATOR.md) — protocole du premier essai réel

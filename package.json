@@ -14,7 +14,7 @@
   },
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build && node scripts/generate-icons.ts",
+    "build": "vite build && node scripts/generate-icons.ts && node scripts/check-cep-css.mjs && node scripts/check-jsx-es3.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
@@ -30,7 +30,10 @@
     "deploy:mac:user": "LF_USER_SCOPE=1 bash scripts/deploy-mac.sh",
     "deploy:win": "npm run build && node -e \"const{cpSync,mkdirSync}=require('node:fs');const d=process.env.APPDATA+'\\\\\\\\Adobe\\\\\\\\CEP\\\\\\\\extensions\\\\\\\\com.lionevi.logoforge';mkdirSync(d,{recursive:true});cpSync('dist',d,{recursive:true});console.log('copié vers '+d)\"",
     "test:e2e": "node tests/e2e/run.mjs",
-    "check:jsx": "node scripts/check-jsx-es3.mjs"
+    "check:jsx": "node scripts/check-jsx-es3.mjs",
+    "check:css": "node scripts/check-cep-css.mjs",
+    "fix:css": "node scripts/check-cep-css.mjs --fix",
+    "install:mac": "bash scripts/install-mac.sh"
   },
   "dependencies": {
     "react": "^18.3.1",

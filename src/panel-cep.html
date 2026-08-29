@@ -126,6 +126,11 @@
         height: 20px;
         width: auto;
       }
+      .comp-placeholder.typed .shape {
+        width: 68px;
+        height: auto;
+        opacity: 0.45;
+      }
       .comp-placeholder.brand .lf-icon {
         width: 72px;
         height: auto;
@@ -1014,9 +1019,9 @@
       </div>
 
       <div class="tabs" id="tabs">
-        <button class="tab on" data-tab="components">Components</button>
-        <button class="tab" data-tab="colors">Colors</button>
-        <button class="tab" data-tab="preflight">Contrôle</button>
+        <button class="tab on" data-tab="components" data-t="components">Components</button>
+        <button class="tab" data-tab="colors" data-t="colors">Colors</button>
+        <button class="tab" data-tab="preflight" data-t="preflight">Contrôle</button>
       </div>
 
       <div class="panel-body">
@@ -1040,7 +1045,7 @@
           <div class="section">
             <h2 class="section-title">Planche de revue</h2>
             <p class="summary" id="package-summary"></p>
-            <button class="button small" id="build-package" disabled>
+            <button class="button small" id="build-package" data-t="create_board" disabled>
               Créer la planche
             </button>
             <div id="package-result"></div>
@@ -1145,7 +1150,7 @@
 
       <div class="panel-footer">
         <button class="button primary" id="open-export" disabled>
-          Export Logos
+          <span data-t="export">Export Logos</span>
         </button>
       </div>
 
@@ -1162,7 +1167,7 @@
             <button class="tab" data-sub="folders">Dossiers</button>
             <button class="tab" data-sub="doc">Documentation</button>
             <button class="tab" data-sub="social">Réseaux sociaux</button>
-            <button class="tab" data-sub="diag">Diagnostics</button>
+            <button class="tab" data-sub="diag" data-t="diagnostics">Diagnostics</button>
           </div>
 
           <div class="pane on" id="sub-files">
@@ -1774,6 +1779,175 @@
          * restreindre ce que le designer peut capturer : elle reste ouverte,
          * et « Personnalisé » accueille tout ce qu'elle n'a pas prévu.
          */
+        /**
+         * Silhouette propre à chaque type de composant.
+         *
+         * Des formes géométriques, pas des pictogrammes Unicode : ceux-ci se
+         * rendent différemment d'un système à l'autre — quand ils se rendent —
+         * et le projet s'interdit d'employer un glyphe comme icône
+         * fonctionnelle. Un tracé porte la même idée, à la même taille, dans la
+         * couleur du thème.
+         *
+         * Chaque silhouette évoque la disposition du composant : un logo
+         * horizontal montre une marque suivie d'un texte, un empilé les montre
+         * l'un au-dessus de l'autre.
+         */
+        function shape(body) {
+          return (
+            '<svg class="icon shape" viewBox="0 0 48 24" fill="none" ' +
+            'stroke="currentColor" stroke-width="1.5" stroke-linecap="round" ' +
+            'stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+            body +
+            '</svg>'
+          )
+        }
+
+        /** Barre pleine, qui tient lieu de ligne de texte. */
+        function bar(x, y, width, height) {
+          return (
+            '<rect x="' + x + '" y="' + y + '" width="' + width +
+            '" height="' + height + '" rx="1" fill="currentColor" stroke="none" />'
+          )
+        }
+
+        var TYPE_SHAPES = {
+          // Marque et texte, côte à côte : la disposition la plus courante.
+          logo: shape(
+            '<circle cx="12" cy="12" r="6" />' + bar(23, 9, 16, 2.5) + bar(23, 14, 11, 2)
+          ),
+          // La marque seule.
+          logoMark: shape('<circle cx="24" cy="12" r="7" /><circle cx="24" cy="12" r="2.5" />'),
+          // Le texte seul.
+          logotype: shape(bar(10, 9, 28, 3) + bar(10, 14.5, 19, 2.5)),
+          tagline: shape(bar(10, 8, 28, 3) + bar(10, 14, 28, 1.5) + bar(10, 17.5, 18, 1.5)),
+          horizontal: shape(
+            '<rect x="9" y="7" width="10" height="10" rx="1" />' + bar(23, 10.5, 16, 3)
+          ),
+          vertical: shape(
+            '<rect x="19" y="3" width="10" height="10" rx="1" />' + bar(16, 17, 16, 3)
+          ),
+          stacked: shape(
+            '<circle cx="24" cy="7" r="4.5" />' + bar(14, 15, 20, 2.5) + bar(18, 19.5, 12, 2)
+          ),
+          compact: shape(
+            '<rect x="14" y="7" width="9" height="10" rx="1" />' + bar(26, 10.5, 8, 3)
+          ),
+          monogram: shape(
+            '<rect x="16" y="4" width="16" height="16" rx="2" />' + bar(21, 10, 6, 4)
+          ),
+          symbol: shape(
+            '<path d="M24 4 32 12 24 20 16 12Z" /><path d="M24 9.5 26.5 12 24 14.5 21.5 12Z" />'
+          ),
+          wordmark: shape(bar(6, 10, 36, 4)),
+          // Un favicon est carré et minuscule : la silhouette le dit.
+          favicon: shape(
+            '<rect x="19" y="7" width="10" height="10" rx="1.5" />' +
+              '<circle cx="24" cy="12" r="2" fill="currentColor" stroke="none" />'
+          ),
+          socialAvatar: shape(
+            '<circle cx="24" cy="12" r="8" /><circle cx="24" cy="9.5" r="2.5" />' +
+              '<path d="M19 18a5 5 0 0 1 10 0" />'
+          ),
+          custom: shape(
+            '<rect x="14" y="6" width="20" height="12" rx="2" stroke-dasharray="3 2.5" />'
+          )
+        }
+
+        /** Silhouette d'un type, ou celle du type libre à défaut. */
+        function typeShape(type) {
+          return TYPE_SHAPES[type] || TYPE_SHAPES.custom
+        }
+
+        /**
+         * Traductions du panneau.
+         *
+         * **Portée assumée.** Le panneau est écrit en français ; ce tableau
+         * couvre la navigation et les actions principales, pas l'intégralité
+         * de l'interface. Ce qui n'y figure pas reste en français, y compris
+         * en anglais — un mélange visible vaut mieux qu'une traduction
+         * partielle qu'on croirait complète. La liste des clés dit exactement
+         * ce qui est couvert.
+         */
+        var TRANSLATIONS = {
+          fr: {
+            components: 'Composants',
+            colors: 'Couleurs',
+            preflight: 'Contrôle',
+            settings: 'Réglages',
+            diagnostics: 'Diagnostics',
+            export: 'Exporter les logos',
+            set_component: 'Définir le composant',
+            reassign: 'Réassigner',
+            create_board: 'Créer la planche',
+            no_doc: 'Aucun document ouvert',
+            open_doc: 'Ouvrez votre logo dans Illustrator.',
+            select_then: 'Sélectionnez un objet, puis « Définir le composant ».',
+            full_color: 'Couleur',
+            black: 'Noir',
+            white: 'Blanc',
+            inverted: 'Réserve',
+            grayscale: 'Niveaux de gris'
+          },
+          en: {
+            components: 'Components',
+            colors: 'Colors',
+            preflight: 'Preflight',
+            settings: 'Settings',
+            diagnostics: 'Diagnostics',
+            export: 'Export logos',
+            set_component: 'Set Component',
+            reassign: 'Reassign',
+            create_board: 'Create board',
+            no_doc: 'No document open',
+            open_doc: 'Open your logo in Illustrator.',
+            select_then: 'Select an object, then « Set Component ».',
+            full_color: 'Full Color',
+            black: 'Black',
+            white: 'White',
+            inverted: 'Inverted',
+            grayscale: 'Grayscale'
+          }
+        }
+
+        /** Langue active. Le français est la langue d'écriture du panneau. */
+        var language = 'fr'
+
+        /** Traduit une clé, ou rend le français à défaut. */
+        function t(key) {
+          var table = TRANSLATIONS[language] || TRANSLATIONS.fr
+          if (table[key] !== undefined) return table[key]
+          return TRANSLATIONS.fr[key] !== undefined ? TRANSLATIONS.fr[key] : key
+        }
+
+        /**
+         * Applique une langue au balisage marqué `data-t`.
+         *
+         * Les libellés construits en JavaScript passent par `t()` au moment du
+         * rendu ; ceux du balisage sont réécrits ici.
+         */
+        function applyTranslations(lang) {
+          language = TRANSLATIONS[lang] ? lang : 'fr'
+          var marked = document.querySelectorAll('[data-t]')
+          for (var i = 0; i < marked.length; i += 1) {
+            marked[i].innerHTML = escapeHtml(t(marked[i].getAttribute('data-t')))
+          }
+        }
+
+        /**
+         * Demande sa langue à Illustrator, et l'applique.
+         *
+         * `app.locale` rend `fr_FR`, `en_US`… Seules les deux premières
+         * lettres comptent ; une langue inconnue laisse le panneau en
+         * français, sa langue d'écriture.
+         */
+        function detectLanguage(done) {
+          engine.call('lfGetLocale', [], function (result) {
+            var locale = result.ok ? String(result.value) : ''
+            applyTranslations(locale.substring(0, 2).toLowerCase())
+            if (done) done()
+          })
+        }
+
         var COMPONENT_TYPES = [
           { id: 'logo', label: 'Logo principal' },
           { id: 'logoMark', label: 'Logo Mark' },
@@ -2712,12 +2886,12 @@
             card.innerHTML =
               '<p class="doc-name">' +
               escapeHtml(state.document.name) +
-              '</p><p class="doc-meta">Sélectionnez un objet, puis « Set Component ».</p>'
+              '</p><p class="doc-meta">' + escapeHtml(t('select_then')) + '</p>'
           } else {
             card.className = 'card empty'
             card.innerHTML =
-              '<p class="doc-name">Aucun document ouvert</p>' +
-              '<p class="doc-meta">Ouvrez votre logo dans Illustrator.</p>'
+              '<p class="doc-name">' + escapeHtml(t('no_doc')) + '</p>' +
+              '<p class="doc-meta">' + escapeHtml(t('open_doc')) + '</p>'
           }
         }
 
@@ -2747,9 +2921,9 @@
           }
           return (
             '<div class="comp-placeholder' +
-            (LF_BRAND.illustration ? ' brand' : '') +
+            (LF_BRAND.illustration ? ' brand' : ' typed') +
             '">' +
-            (LF_BRAND.illustration || ICONS.empty) +
+            (LF_BRAND.illustration || typeShape(component.type)) +
             '</div>'
           )
         }
@@ -2973,7 +3147,7 @@
               '"' +
               (isSet ? '' : ' style="border-color:#2680eb;background:#2680eb;color:#fff"') +
               '>' +
-              (isSet ? 'Réassigner' : 'Set Component') +
+              (isSet ? t('reassign') : t('set_component')) +
               '</button>' +
               componentActions(i, state.components.length) +
               '</div></div>'
@@ -2990,6 +3164,21 @@
           }
         }
 
+        /** Clé de traduction d'une déclinaison livrée. */
+        var SCHEME_KEYS = {
+          fullColor: 'full_color',
+          black: 'black',
+          white: 'white',
+          inverted: 'inverted',
+          grayscale: 'grayscale'
+        }
+
+        /** Libellé d'une déclinaison, dans la langue de l'hôte. */
+        function schemeLabelFor(scheme) {
+          var key = SCHEME_KEYS[scheme.id]
+          return key ? t(key) : scheme.label
+        }
+
         function renderSchemes() {
           var html = ''
           for (var i = 0; i < SCHEMES.length; i += 1) {
@@ -3000,7 +3189,7 @@
               '"' +
               (state.schemes[scheme.id] ? ' checked' : '') +
               ' /><span class="check-label">' +
-              scheme.label +
+              escapeHtml(schemeLabelFor(scheme)) +
               '</span><span class="bar" data-bar="' +
               scheme.id +
               '"></span></label>'
@@ -4100,7 +4289,7 @@
                 'Cellule ' + done + ' / ' + total + ' — ' + label
             },
             onDone: function (outcome) {
-              button.innerHTML = 'Créer la planche'
+              button.innerHTML = escapeHtml(t('create_board'))
               state.packageResult = outcome
               if (!outcome.ok && outcome.report.expected === 0) {
                 fail('construction de la planche', outcome.message, buildPackage)
@@ -5244,6 +5433,8 @@
           }
           renderAll()
           renderDestination()
+          // La langue vient de l'hôte : le panneau suit celle d'Illustrator.
+          detectLanguage(renderAll)
           refreshDocument()
           verifyComponents()
           readDocumentColors()

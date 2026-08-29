@@ -21,7 +21,7 @@ export async function run(browser) {
     window.__lfFail.lfSetComponent =
       'selectionnez un objet dans Illustrator avant de definir le composant'
   })
-  await page.locator('button:has-text("Set Component")').first().click()
+  await page.locator('[data-set]').first().click()
   await page.waitForTimeout(250)
 
   const fault = await page.locator('#messages .fault').innerText()

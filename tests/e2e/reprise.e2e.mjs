@@ -16,7 +16,7 @@ export async function run(browser) {
   const scenario = new Scenario(title)
   const { page, faults } = await openPanel(browser)
 
-  await page.locator('button:has-text("Set Component")').first().click()
+  await page.locator('[data-set]').first().click()
   await page.waitForTimeout(300)
   await page.click('#open-export')
   await page.waitForTimeout(150)
