@@ -1590,6 +1590,27 @@
           }
         }
 
+        /**
+         * Comme `guard`, mais pour le démarrage.
+         *
+         * Un échec y est particulier : il laisse le panneau inutilisable, et
+         * se répète à chaque ouverture tant que son état enregistré est en
+         * cause. Le recours est donc proposé sur place.
+         */
+        function startup(label, fn) {
+          try {
+            return fn()
+          } catch (error) {
+            showError('Erreur — ' + label + ' :', describe(error))
+            try {
+              offerReset()
+            } catch (inner) {
+              /* le bouton est un secours, pas une obligation */
+            }
+            return null
+          }
+        }
+
         if (typeof LogoForgeEngine === 'undefined') {
           showError(
             'Moteur introuvable :',
@@ -1826,6 +1847,15 @@
           'updatedAt',
         ]
 
+        /** Champs de composant qui servent à un calcul, et doivent être des nombres. */
+        var NUMERIC_COMPONENT_FIELDS = {
+          width: true,
+          height: true,
+          copied: true,
+          refused: true,
+          bytes: true,
+        }
+
         /**
          * Enregistre le projet.
          *
@@ -1874,6 +1904,41 @@
         }
 
         /**
+         * Vérifie qu'une valeur relue a bien la forme attendue.
+         *
+         * Le stockage local est modifiable de l'extérieur, et un
+         * enregistrement d'une version intermédiaire peut porter n'importe
+         * quoi. Sans ce filtre, un `formats` devenu chaîne faisait échouer le
+         * démarrage — et l'échec se reproduisait à chaque ouverture, le
+         * panneau restant bloqué tant que le stockage n'était pas vidé à la
+         * main.
+         */
+        function wellFormed(key, value) {
+          var expected = PERSISTED_SETTINGS[key]
+
+          if (expected === null) {
+            // Structures : un objet, jamais un tableau — sauf les échelles,
+            // qui en sont un.
+            if (typeof value !== 'object') return false
+            var isArray =
+              Object.prototype.toString.call(value) === '[object Array]'
+            if (key === 'scales') return isArray
+            if (isArray) return false
+            if (key === 'formats') {
+              return (
+                typeof value.print === 'object' &&
+                value.print !== null &&
+                typeof value.web === 'object' &&
+                value.web !== null
+              )
+            }
+            return true
+          }
+
+          return typeof value === typeof expected
+        }
+
+        /**
          * Relit le projet enregistré.
          *
          * Un enregistrement d'une autre version, illisible ou incohérent est
@@ -1894,6 +1959,10 @@
                 if (!PERSISTED_SETTINGS.hasOwnProperty(key)) continue
                 var value = saved.settings[key]
                 if (value === undefined || value === null) continue
+                // Un enregistrement abîmé ne doit pas rendre le panneau
+                // inutilisable : une valeur qui n'a pas la forme attendue est
+                // écartée, et le réglage repart de sa valeur par défaut.
+                if (!wellFormed(key, value)) continue
                 state[key] = value
               }
             }
@@ -1903,10 +1972,19 @@
               for (var i = 0; i < saved.components.length; i += 1) {
                 var entry = saved.components[i]
                 if (!entry || !entry.name) continue
+                if (typeof entry.name !== 'string') continue
                 var component = newComponent(entry.name, entry.type)
                 for (var f = 0; f < PERSISTED_COMPONENT.length; f += 1) {
                   var field = PERSISTED_COMPONENT[f]
-                  if (entry[field] !== undefined) component[field] = entry[field]
+                  if (entry[field] === undefined) continue
+                  // Les dimensions relues servent à un calcul : une chaîne y
+                  // afficherait « NaN pt » sur la carte.
+                  if (NUMERIC_COMPONENT_FIELDS[field]) {
+                    var number = parseFloat(entry[field])
+                    component[field] = isNaN(number) ? 0 : number
+                    continue
+                  }
+                  component[field] = entry[field]
                 }
                 component.thumbnail = readImageAsDataUri(entry.thumbnailPath)
                 restored.push(component)
@@ -2003,8 +2081,10 @@
             if (!window.localStorage) return
             window.localStorage.setItem(RUN_KEY, JSON.stringify(snapshot))
           } catch (error) {
-            // Stockage saturé : le lot continue, la reprise sera seulement
-            // impossible. Le signaler ici interromprait un export en cours.
+            // Stockage saturé : le lot continue — l'interrompre pour cela
+            // serait pire. Mais la reprise deviendra impossible, et le
+            // designer doit l'apprendre à la fin du lot, pas le découvrir
+            // après une panne.
             state.runTraceLost = true
           }
         }
@@ -2209,8 +2289,24 @@
          * Aides
          * ---------------------------------------------------------------- */
 
+        /** Éléments réclamés mais absents du document. */
+        var missingElements = []
+
+        /**
+         * Retrouve un élément par son identifiant.
+         *
+         * Le panneau câble ses gestionnaires au chargement, hors de tout
+         * garde-fou : un seul élément manquant y levait une exception qui
+         * arrêtait le script en silence, écran vide et aucun message. Un
+         * élément absent rend donc ici un substitut inerte — le reste du
+         * panneau continue de fonctionner — et l'absence est signalée à la
+         * fin du démarrage plutôt que dissimulée.
+         */
         function byId(id) {
-          return document.getElementById(id)
+          var element = document.getElementById(id)
+          if (element) return element
+          if (missingElements.indexOf(id) < 0) missingElements.push(id)
+          return document.createElement('div')
         }
 
         function escapeHtml(text) {
@@ -4821,6 +4917,12 @@
                   engine.formatBytes(engine.totalBytes(result.written))
 
                 var html = ''
+                if (state.runTraceLost) {
+                  html +=
+                    '<p class="notice error">Ce lot n a pas pu être suivi : ' +
+                    'le stockage du panneau est saturé. En cas d interruption, ' +
+                    'la reprise n aurait pas été proposée.</p>'
+                }
                 var reserves = engine.countWarnings(result.written)
                 var errors = engine.countFailures(result.failures)
                 var ignored = (result.skipped || []).length
@@ -4905,7 +5007,35 @@
           }
         }
 
-        guard('démarrage', function () {
+        /**
+         * Propose de repartir des réglages par défaut.
+         *
+         * Un démarrage qui échoue se reproduit à chaque ouverture : sans cette
+         * porte de sortie, le seul recours serait de vider le stockage local
+         * à la main, ce qu'un designer n'a aucune raison de savoir faire.
+         */
+        function offerReset() {
+          var host = document.getElementById('fatal')
+          if (!host || document.getElementById('forget-project')) return
+          var button = document.createElement('button')
+          button.id = 'forget-project'
+          button.setAttribute(
+            'style',
+            'margin-top:8px;padding:6px 10px;border:1px solid #6b6b6b;' +
+              'border-radius:4px;background:#3b3b3b;color:#e3e3e3;cursor:pointer'
+          )
+          button.appendChild(
+            document.createTextNode('Repartir des réglages par défaut')
+          )
+          button.onclick = function () {
+            forgetProject()
+            forgetRun()
+            window.location.reload()
+          }
+          host.appendChild(button)
+        }
+
+        startup('démarrage', function () {
           byId('open-settings').innerHTML = ICONS.settings
           byId('refresh').innerHTML = ICONS.refresh
           restoreProject()
@@ -4928,6 +5058,17 @@
           readDocumentColors()
           lookForInterruptedRun()
           timer = setInterval(poll, POLL_MS)
+
+          // Un élément manquant n'arrête plus le démarrage : il est dit.
+          if (missingElements.length) {
+            showError(
+              'Interface incomplète :',
+              'Éléments absents du panneau — ' +
+                missingElements.join(', ') +
+                '\nCes commandes resteront sans effet.'
+            )
+            offerReset()
+          }
         })
       })()
     </script>

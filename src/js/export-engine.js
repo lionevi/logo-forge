@@ -148,6 +148,10 @@ var LogoForgeEngine = (function () {
     text = text.replace(/"/g, '\\"')
     text = text.replace(/[\r]/g, '\\r')
     text = text.replace(/[\n]/g, '\\n')
+    // U+2028 et U+2029 terminent une ligne pour un moteur ES3 : laissés tels
+    // quels dans un littéral, ils le coupent en deux.
+    text = text.replace(/\u2028/g, '\\u2028')
+    text = text.replace(/\u2029/g, '\\u2029')
     return '"' + text + '"'
   }
 
@@ -172,12 +176,43 @@ var LogoForgeEngine = (function () {
    * Appelle une fonction ExtendScript.
    * @param callback reçoit `{ok: boolean, value: string}`.
    */
+  /**
+   * Délai au-delà duquel un appel sans réponse est déclaré perdu.
+   *
+   * Illustrator peut ne jamais rappeler : une boîte de dialogue modale
+   * ouverte par un script, un plantage de l'hôte, et le panneau attendrait
+   * indéfiniment un bouton grisé à l'écran. Trois minutes laissent passer
+   * l'enregistrement d'un gros PDF, et bornent l'attente.
+   */
+  var CALL_TIMEOUT_MS = 180000
+
   function call(fn, args, callback) {
     var parts = []
     for (var i = 0; i < args.length; i += 1) parts.push(quote(args[i]))
     var expression = fn + '(' + parts.join(',') + ')'
 
+    // Un appel ne se règle qu'une fois : ni la réponse tardive d'un appel
+    // déclaré perdu, ni un hôte qui rappellerait deux fois ne doivent
+    // relancer la suite du lot.
+    var settled = false
+    var watchdog = setTimeout(function () {
+      if (settled) return
+      settled = true
+      log(fn, '', 'fail', 'aucune reponse', CALL_TIMEOUT_MS)
+      callback({
+        ok: false,
+        value:
+          fn +
+          ' est reste sans reponse pendant ' +
+          Math.round(CALL_TIMEOUT_MS / 1000) +
+          ' s',
+      })
+    }, CALL_TIMEOUT_MS)
+
     evalScript(expression, function (raw) {
+      if (settled) return
+      settled = true
+      clearTimeout(watchdog)
       var text = raw === undefined || raw === null ? '' : String(raw)
 
       // Une erreur du moteur ExtendScript remonte sous cette forme littérale.
@@ -3555,6 +3590,7 @@ var LogoForgeEngine = (function () {
     socialSettings: socialSettings,
     planSocialKit: planSocialKit,
     runSocialKit: runSocialKit,
+    CALL_TIMEOUT_MS: CALL_TIMEOUT_MS,
     JOB_STATUS: JOB_STATUS,
     SNAPSHOT_VERSION: SNAPSHOT_VERSION,
     taskKey: taskKey,

@@ -901,3 +901,18 @@ describe('kit réseaux sociaux', () => {
     expect(SCRIPT).toMatch(/PERSISTED_SETTINGS = \{[\s\S]*social: null/)
   })
 })
+
+describe('conditions dégradées', () => {
+  it('ne meurt pas sur un élément d’interface manquant', () => {
+    // Les gestionnaires sont câblés hors de tout garde-fou : une exception y
+    // arrêtait le script en silence, écran vide et aucun message.
+    const block = SCRIPT.slice(SCRIPT.indexOf('function byId('))
+    expect(block.slice(0, 400)).toContain('missingElements')
+    expect(block.slice(0, 400)).toContain("document.createElement('div')")
+  })
+
+  it('signale les éléments absents au lieu de les taire', () => {
+    expect(SCRIPT).toContain('Interface incomplète')
+    expect(SCRIPT).toContain('missingElements.join')
+  })
+})
