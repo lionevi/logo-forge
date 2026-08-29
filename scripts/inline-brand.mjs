@@ -53,7 +53,75 @@ export function prepareSvg(source) {
     ? tag
     : tag.replace(/^<svg\b/i, '<svg class="lf-icon"')
 
-  return { markup: withClass + stripped.slice(open[0].length), reason: '' }
+  const body = stripped.slice(open[0].length)
+  const palette = colorsUsed(body)
+  const monochrome = palette.length <= 1
+
+  return {
+    markup: withClass + (monochrome ? followTheme(body) : body),
+    monochrome,
+    palette,
+    reason: '',
+  }
+}
+
+/**
+ * Couleurs explicites d'un SVG, attributs et feuille de style confondus.
+ *
+ * Les valeurs sans couleur propre — `none`, `currentColor`, un dégradé — sont
+ * ignorées : elles ne décident de rien.
+ */
+export function colorsUsed(markup) {
+  const found = {}
+  const record = (value) => {
+    const color = String(value).trim().toLowerCase()
+    if (!color) return
+    if (color === 'none' || color === 'currentcolor' || color === 'transparent') return
+    if (color.indexOf('url(') === 0) return
+    found[color] = true
+  }
+
+  const attribute = /\s(?:fill|stroke)\s*=\s*"([^"]*)"/gi
+  let match = attribute.exec(markup)
+  while (match) {
+    record(match[1])
+    match = attribute.exec(markup)
+  }
+
+  // Un export d'Illustrator range ses couleurs dans un `<style>` :
+  // `.cls-1 { fill: #231f20; }`. Elles comptent autant que les attributs.
+  const declaration = /(?:fill|stroke)\s*:\s*([^;}"']+)/gi
+  match = declaration.exec(markup)
+  while (match) {
+    record(match[1])
+    match = declaration.exec(markup)
+  }
+
+  return Object.keys(found)
+}
+
+/**
+ * Fait suivre le thème à un tracé monochrome.
+ *
+ * La couleur unique est remplacée par `currentColor` — et non retirée : ôter
+ * un `stroke` le ramènerait à `none` et effacerait le tracé. Une marque
+ * polychrome n'est jamais touchée : l'aplatir serait la défigurer.
+ */
+export function followTheme(markup) {
+  const keep = /^(none|currentcolor|transparent)$/i
+  return markup
+    .replace(
+      /(\s(?:fill|stroke)\s*=\s*")([^"]*)(")/gi,
+      (whole, before, value, after) =>
+        keep.test(value.trim()) || value.trim().indexOf('url(') === 0
+          ? whole
+          : before + 'currentColor' + after,
+    )
+    .replace(/((?:fill|stroke)\s*:\s*)([^;}"']+)/gi, (whole, before, value) =>
+      keep.test(value.trim()) || value.trim().indexOf('url(') === 0
+        ? whole
+        : before + 'currentColor',
+    )
 }
 
 /** Lit les SVG déposés, et rend l'objet à insérer plus le journal du tri. */
@@ -69,13 +137,20 @@ export function collectBrand(assetsDir) {
       notes.push(`${name} — nom inconnu, ignoré`)
       continue
     }
-    const { markup, reason } = prepareSvg(readFileSync(join(assetsDir, name), 'utf8'))
+    const result = prepareSvg(readFileSync(join(assetsDir, name), 'utf8'))
+    const markup = result.markup
     if (!markup) {
-      notes.push(`${name} — écarté : ${reason}`)
+      notes.push(`${name} — écarté : ${result.reason}`)
       continue
     }
     brand[key] = markup
-    notes.push(`${name} — intégré (${markup.length} octets)`)
+    notes.push(
+      `${name} — intégré (${markup.length} octets, ` +
+        (result.monochrome
+          ? 'monochrome : suit le thème'
+          : `${result.palette.length} couleurs conservées`) +
+        ')',
+    )
   }
   return { brand, notes }
 }

@@ -18,6 +18,7 @@ import {
   BRAND_FILES,
   MARKER,
   collectBrand,
+  colorsUsed,
   inlineBrand,
   prepareSvg,
 } from '../scripts/inline-brand.mjs'
@@ -85,13 +86,66 @@ describe('préparation d’un SVG', () => {
     expect(reason).toContain('<svg>')
   })
 
-  it('préserve la couleur propre d’un tracé', () => {
-    // Un logo polychrome ne doit pas être aplati par `currentColor`.
-    const { markup } = prepareSvg(
-      '<svg viewBox="0 0 1 1"><path fill="#2680eb" d="M0 0h1v1H0z"/></svg>',
+  it('préserve les couleurs d’une marque polychrome', () => {
+    // L'aplatir par `currentColor` la défigurerait.
+    const { markup, monochrome } = prepareSvg(
+      '<svg viewBox="0 0 1 1"><path fill="#2680eb" d="M0 0h1v1H0z"/>' +
+        '<path fill="#e34850" d="M1 0h1v1H1z"/></svg>',
     )
 
+    expect(monochrome).toBe(false)
     expect(markup).toContain('fill="#2680eb"')
+    expect(markup).toContain('fill="#e34850"')
+  })
+
+  it('fait suivre le thème à une marque monochrome', () => {
+    // Une marque noire sur le fond #252525 du panneau serait invisible.
+    const { markup, monochrome } = prepareSvg(
+      '<svg viewBox="0 0 1 1"><path fill="#000000" d="M0 0h1v1H0z"/>' +
+        '<circle fill="#000000" cx="1" cy="1" r="1"/></svg>',
+    )
+
+    expect(monochrome).toBe(true)
+    expect(markup).not.toContain('#000000')
+    expect(markup!.match(/currentColor/g)).toHaveLength(2)
+  })
+
+  it('atteint les couleurs rangées dans un bloc style', () => {
+    // C'est la forme qu'exporte Illustrator : `.cls-1 { fill: #231f20; }`.
+    const { markup } = prepareSvg(
+      '<svg viewBox="0 0 1 1"><defs><style>.cls-1{fill:#231f20;}</style></defs>' +
+        '<path class="cls-1" d="M0 0h1v1H0z"/></svg>',
+    )
+
+    expect(markup).toContain('.cls-1{fill:currentColor;}')
+    expect(markup).not.toContain('#231f20')
+  })
+
+  it('ne transforme jamais « none » en couleur', () => {
+    // Un contour dont on retirerait la couleur retomberait à `none` et le
+    // tracé disparaîtrait ; un remplissage `none` doit le rester.
+    const { markup } = prepareSvg(
+      '<svg viewBox="0 0 1 1"><path fill="none" stroke="#231f20" d="M0 0h1"/></svg>',
+    )
+
+    expect(markup).toContain('fill="none"')
+    expect(markup).toContain('stroke="currentColor"')
+  })
+
+  it('laisse un dégradé à son motif', () => {
+    const { markup } = prepareSvg(
+      '<svg viewBox="0 0 1 1"><path fill="url(#g)" d="M0 0h1v1H0z"/></svg>',
+    )
+
+    expect(markup).toContain('fill="url(#g)"')
+  })
+
+  it('relève les couleurs, attributs et feuille de style confondus', () => {
+    const colors = colorsUsed(
+      '<style>.a{fill:#111;}</style><path stroke="#222" fill="none"/>',
+    )
+
+    expect(colors.sort()).toEqual(['#111', '#222'])
   })
 })
 
@@ -102,6 +156,12 @@ describe('collecte', () => {
 
     expect(Object.keys(brand)).toEqual(['icon'])
     expect(brand.icon).toContain('lf-icon')
+  })
+
+  it('dit si la marque suivra le thème ou gardera ses couleurs', () => {
+    const dir = assetsWith({ 'Icone-LF.svg': ICON })
+
+    expect(collectBrand(dir).notes.join(' ')).toContain('suit le thème')
   })
 
   it('dit ce qu’elle écarte, et pourquoi', () => {

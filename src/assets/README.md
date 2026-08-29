@@ -16,13 +16,23 @@ aujourd'hui, sans erreur ni trou. `npm run build` suffit après dépôt.
 
 ## Couleur
 
-La racine `<svg>` reçoit `class="lf-icon"`, et la feuille de style pose
-`fill: currentColor`. Sur le fond sombre du panneau (`#252525`, texte
-`#e3e3e3`), un tracé sans `fill` propre devient donc clair de lui-même.
+Le fond du panneau est sombre (`#252525`, texte `#e3e3e3`). Une marque noire
+y serait invisible — et un export d'Illustrator porte presque toujours ses
+couleurs en dur, soit en attributs (`fill="#231f20"`), soit dans un bloc
+`<style>` (`.cls-1 { fill: #231f20; }`), que `fill: currentColor` posé sur la
+racine ne peut pas surcharger.
 
-Un tracé qui porte son **propre** `fill` le garde : c'est voulu, un logo
-polychrome ne doit pas être aplati. Pour qu'une marque suive le thème,
-livrez-la sans attribut `fill`, ou avec `fill="currentColor"`.
+Le build tranche donc lui-même, et le dit à chaque construction :
+
+- **Marque monochrome** — une seule couleur dans tout le fichier : elle est
+  remplacée par `currentColor`, attributs et bloc `<style>` compris. La marque
+  suit le thème, claire sur fond sombre. C'est le cas des marques Logo Forge.
+- **Marque polychrome** — deux couleurs ou plus : rien n'est touché.
+  L'aplatir la défigurerait.
+
+`none`, `transparent` et les dégradés (`url(#…)`) ne sont jamais convertis :
+retirer la couleur d'un contour le ramènerait à `none` et effacerait le
+tracé.
 
 ## Contraintes
 
