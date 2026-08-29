@@ -26,8 +26,8 @@
     "package": "npm run build && tsx scripts/package-ccx.ts",
     "verify": "npm run lint && npm run typecheck && npm run check:jsx && npm run test && npm run build",
     "icons": "node scripts/generate-icons.ts",
-    "deploy:mac": "npm run build && sudo mkdir -p \"/Library/Application Support/Adobe/CEP/extensions/com.lionevi.logoforge\" && sudo cp -R dist/. \"/Library/Application Support/Adobe/CEP/extensions/com.lionevi.logoforge/\"",
-    "deploy:mac:user": "npm run build && mkdir -p \"$HOME/Library/Application Support/Adobe/CEP/extensions/com.lionevi.logoforge\" && cp -R dist/. \"$HOME/Library/Application Support/Adobe/CEP/extensions/com.lionevi.logoforge/\"",
+    "deploy:mac": "bash scripts/deploy-mac.sh",
+    "deploy:mac:user": "LF_USER_SCOPE=1 bash scripts/deploy-mac.sh",
     "deploy:win": "npm run build && node -e \"const{cpSync,mkdirSync}=require('node:fs');const d=process.env.APPDATA+'\\\\\\\\Adobe\\\\\\\\CEP\\\\\\\\extensions\\\\\\\\com.lionevi.logoforge';mkdirSync(d,{recursive:true});cpSync('dist',d,{recursive:true});console.log('copié vers '+d)\"",
     "test:e2e": "node tests/e2e/run.mjs",
     "check:jsx": "node scripts/check-jsx-es3.mjs"

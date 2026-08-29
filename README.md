@@ -80,9 +80,20 @@ npm ci
 npm run build          # produit dist/
 ```
 
-Copier `dist/` dans le dossier des extensions CEP, puis autoriser les
-extensions non signées — la marche à suivre, par système, est dans
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Le panneau apparaît sous
+Puis, sur macOS, avec Illustrator fermé :
+
+```bash
+npm run deploy:mac        # dossier système (demande sudo)
+npm run deploy:mac:user   # dossier utilisateur, sans privilèges
+```
+
+Le script construit, **remplace** le dossier d'extension, remet les
+permissions, puis compare les tailles déployées à celles de `dist/` et sort en
+erreur au moindre écart — deux pannes de ce projet venaient d'une copie
+partielle.
+
+Reste à autoriser les extensions non signées : la marche à suivre, par système,
+est dans [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Le panneau apparaît sous
 _Fenêtre → Extensions → Logo Forge_.
 
 ## Commandes
@@ -90,14 +101,16 @@ _Fenêtre → Extensions → Logo Forge_.
 | Commande                | Rôle                                             |
 | ----------------------- | ------------------------------------------------ |
 | `npm run build`         | Construit `dist/`                                |
-| `npm test`              | Suite complète (735 cas)                         |
+| `npm test`              | Suite complète (770 cas)                         |
 | `npm run test:e2e`      | Scénarios en navigateur sur le panneau construit |
 | `npm run test:coverage` | Couverture du cœur métier, seuils appliqués      |
 | `npm run lint`          | ESLint                                           |
 | `npm run typecheck`     | TypeScript strict, sans émission                 |
 | `npm run format:check`  | Vérification Prettier                            |
+| `npm run check:jsx`     | Compatibilité ExtendScript de `src/jsx/`         |
+| `npm run deploy:mac`    | Build, déploiement CEP et vérification (macOS)   |
 | `npm run package`       | Build puis archive `.ccx` dans `build/`          |
-| `npm run verify`        | Lint + typecheck + tests + build                 |
+| `npm run verify`        | Lint, typecheck, ES3, tests, build               |
 
 ## Documentation
 

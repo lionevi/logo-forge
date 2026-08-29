@@ -59,6 +59,24 @@ Les tests couvrent `src/core/` uniquement, et n'ont besoin ni de DOM ni
 d'Illustrator (`environment: 'node'`). Les seuils de couverture sont appliqués
 par `vitest.config.ts` : un cœur métier sous-testé fait échouer la CI.
 
+### Déploiement sur macOS
+
+```bash
+npm run deploy:mac        # /Library/…  (sudo)
+npm run deploy:mac:user   # ~/Library/… (sans privilèges)
+```
+
+`scripts/deploy-mac.sh` refuse de travailler si Illustrator est ouvert — une
+extension remplacée sous ses pieds laisse le panneau sur l'ancien code sans le
+dire, et c'est la moitié des faux diagnostics. Il construit, **remplace** le
+dossier (`rsync --delete`, pour qu'aucun fichier périmé ne subsiste), remet les
+permissions, puis compare taille par taille ce qui est arrivé à ce qui est
+parti. Au moindre écart il sort en erreur : une vérification qui ne peut pas
+échouer ne vérifie rien.
+
+`LF_EXT_DIR` permet de viser un autre dossier — utile pour éprouver le script
+sans toucher à l'installation.
+
 ### Compatibilité ExtendScript
 
 ```bash
