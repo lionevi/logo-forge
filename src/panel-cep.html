@@ -1114,6 +1114,7 @@
           </div>
         </div>
 
+        <div id="resume-run" style="display: none"></div>
         <div id="messages"></div>
       </div>
 
@@ -1688,6 +1689,9 @@
           docMessage: '',
           studio: { name: '', designer: '', email: '', website: '' },
           diagnostics: null,
+          // Lot interrompu retrouvé au démarrage, une fois vérifié sur disque.
+          resume: null,
+          runTraceLost: false,
           preflight: null,
           preflightMode: 'print',
           blockOnPreflight: false,
@@ -1926,6 +1930,140 @@
             if (window.localStorage) window.localStorage.removeItem(STORAGE_KEY)
           } catch (error) {
             /* stockage indisponible */
+          }
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Trace d'un lot interrompu
+         *
+         * Elle vit hors du projet : le projet décrit ce qu'on veut livrer, la
+         * trace ce qui a déjà été écrit. Effacer l'un ne doit pas effacer
+         * l'autre.
+         * ---------------------------------------------------------------- */
+
+        var RUN_KEY = 'logo-forge-run'
+
+        /** Enregistre la trace du lot en cours. */
+        function persistRun(snapshot) {
+          try {
+            if (!window.localStorage) return
+            window.localStorage.setItem(RUN_KEY, JSON.stringify(snapshot))
+          } catch (error) {
+            // Stockage saturé : le lot continue, la reprise sera seulement
+            // impossible. Le signaler ici interromprait un export en cours.
+            state.runTraceLost = true
+          }
+        }
+
+        /** Relit la trace laissée par un lot interrompu. */
+        function readRun() {
+          try {
+            if (!window.localStorage) return null
+            var raw = window.localStorage.getItem(RUN_KEY)
+            if (!raw) return null
+            var snapshot = JSON.parse(raw)
+            return snapshot && snapshot.done ? snapshot : null
+          } catch (error) {
+            return null
+          }
+        }
+
+        /** Oublie la trace : le lot est terminé, ou le designer y renonce. */
+        function forgetRun() {
+          try {
+            if (window.localStorage) window.localStorage.removeItem(RUN_KEY)
+          } catch (error) {
+            /* stockage indisponible */
+          }
+          state.resume = null
+        }
+
+        /**
+         * Cherche un lot à reprendre.
+         *
+         * La trace n'est proposée que si elle correspond au plan courant, et
+         * seulement après avoir confronté chaque fichier annoncé au disque :
+         * une trace qui ment ferait livrer un pack troué.
+         */
+        function lookForInterruptedRun() {
+          var snapshot = readRun()
+          if (!snapshot) return
+          if (!engine.snapshotMatches(snapshot, exportConfig())) {
+            // Le plan a changé depuis : cette trace ne s'y applique plus.
+            forgetRun()
+            renderResume()
+            return
+          }
+
+          engine.verifySnapshot(
+            snapshot,
+            function (path, done) {
+              engine.call('lfPathExists', [path], function (result) {
+                done(result.ok && result.value === '1')
+              })
+            },
+            function (checked) {
+              var total = 0
+              for (var key in checked.completed) {
+                if (checked.completed.hasOwnProperty(key)) total += 1
+              }
+              if (total === 0) {
+                // Aucun fichier retrouvé : rien à reprendre. La trace est
+                // gardée — l'hôte peut n'avoir simplement pas répondu, et
+                // l'effacer sur une sonde muette serait la perdre pour rien.
+                state.resume = null
+                renderResume()
+                return
+              }
+              state.resume = {
+                completed: checked.completed,
+                confirmed: total,
+                missing: checked.missing.length,
+                total: snapshot.total,
+              }
+              renderResume()
+            }
+          )
+        }
+
+        function renderResume() {
+          var host = byId('resume-run')
+          if (!host) return
+          var resume = state.resume
+
+          if (!resume) {
+            host.innerHTML = ''
+            host.style.display = 'none'
+            return
+          }
+
+          var remaining = resume.total - resume.confirmed
+          host.style.display = 'block'
+          host.innerHTML =
+            '<p class="notice"><b>Export interrompu.</b> ' +
+            escapeHtml(
+              resume.confirmed +
+                ' fichier(s) sur ' +
+                resume.total +
+                ' retrouvés sur le disque' +
+                (resume.missing
+                  ? ', ' + resume.missing + ' à réécrire'
+                  : '') +
+                ' — il en reste ' +
+                remaining +
+                ' à produire.'
+            ) +
+            ' <button class="link" id="do-resume">Reprendre</button>' +
+            '<button class="link" id="drop-resume">Repartir de zéro</button></p>'
+
+          byId('do-resume').onclick = function () {
+            guard('reprise', function () {
+              startExport(resume.completed)
+            })
+          }
+          byId('drop-resume').onclick = function () {
+            forgetRun()
+            renderResume()
           }
         }
 
@@ -3953,11 +4091,13 @@
         byId('want-favicon').onchange = function () {
           state.favicon = this.checked
           renderMessages()
+          persistProject()
         }
 
         byId('separator').onchange = function () {
           state.separator = this.value
           renderNamePreview()
+          persistProject()
         }
 
         byId('scale-list').onclick = function (event) {
@@ -4320,6 +4460,7 @@
               if (!path) return
               state.destination = path
               renderDestination()
+              persistProject()
             })
           })
         }
@@ -4327,15 +4468,18 @@
         byId('client-name').oninput = function () {
           state.clientName = this.value
           renderDestination()
+          persistProject()
         }
 
         byId('pass-print').onchange = function () {
           state.passes.print = this.checked
           renderDestination()
+          persistProject()
         }
         byId('pass-web').onchange = function () {
           state.passes.web = this.checked
           renderDestination()
+          persistProject()
         }
 
         byId('open-export').onclick = function () {
@@ -4411,17 +4555,29 @@
           renderAll()
         }
 
-        byId('start-export').onclick = function () {
-          guard('export', function () {
-            byId('export-veil').className = 'veil'
-            byId('progress-veil').className = 'veil on'
-            byId('progress-title').innerHTML = 'Export en cours'
-            byId('progress-live').style.display = 'block'
-            byId('done-panel').style.display = 'none'
-            byId('abort-export').style.display = 'block'
-            byId('progress-bar').style.width = '0'
+        /**
+         * Lance le lot.
+         *
+         * `completed` porte les fichiers déjà écrits d'un lot interrompu, une
+         * fois retrouvés sur le disque : ils ne sont pas réexportés, mais
+         * restent comptés dans le pack et soumis au contrôle final.
+         */
+        function startExport(completed) {
+          var config = exportConfig()
+          config.completed = completed || null
 
-            state.running = engine.runFullExport(exportConfig(), {
+          byId('export-veil').className = 'veil'
+          byId('progress-veil').className = 'veil on'
+          byId('progress-title').innerHTML = completed
+            ? 'Reprise de l export'
+            : 'Export en cours'
+          byId('progress-live').style.display = 'block'
+          byId('done-panel').style.display = 'none'
+          byId('abort-export').style.display = 'block'
+          byId('progress-bar').style.width = '0'
+
+          state.running = engine.runFullExport(config, {
+              onSnapshot: persistRun,
               onProgress: function (done, total, label) {
                 byId('progress-bar').style.width =
                   Math.round((done / total) * 100) + '%'
@@ -4431,6 +4587,16 @@
               onDone: function (result) {
                 state.running = null
                 state.lastResult = result
+
+                // La trace ne s'efface que si le pack est complet. Un lot
+                // interrompu la garde — mais un lot qui va au bout en laissant
+                // des échecs derrière lui aussi : ce sont précisément ces
+                // fichiers-là qu'une reprise doit reprendre.
+                if (!result.cancelled && engine.countFailures(result.failures) === 0) {
+                  forgetRun()
+                } else {
+                  lookForInterruptedRun()
+                }
 
                 byId('progress-title').innerHTML = result.cancelled
                   ? 'Export interrompu'
@@ -4492,7 +4658,12 @@
                 byId('export-error').innerHTML =
                   '<p class="notice error">' + escapeHtml(message) + '</p>'
               },
-            })
+          })
+        }
+
+        byId('start-export').onclick = function () {
+          guard('export', function () {
+            startExport(null)
           })
         }
 
@@ -4531,17 +4702,23 @@
           byId('refresh').innerHTML = ICONS.refresh
           restoreProject()
           applyRestoredSettings()
-          state.components = [
-            newComponent('Logo', 'logo'),
-            newComponent('Logo Mark', 'logoMark'),
-            newComponent('Logotype', 'logotype'),
-            newComponent('Stacked Logo', 'stacked'),
-          ]
+          // Les quatre composants par défaut ne sont qu'une amorce : un projet
+          // restauré a les siens, avec ses captures. Les écraser ici rendait
+          // la persistance des composants sans effet.
+          if (!state.components.length) {
+            state.components = [
+              newComponent('Logo', 'logo'),
+              newComponent('Logo Mark', 'logoMark'),
+              newComponent('Logotype', 'logotype'),
+              newComponent('Stacked Logo', 'stacked'),
+            ]
+          }
           renderAll()
           renderDestination()
           refreshDocument()
           verifyComponents()
           readDocumentColors()
+          lookForInterruptedRun()
           timer = setInterval(poll, POLL_MS)
         })
       })()

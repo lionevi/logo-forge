@@ -1039,30 +1039,149 @@ var LogoForgeEngine = (function () {
     skipped: 'skipped',
   }
 
+  /* ---------------------------------------------------------------------- *
+   * Reprise d'un lot interrompu
+   *
+   * Un export de deux cents fichiers qui meurt au cent-quarantième — panne
+   * d'Illustrator, panneau fermé, machine éteinte — ne doit pas obliger à tout
+   * refaire. Le lot laisse une trace après chaque fichier ; au redémarrage,
+   * cette trace est confrontée au disque avant d'être crue.
+   * ---------------------------------------------------------------------- */
+
+  var SNAPSHOT_VERSION = 1
+
+  /**
+   * Clé stable d'une tâche dans son lot.
+   *
+   * C'est le chemin relatif du fichier : deux tâches qui écrivent au même
+   * endroit sont la même tâche, quel que soit l'ordre du plan.
+   */
+  function taskKey(task) {
+    return task.folder + '/' + task.fileName
+  }
+
+  /**
+   * Empreinte d'un lot.
+   *
+   * Reprendre n'a de sens que si le plan n'a pas changé : ajouter une
+   * déclinaison ou changer de gabarit de nommage produit d'autres fichiers, et
+   * la trace de l'ancien lot ne s'y applique plus.
+   */
+  function runFingerprint(config) {
+    var parts = [
+      String(config.clientName || ''),
+      String(config.outputFolder || ''),
+      String(config.folderTemplate || ''),
+      String(config.nameTemplate || ''),
+      String(config.separator || '_'),
+      String(config.collision || 'overwrite'),
+    ]
+    var components = config.components || []
+    for (var i = 0; i < components.length; i += 1) {
+      parts.push('c:' + components[i].name + ':' + (components[i].path || ''))
+    }
+    var schemes = config.colorSchemes || []
+    for (var j = 0; j < schemes.length; j += 1) {
+      parts.push('s:' + schemes[j].id + ':' + (schemes[j].hex || ''))
+    }
+    var scales = config.scales || []
+    for (var k = 0; k < scales.length; k += 1) {
+      parts.push('z:' + scales[k].type + ':' + (scales[k].width || ''))
+    }
+    var formats = config.formats || {}
+    for (var pass in formats) {
+      if (!formats.hasOwnProperty(pass)) continue
+      for (var format in formats[pass]) {
+        if (!formats[pass].hasOwnProperty(format)) continue
+        if (formats[pass][format]) parts.push('f:' + pass + ':' + format)
+      }
+    }
+    if (config.favicon) parts.push('favicon')
+    return parts.join('|')
+  }
+
+  /**
+   * Trace d'un lot en cours.
+   *
+   * Volontairement maigre : elle est réécrite après chaque fichier, et doit
+   * tenir dans le stockage local du panneau sans le saturer.
+   */
+  function runSnapshot(config, root, total, done) {
+    return {
+      version: SNAPSHOT_VERSION,
+      fingerprint: runFingerprint(config),
+      root: root,
+      client: config.clientName || '',
+      outputFolder: config.outputFolder || '',
+      startedAt: new Date().getTime(),
+      total: total,
+      done: done,
+    }
+  }
+
+  /** Une trace ne vaut que pour le plan qui l'a produite. */
+  function snapshotMatches(snapshot, config) {
+    return !!(
+      snapshot &&
+      snapshot.version === SNAPSHOT_VERSION &&
+      snapshot.fingerprint === runFingerprint(config)
+    )
+  }
+
+  /**
+   * Confronte la trace au disque.
+   *
+   * Un fichier annoncé écrit mais absent — dossier déplacé, disque nettoyé —
+   * est réécrit : croire la trace sur parole reproduirait exactement le défaut
+   * que la vérification d'écriture a supprimé.
+   *
+   * @param exists `function(path, done)`, la sonde d'existence de l'hôte.
+   * @param done reçoit `{completed:{cle:octets}, missing:[cle], root}`.
+   */
+  function verifySnapshot(snapshot, exists, done) {
+    var entries = (snapshot && snapshot.done) || []
+    var completed = {}
+    var missing = []
+    var index = 0
+
+    function next() {
+      if (index >= entries.length) {
+        done({ completed: completed, missing: missing, root: snapshot.root })
+        return
+      }
+      var entry = entries[index]
+      index += 1
+      exists(joinPath(snapshot.root, entry.key.split('/')), function (present) {
+        if (present) completed[entry.key] = entry.bytes
+        else missing.push(entry.key)
+        next()
+      })
+    }
+
+    next()
+  }
+
+  /** Tâches restant à écrire, une fois la trace vérifiée. */
+  function remainingTasks(tasks, completed) {
+    var rest = []
+    for (var i = 0; i < tasks.length; i += 1) {
+      if (!completed.hasOwnProperty(taskKey(tasks[i]))) rest.push(tasks[i])
+    }
+    return rest
+  }
+
   function runFullExport(config, handlers) {
     var startedAt = new Date().getTime()
     var template = folderTemplate(config.folderTemplate)
-    var tasks = planExport(config)
-    log(
-      'EXPORT_START',
-      tasks.length +
-        ' fichiers · ' +
-        config.components.length +
-        ' composants · ' +
-        config.colorSchemes.length +
-        ' declinaisons',
-      'ok'
-    )
+    var plan = planExport(config)
     var root = joinPath(config.outputFolder, [sanitize(config.clientName)])
 
     // Une tâche porte son état et sa trace : le rapport final décrit ce qui
     // s'est passé, pas ce qu'on avait prévu.
-    var jobs = []
-    for (var j = 0; j < tasks.length; j += 1) {
-      tasks[j].status = JOB_STATUS.pending
-      tasks[j].bytes = 0
-      tasks[j].warnings = []
-      jobs.push(tasks[j])
+    for (var j = 0; j < plan.length; j += 1) {
+      plan[j].status = JOB_STATUS.pending
+      plan[j].bytes = 0
+      plan[j].warnings = []
     }
 
     var written = []
@@ -1070,6 +1189,49 @@ var LogoForgeEngine = (function () {
     var skipped = []
     var cancelled = false
     var index = 0
+
+    // Reprise : les fichiers déjà écrits et retrouvés sur le disque entrent
+    // directement au crédit du lot. Ils restent soumis au contrôle final, qui
+    // relit le dossier livré — la reprise ne dispense de rien.
+    var completed = config.completed || {}
+    var doneEntries = []
+    for (var r = 0; r < plan.length; r += 1) {
+      var key = taskKey(plan[r])
+      if (!completed.hasOwnProperty(key)) continue
+      plan[r].status = JOB_STATUS.success
+      plan[r].bytes = completed[key]
+      plan[r].resumed = true
+      written.push(plan[r])
+      doneEntries.push({ key: key, bytes: completed[key] })
+    }
+    var resumedCount = written.length
+    var tasks = remainingTasks(plan, completed)
+
+    log(
+      'EXPORT_START',
+      plan.length +
+        ' fichiers · ' +
+        config.components.length +
+        ' composants · ' +
+        config.colorSchemes.length +
+        ' declinaisons' +
+        (resumedCount ? ' · reprise apres ' + resumedCount : ''),
+      'ok'
+    )
+
+    /**
+     * Consigne un fichier écrit, et publie la trace du lot.
+     *
+     * Après chaque fichier, pas à la fin : une trace qui n'existerait qu'à la
+     * fin ne servirait jamais, puisqu'un lot qui va jusqu'au bout n'a rien à
+     * reprendre.
+     */
+    function note(task) {
+      doneEntries.push({ key: taskKey(task), bytes: task.bytes })
+      if (handlers.onSnapshot) {
+        handlers.onSnapshot(runSnapshot(config, root, plan.length, doneEntries))
+      }
+    }
 
     /** Contexte courant, pour n'agir que sur les changements. */
     var current = { pass: null, component: null, scheme: null }
@@ -1234,7 +1396,8 @@ var LogoForgeEngine = (function () {
           durationMs: new Date().getTime() - startedAt,
           documentName: config.sourceName || '',
           root: root,
-          total: tasks.length,
+          total: plan.length,
+          resumed: resumedCount,
         }
 
         var reportPath = joinPath(root, [
@@ -1326,6 +1489,7 @@ var LogoForgeEngine = (function () {
           ? JOB_STATUS.warning
           : JOB_STATUS.success
         written.push(task)
+        note(task)
         // `setTimeout` rend la main au navigateur : sans lui, la barre de
         // progression resterait figée pendant tout le lot.
         setTimeout(step, 0)
@@ -1451,7 +1615,7 @@ var LogoForgeEngine = (function () {
       runTask(task)
     }
 
-    if (tasks.length === 0) {
+    if (plan.length === 0) {
       handlers.onError(
         'Rien a exporter : definissez au moins un composant, une couleur et un format.'
       )
@@ -1460,7 +1624,7 @@ var LogoForgeEngine = (function () {
 
     createDirectories(
       root,
-      planDirectories(tasks, template.report),
+      planDirectories(plan, template.report),
       function (folderError) {
         if (folderError) {
           handlers.onError(folderError)
@@ -3019,6 +3183,13 @@ var LogoForgeEngine = (function () {
     countWarnings: countWarnings,
     countFailures: countFailures,
     JOB_STATUS: JOB_STATUS,
+    SNAPSHOT_VERSION: SNAPSHOT_VERSION,
+    taskKey: taskKey,
+    runFingerprint: runFingerprint,
+    runSnapshot: runSnapshot,
+    snapshotMatches: snapshotMatches,
+    verifySnapshot: verifySnapshot,
+    remainingTasks: remainingTasks,
     COLLISION_POLICIES: COLLISION_POLICIES,
     versionedName: versionedName,
     resolveCollision: resolveCollision,

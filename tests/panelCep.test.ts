@@ -573,7 +573,10 @@ describe("portée d'export", () => {
   it('applique la portée au plan, pas aux réglages globaux', () => {
     expect(SCRIPT).toContain('function exportConfig(')
     expect(SCRIPT).toContain('engine.planExport(exportConfig())')
-    expect(SCRIPT).toContain('engine.runFullExport(exportConfig()')
+    // L'export part de la configuration lue à l'écran, éventuellement
+    // complétée des fichiers déjà écrits d'un lot repris.
+    expect(SCRIPT).toContain('var config = exportConfig()')
+    expect(SCRIPT).toContain('engine.runFullExport(config, {')
     // La planche de revue reste hors portée : elle montre tout le projet.
     expect(SCRIPT).toContain('engine.runPackageBuild(buildConfig()')
   })
@@ -785,5 +788,68 @@ describe('diagnostics et journal', () => {
 
   it('borne l’extrait affiché', () => {
     expect(SCRIPT).toMatch(/i < history\.length && i < \d+/)
+  })
+})
+
+describe('reprise d’un export interrompu', () => {
+  it('laisse une trace après chaque fichier écrit', () => {
+    expect(SCRIPT).toContain('onSnapshot: persistRun')
+    expect(SCRIPT).toContain("var RUN_KEY = 'logo-forge-run'")
+  })
+
+  it('range la trace hors du projet', () => {
+    // Oublier le projet ne doit pas faire perdre un lot en cours, ni l'inverse.
+    expect(SCRIPT).toContain('window.localStorage.removeItem(RUN_KEY)')
+    expect(SCRIPT).toContain('window.localStorage.removeItem(STORAGE_KEY)')
+    expect(SCRIPT).not.toContain('RUN_KEY = STORAGE_KEY')
+  })
+
+  it('confronte la trace au disque avant de proposer quoi que ce soit', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function lookForInterruptedRun('))
+    expect(block.slice(0, 1200)).toContain('engine.verifySnapshot(')
+    expect(block.slice(0, 1200)).toContain("'lfPathExists'")
+  })
+
+  it('écarte une trace qui ne correspond plus au plan', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function lookForInterruptedRun('))
+    expect(block.slice(0, 600)).toContain('engine.snapshotMatches(')
+    expect(block.slice(0, 600)).toContain('forgetRun()')
+  })
+
+  it('ne jette pas la trace sur une sonde muette', () => {
+    // Zéro fichier retrouvé peut vouloir dire « hôte absent », pas « rien ».
+    const block = SCRIPT.slice(SCRIPT.indexOf('if (total === 0) {'))
+    expect(block.slice(0, 300)).toContain('state.resume = null')
+    expect(block.slice(0, 300)).not.toContain('forgetRun()')
+  })
+
+  it('dit combien de fichiers restent, et laisse le choix', () => {
+    expect(HTML).toContain('id="resume-run"')
+    expect(SCRIPT).toContain('Export interrompu.')
+    expect(SCRIPT).toContain('id="do-resume"')
+    expect(SCRIPT).toContain('id="drop-resume"')
+  })
+
+  it('n’oublie la trace que si le pack est complet', () => {
+    expect(SCRIPT).toContain(
+      'if (!result.cancelled && engine.countFailures(result.failures) === 0)',
+    )
+  })
+
+  it('garde la trace d’un lot qui laisse des échecs derrière lui', () => {
+    // Aller au bout du plan ne veut pas dire avoir tout écrit : ce sont
+    // justement ces fichiers-là qu'une reprise doit reprendre.
+    const block = SCRIPT.slice(
+      SCRIPT.indexOf('if (!result.cancelled && engine.countFailures'),
+    )
+    expect(block.slice(0, 300)).toContain('lookForInterruptedRun()')
+  })
+
+  it('ne réamorce pas un projet restauré avec les composants par défaut', () => {
+    // Sans cette garde, la persistance des composants n'avait aucun effet.
+    const block = SCRIPT.slice(
+      SCRIPT.indexOf('restoreProject()\n          applyRestoredSettings()'),
+    )
+    expect(block.slice(0, 700)).toContain('if (!state.components.length) {')
   })
 })
