@@ -59,6 +59,34 @@ Les tests couvrent `src/core/` uniquement, et n'ont besoin ni de DOM ni
 d'Illustrator (`environment: 'node'`). Les seuils de couverture sont appliqués
 par `vitest.config.ts` : un cœur métier sous-testé fait échouer la CI.
 
+### Scénarios de bout en bout
+
+```bash
+npm run build && npm run test:e2e
+```
+
+Ces scénarios (`tests/e2e/`) ouvrent le panneau **construit** dans Chromium,
+face à un hôte CEP simulé qui tient un disque : capture, couleurs, contrôle de
+production, export, contrôle du pack, reprise après interruption, kit réseaux
+sociaux. Ils vérifient l'enchaînement complet, du clic à l'appel ExtendScript.
+
+Ils ne font pas partie de `npm test` : ils demandent un navigateur, que
+l'intégration continue n'a pas. Prérequis, à installer soi-même :
+
+```bash
+npm i -D playwright-core
+# et un Chromium sur la machine, sinon :
+LOGO_FORGE_CHROMIUM=/chemin/vers/chrome npm run test:e2e
+```
+
+Sans l'un ou l'autre, la commande le dit et s'arrête : elle ne télécharge rien
+et ne prétend pas avoir vérifié quoi que ce soit.
+
+**Ce qu'ils ne prouvent pas** : le comportement d'Illustrator. La doublure
+répond ce que la couche ExtendScript est censée renvoyer, pas ce
+qu'Illustrator renverrait. Le premier essai réel suit le protocole de
+[TEST-ILLUSTRATOR.md](TEST-ILLUSTRATOR.md).
+
 Conventions :
 
 - un fichier de test par module de `core/` ;
