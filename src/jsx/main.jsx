@@ -469,7 +469,7 @@ var LogoForge = (function () {
         return [
           Math.round(255 * (1 - c) * (1 - k)),
           Math.round(255 * (1 - m) * (1 - k)),
-          Math.round(255 * (1 - y) * (1 - k)),
+          Math.round(255 * (1 - y) * (1 - k))
         ]
       }
       if (color.typename === 'GrayColor') {
@@ -516,8 +516,8 @@ var LogoForge = (function () {
         to: [
           parseInt(to.substring(0, 2), 16),
           parseInt(to.substring(2, 4), 16),
-          parseInt(to.substring(4, 6), 16),
-        ],
+          parseInt(to.substring(4, 6), 16)
+        ]
       })
     }
     return map
@@ -714,7 +714,7 @@ var LogoForge = (function () {
         custom = [
           parseInt(clean.substring(0, 2), 16),
           parseInt(clean.substring(2, 4), 16),
-          parseInt(clean.substring(4, 6), 16),
+          parseInt(clean.substring(4, 6), 16)
         ]
       }
 
@@ -1594,7 +1594,7 @@ var LogoForge = (function () {
           copies.length,
           refused,
           bytes,
-          thumbnail,
+          thumbnail
         ].join(UNIT)
       )
     } catch (e) {
@@ -1758,7 +1758,7 @@ var LogoForge = (function () {
           Math.abs(rect[2] - rect[0]),
           Math.abs(rect[1] - rect[3]),
           outside,
-          doc.artboards.length,
+          doc.artboards.length
         ].join(UNIT)
       )
     } catch (e) {
@@ -1929,7 +1929,7 @@ var LogoForge = (function () {
       // Centré dans sa cellule : une grille alignée se relit d'un coup d'œil.
       group.position = [
         parseFloat(left) + (parseFloat(cellWidth) - placedWidth) / 2,
-        parseFloat(top) - (parseFloat(cellHeight) - placedHeight) / 2,
+        parseFloat(top) - (parseFloat(cellHeight) - placedHeight) / 2
       ]
 
       return ok([placed, placedWidth, placedHeight].join(UNIT))
@@ -2003,7 +2003,7 @@ var LogoForge = (function () {
           Math.abs(rect[2] - rect[0]),
           Math.abs(rect[1] - rect[3]),
           outside,
-          name,
+          name
         ].join(UNIT)
       )
     } catch (e) {
@@ -2117,7 +2117,7 @@ var LogoForge = (function () {
     exportArtboardAsSVG: exportArtboardAsSVG,
     exportArtboardAsPDF: exportArtboardAsPDF,
     exportArtboardAsEPS: exportArtboardAsEPS,
-    exportAsAI: exportAsAI,
+    exportAsAI: exportAsAI
   }
 })()
 

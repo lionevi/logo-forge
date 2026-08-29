@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import react from '@vitejs/plugin-react'
@@ -38,8 +38,14 @@ function copyStaticFiles(): Plugin {
         resolve(root, 'js/export-engine.js'),
         resolve(outDir, 'js/export-engine.js'),
       )
+      // Tous les scripts ExtendScript, pas seulement `main.jsx` : la sonde
+      // minimale doit être déployée pour qu'un basculement du `ScriptPath`
+      // suffise à trancher, en cas de panne de chargement.
       mkdirSync(resolve(outDir, 'jsx'), { recursive: true })
-      copyFileSync(resolve(root, 'jsx/main.jsx'), resolve(outDir, 'jsx/main.jsx'))
+      for (const name of readdirSync(resolve(root, 'jsx'))) {
+        if (!name.endsWith('.jsx')) continue
+        copyFileSync(resolve(root, 'jsx', name), resolve(outDir, 'jsx', name))
+      }
 
       // CEP cherche son descripteur dans `CSXS/manifest.xml`, à la racine de
       // l'extension. Le `.debug` autorise le débogage distant d'une extension

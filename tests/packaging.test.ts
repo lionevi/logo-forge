@@ -48,6 +48,13 @@ describe('archive de l’extension', () => {
     expect(MANIFEST).toContain('ExtensionBundleVersion=')
   })
 
+  it('le descripteur ne pointe jamais vers la sonde minimale', () => {
+    // Elle se met en place le temps d'un diagnostic, en modifiant le
+    // ScriptPath. Livrer dans cet état retirerait au plugin toutes ses
+    // fonctions, ce qui est précisément la panne qu'elle sert à trouver.
+    expect(MANIFEST).not.toContain('test-minimal')
+  })
+
   it('le descripteur désigne bien le panneau vanilla', () => {
     expect(MANIFEST).toContain('<MainPath>./index.html</MainPath>')
     expect(MANIFEST).toContain('<ScriptPath>./jsx/main.jsx</ScriptPath>')

@@ -21,6 +21,10 @@ const JSX_SOURCE = readFileSync(
   resolve(import.meta.dirname, '../src/jsx/main.jsx'),
   'utf8',
 )
+const PROBE_SOURCE = readFileSync(
+  resolve(import.meta.dirname, '../src/jsx/test-minimal.jsx'),
+  'utf8',
+)
 
 type EngineFn = (...args: unknown[]) => unknown
 
@@ -89,11 +93,65 @@ describe('compatibilité du moteur', () => {
     ).not.toThrow()
   })
 
-  it('la couche ExtendScript parse elle aussi en ES5', () => {
-    // ExtendScript est un moteur ES3 : tout ce qui dépasse ES5 y échoue.
+  it('la couche ExtendScript parse en ES3, et non en ES5', () => {
+    // ExtendScript est un moteur ECMA-262 3e édition. Le vérifier en ES5
+    // laissait passer les virgules finales, qu'ES3 refuse : le fichier entier
+    // cessait alors de parser, et *aucune* fonction lf* n'existait plus dans
+    // Illustrator — « lfPing n'est pas une fonction », pour les quarante.
     expect(() =>
-      acorn.parse(JSX_SOURCE, { ecmaVersion: 5, sourceType: 'script' }),
+      acorn.parse(JSX_SOURCE, { ecmaVersion: 3, sourceType: 'script' }),
     ).not.toThrow()
+  })
+
+  it('la sonde minimale parse elle aussi en ES3', () => {
+    // Elle ne sert qu'en cas de panne : elle doit être la dernière chose à
+    // pouvoir échouer.
+    expect(() =>
+      acorn.parse(PROBE_SOURCE, { ecmaVersion: 3, sourceType: 'script' }),
+    ).not.toThrow()
+  })
+
+  it('ne laisse aucune virgule finale dans la couche ExtendScript', () => {
+    // ES3 ne les refuse que dans un littéral d'objet — celle d'un tableau y
+    // est légale. Toutes sont bannies quand même : le parseur d'ExtendScript
+    // n'est pas celui-ci, la distinction ne se vérifie qu'en production, et
+    // l'uniformité ne coûte rien. Le parseur au-dessus est l'autorité ; ce
+    // contrôle-ci nomme le défaut.
+    const lines = JSX_SOURCE.split('\n')
+    const offenders: string[] = []
+    lines.forEach((line, index) => {
+      if (!/,\s*$/.test(line)) return
+      let next = index + 1
+      while (next < lines.length && !lines[next].trim()) next += 1
+      const following = (lines[next] || '').trim()
+      if (following.startsWith('}') || following.startsWith(']')) {
+        offenders.push(`${index + 1}: ${line.trim()}`)
+      }
+    })
+
+    expect(offenders).toEqual([])
+  })
+
+  it('n utilise aucune méthode absente du moteur ES3', () => {
+    // Celles-ci ne font pas échouer le parseur : elles lèvent à l'exécution,
+    // au moment le plus coûteux — pendant un export.
+    const absent = [
+      /\.forEach\(/,
+      /\.map\(/,
+      /\.filter\(/,
+      /\.reduce\(/,
+      /\.some\(/,
+      /\.every\(/,
+      /\.trim\(/,
+      /\bJSON\s*\./,
+      /\bObject\.(keys|values|create|defineProperty|getOwnPropertyNames)\b/,
+      /\bArray\.isArray\b/,
+      /\bDate\.now\b/,
+      /\.bind\(/,
+    ]
+    for (const pattern of absent) {
+      expect(JSX_SOURCE, String(pattern)).not.toMatch(pattern)
+    }
   })
 
   it("n'utilise pas JSON, absent du moteur ExtendScript", () => {

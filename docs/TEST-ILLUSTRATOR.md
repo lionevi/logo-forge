@@ -32,9 +32,31 @@ sa durée — c'est ce qui rendra un échec analysable sans deviner.
 **Preuve** : les six sondes répondent, la première (« Pont CEP ») en quelques
 millisecondes.
 
-**Si ça échoue** : rien d'autre ne peut marcher. Relever le message exact.
-Cause la plus probable : `main.jsx` non chargé (chemin dans
-`CSXS/manifest.xml`) ou erreur de syntaxe refusée par le moteur ES3.
+**Si ça échoue** — typiquement « `lfPing` n'est pas une fonction », et de la
+même façon pour les quarante autres : `main.jsx` n'a pas été chargé. Une
+erreur de syntaxe y suffit, et elle emporte le fichier entier : ExtendScript
+ne charge pas à moitié.
+
+Pour trancher entre « le fichier n'arrive pas » et « le fichier arrive mais ne
+parse pas », basculer le `ScriptPath` du manifeste vers la sonde minimale :
+
+```xml
+<ScriptPath>./jsx/test-minimal.jsx</ScriptPath>
+```
+
+puis `npm run build`, redéployer, rouvrir le panneau.
+
+- `lfPing` répond « pong » → le chargement fonctionne, la panne est **dans**
+  `main.jsx`. Lancer `npx acorn --ecma3 src/jsx/main.jsx` : il nomme la ligne.
+- `lfPing` reste introuvable → la panne est dans le manifeste, le chemin ou le
+  déploiement. Vérifier que `jsx/main.jsx` est bien présent **dans le dossier
+  d'extension installé**, et non seulement dans `dist/`.
+
+`lfEngineInfo` de la sonde rend la version du moteur, celle d'Illustrator et
+le système : c'est ce qu'il faut joindre à tout rapport.
+
+Rétablir ensuite `<ScriptPath>./jsx/main.jsx</ScriptPath>` — un test le
+vérifie, mais il ne s'exécute pas à votre place.
 
 ## 2. Set Component
 

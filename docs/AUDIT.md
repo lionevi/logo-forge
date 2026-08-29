@@ -634,3 +634,29 @@ continue de fonctionner, et l'absence est nommée à l'écran.
 - **`state.runTraceLost` était posé et jamais lu.** Un drapeau que personne ne
   regarde ne protège de rien : la perte de la trace est maintenant annoncée à
   la fin du lot.
+
+### BUG-016 — Une virgule finale rendait tout le plugin inopérant dans Illustrator
+
+**Cause :** deux littéraux d'objet de `src/jsx/main.jsx` portaient une virgule
+finale. ES3 les refuse. ExtendScript ne charge pas un fichier à moitié : le
+fichier entier était rejeté, et aucune fonction globale n'était définie.
+**Fichier :** `src/jsx/main.jsx`, lignes 520 et 2120.
+**Fonction :** aucune en particulier — c'est le chargement qui échoue.
+**Impact :** total. Chaque appel répondait « `lf*` n'est pas une fonction »,
+pour les quarante fonctions. Le panneau s'ouvrait normalement, ce qui rendait
+la panne d'autant plus déroutante : l'interface allait bien, seul l'hôte était
+absent.
+**Solution :** virgules retirées ; toutes, y compris les sept d'un littéral de
+tableau, légales en ES3 mais bannies par uniformité — le parseur d'ExtendScript
+n'est pas celui du contrôle, et la distinction ne se vérifierait qu'en
+production.
+**Test :** `tests/exportEngine.test.ts` parse désormais `main.jsx` en **ES3**,
+et non plus en ES5.
+
+**Pourquoi il n'avait pas été vu :** le contrôle de compatibilité parsait la
+couche ExtendScript avec `ecmaVersion: 5`. ES5 accepte les virgules finales ;
+ES3 non. Un garde-fou réglé une marche trop haut ne garde rien — il valide
+exactement ce qu'il devrait refuser, et le fait avec l'autorité d'un test vert.
+Le même contrôle interdit maintenant les méthodes absentes du moteur ES3
+(`forEach`, `map`, `filter`, `trim`, `JSON`, `Object.keys`, `Array.isArray`,
+`Date.now`, `bind`), qui ne se manifesteraient qu'à l'exécution.
