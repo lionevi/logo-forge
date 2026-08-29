@@ -1,8 +1,16 @@
-import { copyFileSync, mkdirSync, readdirSync } from 'node:fs'
+import {
+  copyFileSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs'
 import { resolve } from 'node:path'
 
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
+
+import { collectBrand, inlineBrand } from './scripts/inline-brand.mjs'
 
 const root = resolve(import.meta.dirname, 'src')
 const outDir = resolve(import.meta.dirname, 'dist')
@@ -26,7 +34,14 @@ function copyStaticFiles(): Plugin {
       // Le panneau servi par CEP est la version vanilla : un seul fichier, sans
       // framework ni bundle, seule forme dont on soit certain qu'elle s'exécute
       // dans le Chromium figé de CEP.
-      copyFileSync(resolve(root, 'panel-cep.html'), resolve(outDir, 'index.html'))
+      // Le panneau part en un seul fichier ; les SVG de marque déposés dans
+      // `src/assets/` y sont intégrés en ligne. Ce qui manque ne casse rien.
+      const { brand, notes } = collectBrand(resolve(root, 'assets'))
+      writeFileSync(
+        resolve(outDir, 'index.html'),
+        inlineBrand(readFileSync(resolve(root, 'panel-cep.html'), 'utf8'), brand),
+      )
+      for (const note of notes) process.stdout.write(`marque : ${note}\n`)
 
       // La version React reste livrée à côté, pour l'hôte UXP.
       copyFileSync(resolve(root, 'index.html'), resolve(outDir, 'panel-react.html'))

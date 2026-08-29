@@ -127,6 +127,9 @@ describe('capture de la sélection', () => {
   })
 
   it('poursuit malgré un objet refusé et le compte', () => {
+    // Chemin de repli : sans presse-papiers, la duplication reprend la main,
+    // et un objet verrouillé y est compté plutôt qu'ignoré.
+    host.app.breakClipboard = true
     const doc = openDocument(['fond', 'verrouille', 'marque'])
     doc.layers[0].items[1].refuseDuplicate = true
     doc.selection = [...doc.layers[0].items]
@@ -139,6 +142,8 @@ describe('capture de la sélection', () => {
   })
 
   it('échoue explicitement quand aucun objet ne peut être copié', () => {
+    // Les deux voies échouent : c'est le seul cas où la capture doit refuser.
+    host.app.breakClipboard = true
     const doc = openDocument(['a', 'b'])
     for (const item of doc.layers[0].items) item.refuseDuplicate = true
     doc.selection = [...doc.layers[0].items]
@@ -148,6 +153,45 @@ describe('capture de la sélection', () => {
     expect(result.ok).toBe(false)
     expect(result.value).toContain('aucun objet n a pu etre copie')
     expect(result.value).toContain('verrouille')
+  })
+
+  it('copie par le presse-papiers en premier', () => {
+    // C'est la voie qui traverse le mieux la frontière entre deux documents
+    // dans CEP. La duplication reste en filet.
+    const doc = openDocument(['fond', 'marque'])
+    doc.selection = [...doc.layers[0].items]
+
+    const result = parseResult(host.api.lfSetComponent('c0'))
+
+    expect(result.ok).toBe(true)
+    expect(result.fields[5]).toBe('2')
+    expect(result.fields[9]).toBe('presse-papiers')
+  })
+
+  it('prend la copie avant de créer le document', () => {
+    // Créer d'abord ferait perdre la sélection de l'utilisateur, et le
+    // presse-papiers ne contiendrait rien.
+    const doc = openDocument(['marque'])
+    doc.selection = [...doc.layers[0].items]
+
+    host.api.lfSetComponent('c0')
+    const order = host.app.commands
+
+    expect(order.indexOf('copy')).toBeGreaterThanOrEqual(0)
+    expect(order.indexOf('copy')).toBeLessThan(order.indexOf('pasteFront'))
+    expect(host.app.createdAfterCommand('copy')).toBe(true)
+  })
+
+  it('retombe sur la duplication quand le presse-papiers ne rend rien', () => {
+    host.app.breakClipboard = true
+    const doc = openDocument(['fond', 'marque'])
+    doc.selection = [...doc.layers[0].items]
+
+    const result = parseResult(host.api.lfSetComponent('c0'))
+
+    expect(result.ok).toBe(true)
+    expect(result.fields[5]).toBe('2')
+    expect(result.fields[9]).toBe('duplication')
   })
 
   it('cadre le plan de travail sur les copies', () => {
@@ -224,6 +268,7 @@ describe('vérification du résultat', () => {
   })
 
   it('rend la main à la source même après un échec', () => {
+    host.app.breakClipboard = true
     const doc = openDocument(['a'])
     doc.layers[0].items[0].refuseDuplicate = true
     doc.selection = [...doc.layers[0].items]

@@ -417,6 +417,9 @@ class FakeApp {
         doc.saveBytes = this.defaultSaveBytes
         this.documents.push(doc)
         this.created.push(doc)
+        // Repère chronologique : la copie doit précéder la création, sinon la
+        // sélection de l'utilisateur est déjà perdue.
+        this.markCreation()
         this.activeDocument = doc
         return doc
       },
@@ -450,8 +453,27 @@ class FakeApp {
   private clipboard: FakeItem[] = []
   /** Rend le presse-papiers stérile, pour éprouver l échec complet. */
   breakClipboard = false
+  /** Commandes de menu reçues, dans l ordre. */
+  commands: string[] = []
+  /** Commandes déjà reçues au moment de chaque création de document. */
+  creationMarks: number[] = []
+
+  /** Note le rang de la création courante dans la suite des commandes. */
+  markCreation(): void {
+    // Nombre de commandes déjà reçues : une création qui suit `copy` porte un
+    // repère strictement supérieur au rang de cette commande.
+    this.creationMarks.push(this.commands.length)
+  }
+
+  /** Un document a-t-il été créé après la commande donnée ? */
+  createdAfterCommand(command: string): boolean {
+    const at = this.commands.indexOf(command)
+    if (at < 0) return false
+    return this.creationMarks.some((mark) => mark > at)
+  }
 
   executeMenuCommand(command?: string): void {
+    this.commands.push(String(command ?? ''))
     const doc = this.activeDocument
     if (!doc) return
 

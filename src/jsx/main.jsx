@@ -1500,6 +1500,13 @@ var LogoForge = (function () {
       var height = Math.abs(bounds[1] - bounds[3]);
       if (!width || !height) return err('selection de taille nulle');
 
+      // Le presse-papiers d'abord : c'est la voie qui traverse le mieux la
+      // frontière entre deux documents dans CEP. La prise se fait ici, avant
+      // toute création de document — tant que la sélection de l'utilisateur
+      // est encore intacte.
+      var refusals = [];
+      var grabbed = grabToClipboard(source, items, refusals);
+
       // Le nouveau document reprend le mode colorimétrique de la source : une
       // conversion à ce stade fausserait toutes les couleurs en aval.
       created = app.documents.add(source.documentColorSpace, width, height);
@@ -1507,22 +1514,30 @@ var LogoForge = (function () {
       assignIfSupported(layer, 'locked', false);
       assignIfSupported(layer, 'visible', true);
 
-      // `documents.add` a rendu le nouveau document actif. Plusieurs versions
-      // d'Illustrator exigent que le document source le soit pour dupliquer
-      // depuis lui : on le rétablit avant la copie.
-      app.activeDocument = source;
-
-      // Parcours dans l'ordre de la sélection : PLACEATEND ajoute en fin de
-      // calque, donc au-dessous. Parcourir à rebours inverserait la pile et
-      // ferait passer un aplat de fond devant le logo.
+      var method = '';
       var copies = [];
-      var refusals = [];
-      for (var i = 0; i < items.length; i += 1) {
-        try {
-          copies.push(items[i].duplicate(layer, ElementPlacement.PLACEATEND));
-        } catch (dupError) {
-          if (refusals.length < 3) refusals.push(describe(dupError));
+      if (grabbed) {
+        copies = pasteFrom(created, refusals);
+        if (copies.length) method = 'presse-papiers';
+      }
+
+      if (copies.length === 0) {
+        // Filet : la duplication directe. C'est la voie qui fonctionnait
+        // jusqu'ici — un presse-papiers indisponible ou restreint ne doit pas
+        // empêcher de capturer un composant.
+        //
+        // Parcours dans l'ordre de la sélection : PLACEATEND ajoute en fin de
+        // calque, donc au-dessous. Parcourir à rebours inverserait la pile et
+        // ferait passer un aplat de fond devant le logo.
+        app.activeDocument = source;
+        for (var i = 0; i < items.length; i += 1) {
+          try {
+            copies.push(items[i].duplicate(layer, ElementPlacement.PLACEATEND));
+          } catch (dupError) {
+            if (refusals.length < 3) refusals.push(describe(dupError));
+          }
         }
+        if (copies.length) method = 'duplication';
       }
 
       var refused = items.length - copies.length;
@@ -1590,7 +1605,8 @@ var LogoForge = (function () {
           copies.length,
           refused,
           bytes,
-          thumbnail
+          thumbnail,
+          method
         ].join(UNIT)
       );
     } catch (e) {
@@ -1854,7 +1870,7 @@ var LogoForge = (function () {
    * @param refusals reçoit la raison d'un échec, pour que l'erreur la nomme.
    * @returns les objets réellement collés dans `targetDoc`.
    */
-  function copyThrough(sourceDoc, targetDoc, items, refusals) {
+  function grabToClipboard(sourceDoc, items, refusals) {
     try {
       app.activeDocument = sourceDoc;
       sourceDoc.selection = null;
@@ -1862,12 +1878,23 @@ var LogoForge = (function () {
         assignIfSupported(items[i], 'selected', true);
       }
       if (!sourceDoc.selection || sourceDoc.selection.length === 0) {
-        refusals.push('selection impossible dans le composant');
-        return [];
+        refusals.push('selection impossible pour la copie');
+        return false;
       }
-
       app.executeMenuCommand('copy');
+      return true;
+    } catch (copyError) {
+      refusals.push('copie : ' + describe(copyError));
+      return false;
+    }
+  }
 
+  /**
+   * Colle le contenu du presse-papiers dans un document, et rend les objets
+   * réellement collés.
+   */
+  function pasteFrom(targetDoc, refusals) {
+    try {
       app.activeDocument = targetDoc;
       targetDoc.selection = null;
       app.executeMenuCommand('pasteFront');
@@ -1882,10 +1909,16 @@ var LogoForge = (function () {
       for (var p = 0; p < pasted.length; p += 1) out.push(pasted[p]);
       targetDoc.selection = null;
       return out;
-    } catch (clipError) {
-      refusals.push('presse-papiers : ' + describe(clipError));
+    } catch (pasteError) {
+      refusals.push('collage : ' + describe(pasteError));
       return [];
     }
+  }
+
+  /** Copie puis colle, d'un document à l'autre, en une fois. */
+  function copyThrough(sourceDoc, targetDoc, items, refusals) {
+    if (!grabToClipboard(sourceDoc, items, refusals)) return [];
+    return pasteFrom(targetDoc, refusals);
   }
 
   /**

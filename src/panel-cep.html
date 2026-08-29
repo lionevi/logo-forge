@@ -108,6 +108,30 @@
         top: 13px;
         left: 12px;
       }
+      /* Les SVG de marque suivent la couleur du texte : sur le fond sombre du
+         panneau, un tracé sans « fill » propre devient clair de lui-même. Un
+         tracé qui porte le sien le garde — un logo polychrome ne doit pas être
+         aplati. */
+      .lf-icon {
+        fill: currentColor;
+      }
+      .brand-mark {
+        display: inline-flex;
+        align-items: center;
+        height: 20px;
+        margin-right: 8px;
+        color: #e3e3e3;
+      }
+      .brand-mark .lf-icon {
+        height: 20px;
+        width: auto;
+      }
+      .comp-placeholder.brand .lf-icon {
+        width: 72px;
+        height: auto;
+        opacity: 0.3;
+      }
+
       .brand-name {
         font-size: 14px;
         font-weight: 700;
@@ -968,6 +992,7 @@
     <div class="panel">
       <div class="panel-header">
         <div class="brand">
+          <span class="brand-mark" id="brand-mark"></span>
           <span class="brand-name">Logo Forge</span>
           <span class="brand-version">v0.1.0</span>
         </div>
@@ -1790,6 +1815,14 @@
 
         /** Couleurs de référence, pour les prévisualisations du panneau. */
         var SAMPLE = ['#2680eb', '#e34850', '#e68619', '#2d9d78']
+
+        /**
+         * Éléments de marque, intégrés au build depuis `src/assets/`.
+         *
+         * Vide tant qu'aucun SVG n'y a été déposé : le panneau garde alors son
+         * apparence, sans trou ni erreur.
+         */
+        var LF_BRAND = /* LF_BRAND */ {}
 
         var STORAGE_KEY = 'logo-forge-project'
 
@@ -2712,7 +2745,13 @@
               '<span class="comp-badge">aperçu indisponible</span>'
             )
           }
-          return '<div class="comp-placeholder">' + ICONS.empty + '</div>'
+          return (
+            '<div class="comp-placeholder' +
+            (LF_BRAND.illustration ? ' brand' : '') +
+            '">' +
+            (LF_BRAND.illustration || ICONS.empty) +
+            '</div>'
+          )
         }
 
         /* ---------------------------------------------------------------- *
@@ -2882,6 +2921,9 @@
           ]
           if (component.copied) parts.push(component.copied + ' objets')
           if (component.refused) parts.push(component.refused + ' refusés')
+          // La voie n'est dite que lorsqu'elle n'est pas celle attendue : une
+          // capture normale n'a pas à s'expliquer.
+          if (component.method === 'duplication') parts.push('par duplication')
           return parts.join(' · ')
         }
 
@@ -4173,6 +4215,7 @@
             copied: 0,
             refused: 0,
             bytes: 0,
+            method: '',
           }
         }
 
@@ -4241,6 +4284,9 @@
             component.refused = parseInt(fields[6], 10) || 0
             component.bytes = parseInt(fields[7], 10) || 0
             component.thumbnailPath = fields[8] || ''
+            // Voie réellement employée pour amener l'artwork : le savoir évite
+            // de diagnostiquer à l'aveugle si la capture se comporte mal.
+            component.method = fields[9] || ''
             component.thumbnail = readImageAsDataUri(component.thumbnailPath)
 
             clearError()
@@ -5178,6 +5224,9 @@
         }
 
         startup('démarrage', function () {
+          // La marque n'est posée que si elle a été déposée : sans elle, le
+          // titre textuel suffit.
+          if (LF_BRAND.icon) byId('brand-mark').innerHTML = LF_BRAND.icon
           byId('open-settings').innerHTML = ICONS.settings
           byId('refresh').innerHTML = ICONS.refresh
           restoreProject()
