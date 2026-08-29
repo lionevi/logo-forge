@@ -523,6 +523,26 @@
         white-space: pre;
         overflow-x: auto;
       }
+      /* Une erreur se lit en trois temps : ce qui s'est passé, pourquoi,
+         et le geste qui débloque. Le message brut reste replié. */
+      .notice.fault {
+        line-height: 1.5;
+      }
+      .notice.fault .link {
+        margin: 4px 8px 0 0;
+        color: #e34850;
+      }
+      .notice.fault .detail {
+        display: block;
+        margin-top: 4px;
+        padding: 4px 6px;
+        border-radius: 3px;
+        background: #252525;
+        color: #909090;
+        font-family: monospace;
+        font-size: 9px;
+        word-break: break-word;
+      }
       .scope-title {
         margin: 10px 0 4px;
         color: #909090;
@@ -1115,6 +1135,7 @@
             <button class="tab" data-sub="grid">Grid</button>
             <button class="tab" data-sub="folders">Dossiers</button>
             <button class="tab" data-sub="doc">Documentation</button>
+            <button class="tab" data-sub="diag">Diagnostics</button>
           </div>
 
           <div class="pane on" id="sub-files">
@@ -1347,6 +1368,34 @@
                 Sans message, la documentation reste complète : elle explique
                 le contenu du pack et l'usage de chaque format.
               </p>
+            </div>
+          </div>
+
+          <div class="pane" id="sub-diag">
+            <div class="section">
+              <h2 class="section-title">Contrôle du système</h2>
+              <p class="summary">
+                Interroge Illustrator, une sonde après l'autre. Aucune n'écrit
+                quoi que ce soit.
+              </p>
+              <button class="button small" id="run-diagnostics">
+                Lancer le contrôle système
+              </button>
+              <div id="diagnostics-result"></div>
+            </div>
+
+            <div class="section">
+              <h2 class="section-title">Journal</h2>
+              <p class="summary" id="log-summary"></p>
+              <pre class="tree" id="log-view"></pre>
+              <div class="row">
+                <div class="col">
+                  <button class="button small" id="refresh-log">Rafraîchir</button>
+                </div>
+                <div class="col">
+                  <button class="button small" id="clear-log">Vider</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1638,6 +1687,7 @@
           docLanguage: 'fr',
           docMessage: '',
           studio: { name: '', designer: '', email: '', website: '' },
+          diagnostics: null,
           preflight: null,
           preflightMode: 'print',
           blockOnPreflight: false,
@@ -1655,7 +1705,10 @@
           padding: { mode: 'square', top: 0, right: 0, bottom: 0, left: 0 },
           passes: { print: true, web: true },
           clientName: '',
-          lastError: '',
+          lastError: null,
+          lastAction: null,
+          refusedNotice: '',
+          mappingNotice: '',
           destination: null,
           running: null,
           lastResult: null,
@@ -2696,10 +2749,13 @@
 
           readDocumentColors(function (colors) {
             if (colors.length === 0) {
-              state.lastError =
-                'Aucune couleur lisible dans le document : ouvrez le logo, ' +
-                'puis réessayez.'
-              renderMessages()
+              fail(
+                'lecture des couleurs',
+                'aucune couleur lisible dans le document',
+                function () {
+                  addColorMapping(index)
+                }
+              )
               return
             }
 
@@ -2717,18 +2773,112 @@
             }
 
             if (!chosen) {
-              state.lastError =
+              state.mappingNotice =
                 'Toutes les couleurs du document sont déjà associées.'
               renderMessages()
               return
             }
 
             custom.map.push({ from: chosen, to: custom.hex })
-            state.lastError = ''
+            clearError()
             persistProject()
             renderSchemes()
             renderDerived()
           })
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Diagnostics et journal
+         * ---------------------------------------------------------------- */
+
+        /** Lance les sondes système, une par une. */
+        function runDiagnostics() {
+          var button = byId('run-diagnostics')
+          button.disabled = true
+          button.innerHTML = 'Contrôle…'
+
+          engine.runDiagnostics(state, {
+            onStep: function (done, total, label) {
+              button.innerHTML = done + ' / ' + total + ' — ' + label
+            },
+            onDone: function (report) {
+              button.disabled = false
+              button.innerHTML = 'Lancer le contrôle système'
+              state.diagnostics = report
+              renderDiagnostics()
+              renderLog()
+            },
+          })
+        }
+
+        function renderDiagnostics() {
+          var report = state.diagnostics
+          if (!report) {
+            byId('diagnostics-result').innerHTML =
+              '<p class="summary">Aucun contrôle effectué.</p>'
+            return
+          }
+
+          var html =
+            '<p class="notice ' +
+            (report.ok ? 'done' : 'error') +
+            '">' +
+            escapeHtml(
+              report.ok
+                ? 'Toutes les sondes répondent.'
+                : report.failed + ' sonde(s) en échec.'
+            ) +
+            '</p>'
+
+          for (var i = 0; i < report.results.length; i += 1) {
+            var check = report.results[i]
+            html +=
+              '<p class="check-row static"><span class="dot ' +
+              (check.ok ? 'pass' : 'error') +
+              '"></span><span class="check-body"><b>' +
+              escapeHtml(check.label) +
+              '</b> — ' +
+              escapeHtml(check.ok ? 'répond en ' + check.durationMs + ' ms' : check.hint) +
+              (check.ok
+                ? ''
+                : '<br /><span class="hint">' +
+                  escapeHtml(check.detail) +
+                  '</span>') +
+              '</span></p>'
+          }
+          byId('diagnostics-result').innerHTML = html
+        }
+
+        /**
+         * Affiche le journal, du plus récent au plus ancien.
+         *
+         * Il n'est pas rafraîchi en continu : le relire pendant un export
+         * ralentirait précisément ce qu'on cherche à observer.
+         */
+        function renderLog() {
+          var history = engine.logHistory()
+          byId('log-summary').innerHTML =
+            history.length === 0
+              ? 'Aucune opération journalisée.'
+              : history.length + ' opération(s), la plus récente en tête.'
+
+          var lines = []
+          for (var i = 0; i < history.length && i < 60; i += 1) {
+            var entry = history[i]
+            lines.push(
+              escapeHtml(
+                entry.time +
+                  '  ' +
+                  entry.action +
+                  (entry.input ? '  ' + entry.input : '') +
+                  '  ·  ' +
+                  entry.result +
+                  (entry.durationMs !== null ? '  ' + entry.durationMs + ' ms' : '') +
+                  (entry.detail ? '  ' + entry.detail : '')
+              )
+            )
+          }
+          byId('log-view').innerHTML = lines.join('\n')
         }
 
         /* ---------------------------------------------------------------- *
@@ -2809,14 +2959,13 @@
 
             if (!result.ok) {
               state.preflight = null
-              state.lastError = result.value
+              fail('contrôle de production', result.value, runPreflight)
               renderPreflight()
-              renderMessages()
               return
             }
 
             state.preflight = engine.evaluatePreflight(result.value)
-            state.lastError = ''
+            clearError()
             renderPreflight()
             renderDerived()
           })
@@ -2849,11 +2998,12 @@
 
           engine.call(call.name, call.args, function (result) {
             if (!result.ok) {
-              state.lastError = result.value
-              renderMessages()
+              fail('correction', result.value, function () {
+                applyPreflightFix(fix, label)
+              })
               return
             }
-            state.lastError = ''
+            clearError()
             // Le décompte n'a de sens qu'après une nouvelle inspection.
             runPreflight()
           })
@@ -3119,15 +3269,63 @@
           }
         }
 
+        /**
+         * Affiche une erreur en trois temps.
+         *
+         * Ce qui s'est passé, pourquoi, et le geste qui débloque — le message
+         * brut d'Illustrator restant disponible, replié, pour le diagnostic.
+         */
+        function renderError(error) {
+          return (
+            '<div class="notice error fault"><b>' +
+            escapeHtml(error.what) +
+            '</b><br />' +
+            escapeHtml(error.why) +
+            '<br /><b>À faire :</b> ' +
+            escapeHtml(error.how) +
+            '<br />' +
+            (error.retryable
+              ? '<button class="link" data-retry="1">Réessayer</button>'
+              : '') +
+            '<button class="link" data-details="1">Détails techniques</button>' +
+            '<span class="detail" hidden>' +
+            escapeHtml(error.detail) +
+            '</span></div>'
+          )
+        }
+
+        /**
+         * Consigne une erreur, avec le geste qui l'a provoquée.
+         *
+         * `retry` permet de rejouer exactement l'opération échouée plutôt que
+         * de laisser le designer deviner par où reprendre.
+         */
+        function fail(action, message, retry) {
+          engine.log(action.toUpperCase().replace(/ /g, '_'), '', 'fail', message)
+          state.lastError = engine.describeError(message, action)
+          state.lastAction = retry || null
+          renderMessages()
+        }
+
+        /** Efface l'erreur courante. */
+        function clearError() {
+          state.lastError = null
+          state.lastAction = null
+        }
+
         function renderMessages() {
           var html = ''
           var defined = definedComponents()
 
           // Une erreur remontée par Illustrator prime sur toute autre
           // indication : c'est elle qui dit au designer quoi corriger.
-          if (state.lastError) {
-            html +=
-              '<p class="notice error">' + escapeHtml(state.lastError) + '</p>'
+          if (state.lastError) html += renderError(state.lastError)
+
+          // Un avertissement n'est pas une erreur : il informe sans bloquer.
+          var notices = [state.refusedNotice, state.mappingNotice]
+          for (var n = 0; n < notices.length; n += 1) {
+            if (!notices[n]) continue
+            html += '<p class="notice">' + escapeHtml(notices[n]) + '</p>'
           }
 
           if (defined.length === 0) {
@@ -3319,7 +3517,7 @@
           button.disabled = true
           button.innerHTML = 'Construction…'
           state.packageResult = null
-          state.lastError = ''
+          clearError()
 
           engine.runPackageBuild(buildConfig(), {
             onProgress: function (done, total, label) {
@@ -3330,7 +3528,7 @@
               button.innerHTML = 'Créer la planche'
               state.packageResult = outcome
               if (!outcome.ok && outcome.report.expected === 0) {
-                state.lastError = outcome.message
+                fail('construction de la planche', outcome.message, buildPackage)
               }
               renderPackage()
               renderMessages()
@@ -3367,6 +3565,8 @@
           renderScales()
           renderCollisionPolicy()
           renderDocVariables()
+          renderDiagnostics()
+          renderLog()
           renderPreflight()
           renderDerived()
         }
@@ -3477,8 +3677,9 @@
             setComponentBusy(index, false)
 
             if (!result.ok) {
-              state.lastError = result.value
-              renderMessages()
+              fail('capture du composant', result.value, function () {
+                setComponent(index)
+              })
               return
             }
 
@@ -3493,11 +3694,15 @@
             component.thumbnailPath = fields[8] || ''
             component.thumbnail = readImageAsDataUri(component.thumbnailPath)
 
-            state.lastError = component.refused
-              ? component.refused +
+            clearError()
+            if (component.refused) {
+              state.refusedNotice =
+                component.refused +
                 ' objet(s) n ont pas pu être copiés — ils sont probablement ' +
                 'verrouillés dans Illustrator.'
-              : ''
+            } else {
+              state.refusedNotice = ''
+            }
 
             renderComponents()
             renderDerived()
@@ -3515,7 +3720,9 @@
             [component.path, target],
             function (result) {
               if (!result.ok) {
-                state.lastError = result.value
+                fail('régénération de la vignette', result.value, function () {
+                  refreshThumbnail(index)
+                })
                 component.path = ''
                 component.thumbnail = ''
               } else {
@@ -3986,6 +4193,33 @@
           renderDerived()
         }
 
+        byId('messages').onclick = function (event) {
+          if (event.target.getAttribute('data-retry') !== null) {
+            var retry = state.lastAction
+            clearError()
+            renderMessages()
+            if (retry) guard('nouvelle tentative', retry)
+            return
+          }
+          if (event.target.getAttribute('data-details') !== null) {
+            var detail = event.target.parentNode.querySelector('.detail')
+            if (detail) detail.hidden = !detail.hidden
+          }
+        }
+
+        byId('run-diagnostics').onclick = function () {
+          guard('diagnostics', runDiagnostics)
+        }
+
+        byId('refresh-log').onclick = function () {
+          renderLog()
+        }
+
+        byId('clear-log').onclick = function () {
+          engine.clearLog()
+          renderLog()
+        }
+
         byId('run-preflight').onclick = function () {
           guard('contrôle', runPreflight)
         }
@@ -4172,7 +4406,7 @@
           state.scope = { components: {}, schemes: {} }
           state.packageResult = null
           state.preflight = null
-          state.lastError = ''
+          clearError()
           byId('progress-veil').className = 'veil'
           renderAll()
         }

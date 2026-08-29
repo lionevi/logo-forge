@@ -1043,6 +1043,16 @@ var LogoForgeEngine = (function () {
     var startedAt = new Date().getTime()
     var template = folderTemplate(config.folderTemplate)
     var tasks = planExport(config)
+    log(
+      'EXPORT_START',
+      tasks.length +
+        ' fichiers · ' +
+        config.components.length +
+        ' composants · ' +
+        config.colorSchemes.length +
+        ' declinaisons',
+      'ok'
+    )
     var root = joinPath(config.outputFolder, [sanitize(config.clientName)])
 
     // Une tâche porte son état et sa trace : le rapport final décrit ce qui
@@ -1083,6 +1093,7 @@ var LogoForgeEngine = (function () {
 
     function fail(task, message) {
       task.status = JOB_STATUS.failed
+      log('EXPORT_FILE', task.fileName, 'fail', message)
       failures.push({ task: task, message: message })
       setTimeout(step, 0)
     }
@@ -1196,6 +1207,13 @@ var LogoForgeEngine = (function () {
         for (var d = 0; d < documents.length; d += 1) service[documents[d]] = true
 
         var actual = parseFileListing(listing.value)
+        log(
+          'EXPORT_DONE',
+          result.written.length + ' fichiers',
+          result.failures.length ? 'warn' : 'ok',
+          '',
+          result.durationMs
+        )
         result.audit = auditPackage(expected, actual, {
           service: service,
           expectDocumentation: config.documentation !== false,
@@ -1294,6 +1312,7 @@ var LogoForgeEngine = (function () {
         var bytes = parseInt(parts[1], 10) || 0
         if (!bytes) {
           task.status = JOB_STATUS.failed
+          log('EXPORT_FILE', task.fileName, 'fail', 'fichier vide ou absent')
           failures.push({
             task: task,
             message: 'fichier vide ou absent : ' + (parts[0] || task.fileName),
@@ -1713,6 +1732,344 @@ var LogoForgeEngine = (function () {
       { path: joinFolder([template.documentation, words.readme]), contents: readme },
       { path: joinFolder([template.documentation, words.guide]), contents: plain },
     ]
+  }
+
+  /* ---------------------------------------------------------------------- *
+   * Journal
+   *
+   * Une opération qui échoue dans Illustrator ne laisse aucune trace : le
+   * journal est le seul moyen de raconter après coup ce qui s'est passé,
+   * dans quel ordre, et combien de temps cela a pris.
+   * ---------------------------------------------------------------------- */
+
+  /** Nombre d'entrées conservées, les plus anciennes cédant la place. */
+  var LOG_LIMIT = 300
+
+  var logEntries = []
+
+  /** Horodatage court, heure locale. */
+  function logStamp(date) {
+    var now = date || new Date()
+    function pad(value) {
+      return (value < 10 ? '0' : '') + value
+    }
+    return (
+      pad(now.getHours()) +
+      ':' +
+      pad(now.getMinutes()) +
+      ':' +
+      pad(now.getSeconds())
+    )
+  }
+
+  /**
+   * Consigne une opération.
+   *
+   * @param action nom de l'opération, en majuscules.
+   * @param input résumé de ce qui lui a été passé.
+   * @param result `ok`, `warn` ou `fail`.
+   * @param detail message d'erreur, ou précision.
+   * @param durationMs durée mesurée, quand elle a un sens.
+   */
+  function log(action, input, result, detail, durationMs) {
+    logEntries.push({
+      time: logStamp(),
+      action: String(action),
+      input: input === undefined || input === null ? '' : String(input),
+      result: result || 'ok',
+      detail: detail === undefined || detail === null ? '' : String(detail),
+      durationMs: typeof durationMs === 'number' ? durationMs : null,
+    })
+    // Le journal ne doit pas grossir sans fin dans un panneau qui reste
+    // ouvert toute une journée.
+    if (logEntries.length > LOG_LIMIT) {
+      logEntries.splice(0, logEntries.length - LOG_LIMIT)
+    }
+    return logEntries[logEntries.length - 1]
+  }
+
+  /** Entrées du journal, de la plus récente à la plus ancienne. */
+  function logHistory() {
+    var out = []
+    for (var i = logEntries.length - 1; i >= 0; i -= 1) out.push(logEntries[i])
+    return out
+  }
+
+  /** Vide le journal. */
+  function clearLog() {
+    logEntries = []
+  }
+
+  /** Journal en texte brut, pour être collé dans un signalement. */
+  function formatLog() {
+    var lines = []
+    for (var i = 0; i < logEntries.length; i += 1) {
+      var entry = logEntries[i]
+      lines.push(
+        entry.time +
+          '  ' +
+          entry.action +
+          (entry.input ? '  ' + entry.input : '') +
+          '  ·  ' +
+          entry.result +
+          (entry.durationMs !== null ? '  ' + entry.durationMs + ' ms' : '') +
+          (entry.detail ? '  ' + entry.detail : '')
+      )
+    }
+    return lines.join('\n')
+  }
+
+  /* ---------------------------------------------------------------------- *
+   * Diagnostics
+   * ---------------------------------------------------------------------- */
+
+  /**
+   * Contrôles du système, dans l'ordre de dépendance.
+   *
+   * Chaque contrôle porte sur une chose vérifiable. Un moteur qui n'a pas
+   * encore servi est déclaré « non éprouvé » plutôt que « fonctionnel » : on
+   * ne certifie pas ce qu'on n'a pas exercé.
+   */
+  function diagnosticPlan(state) {
+    return [
+      {
+        id: 'bridge',
+        label: 'Pont CEP',
+        probe: 'lfPing',
+        args: [],
+        expect: function (result) {
+          return result.ok && result.value === 'pong'
+        },
+        hint: 'ExtendScript ne répond pas : rechargez l extension.',
+      },
+      {
+        id: 'document',
+        label: 'Document actif',
+        probe: 'lfGetDocumentInfo',
+        args: [],
+        expect: function (result) {
+          return result.ok && result.value !== ''
+        },
+        hint: 'Ouvrez un document dans Illustrator.',
+      },
+      {
+        id: 'selection',
+        label: 'Lecture de la sélection',
+        probe: 'lfDescribeSelection',
+        args: [],
+        expect: function (result) {
+          return result.ok
+        },
+        hint: 'La sélection n est pas lisible : rechargez l extension.',
+      },
+      {
+        id: 'colors',
+        label: 'Lecture des couleurs',
+        probe: 'lfListColors',
+        args: [4],
+        expect: function (result) {
+          return result.ok
+        },
+        hint: 'Le document ne livre aucune couleur exploitable.',
+      },
+      {
+        id: 'preflight',
+        label: 'Contrôle de production',
+        probe: 'lfPreflight',
+        args: ['web'],
+        expect: function (result) {
+          return result.ok
+        },
+        hint: 'Le contrôle échoue : voyez le détail technique.',
+      },
+      {
+        id: 'filesystem',
+        label: 'Écriture disque',
+        probe: 'lfPathExists',
+        args: [state && state.destination ? state.destination : ''],
+        expect: function (result) {
+          return result.ok
+        },
+        hint: 'Choisissez un dossier de destination accessible.',
+      },
+    ]
+  }
+
+  /**
+   * Exécute les contrôles, un par un.
+   *
+   * Une sonde qui échoue n'interrompt pas les suivantes : le tableau complet
+   * vaut mieux qu'un premier échec isolé.
+   */
+  function runDiagnostics(state, handlers) {
+    var plan = diagnosticPlan(state)
+    var results = []
+    var index = 0
+
+    function next() {
+      if (index >= plan.length) {
+        var failed = 0
+        for (var i = 0; i < results.length; i += 1) {
+          if (!results[i].ok) failed += 1
+        }
+        handlers.onDone({ results: results, ok: failed === 0, failed: failed })
+        return
+      }
+
+      var check = plan[index]
+      index += 1
+      var startedAt = new Date().getTime()
+
+      call(check.probe, check.args, function (result) {
+        var durationMs = new Date().getTime() - startedAt
+        var ok = check.expect(result)
+        results.push({
+          id: check.id,
+          label: check.label,
+          ok: ok,
+          detail: ok ? result.value : result.value || 'aucune réponse',
+          hint: ok ? '' : check.hint,
+          durationMs: durationMs,
+        })
+        log(check.probe, '', ok ? 'ok' : 'fail', ok ? '' : result.value, durationMs)
+        if (handlers.onStep) handlers.onStep(index, plan.length, check.label)
+        setTimeout(next, 0)
+      })
+    }
+
+    next()
+  }
+
+  /* ---------------------------------------------------------------------- *
+   * Erreurs
+   *
+   * Un message d'ExtendScript décrit une cause technique ; le designer a
+   * besoin de savoir quoi faire. Chaque erreur connue est traduite en trois
+   * temps : ce qui s'est passé, pourquoi, et le geste qui débloque.
+   * ---------------------------------------------------------------------- */
+
+  /**
+   * Erreurs reconnues, dans l'ordre d'examen.
+   *
+   * `match` est cherché en minuscules dans le message brut ; la première
+   * entrée qui correspond gagne, les plus spécifiques d'abord.
+   */
+  var ERROR_HINTS = [
+    {
+      match: 'aucun document ouvert',
+      what: 'Aucun document Illustrator ouvert.',
+      why: 'Logo Forge travaille sur le document actif ; il n y en a pas.',
+      how: 'Ouvrez votre logo dans Illustrator, puis relancez.',
+      retryable: true,
+    },
+    {
+      match: 'selectionnez un objet',
+      what: 'Rien n est sélectionné.',
+      why: 'Un composant se capture depuis une sélection.',
+      how: 'Sélectionnez le logo dans Illustrator, puis cliquez « Set Component ».',
+      retryable: true,
+    },
+    {
+      match: 'edition de texte',
+      what: 'La sélection n est pas un objet entier.',
+      why: 'En mode édition de texte, Illustrator sélectionne des caractères, ' +
+        'qui n ont pas de contour à cadrer.',
+      how: 'Appuyez sur Échap pour sortir du texte, puis sélectionnez le bloc entier.',
+      retryable: true,
+    },
+    {
+      match: 'enregistrez le document',
+      what: 'Le document n a jamais été enregistré.',
+      why: 'L export travaille sur une copie du fichier, qui doit donc exister.',
+      how: 'Enregistrez le document dans Illustrator, puis relancez l export.',
+      retryable: true,
+    },
+    {
+      match: 'composant introuvable',
+      what: 'La capture d un composant a disparu.',
+      why: 'Les captures vivent dans le dossier temporaire, qu un redémarrage vide.',
+      how: 'Réassignez le composant depuis Illustrator.',
+      retryable: false,
+    },
+    {
+      match: 'aucun objet n a pu etre copie',
+      what: 'Aucun objet n a pu être copié.',
+      why: 'Les objets sélectionnés sont verrouillés, ou sur un calque verrouillé.',
+      how: 'Déverrouillez le calque dans Illustrator, puis recommencez.',
+      retryable: true,
+    },
+    {
+      match: 'vide',
+      what: 'Un fichier a été écrit sans contenu.',
+      why: 'Illustrator a rendu la main sans rien produire, souvent faute de ' +
+        'place ou de droits sur le dossier.',
+      how: 'Vérifiez l espace disque et les droits du dossier de destination.',
+      retryable: true,
+    },
+    {
+      match: 'permission',
+      what: 'Écriture refusée.',
+      why: 'Le dossier de destination n autorise pas l écriture.',
+      how: 'Choisissez un autre dossier, ou corrigez ses droits.',
+      retryable: true,
+    },
+    {
+      match: 'creation refusee',
+      what: 'Dossier impossible à créer.',
+      why: 'Le chemin est protégé, ou le disque est plein.',
+      how: 'Choisissez un dossier de destination où vous pouvez écrire.',
+      retryable: true,
+    },
+    {
+      match: 'extendscript a refuse',
+      what: 'Illustrator n a pas répondu.',
+      why: 'Le script hôte n est pas chargé, ou Illustrator est occupé par une ' +
+        'boîte de dialogue.',
+      how: 'Fermez toute fenêtre ouverte dans Illustrator, puis réessayez. Si ' +
+        'le problème persiste, rechargez l extension.',
+      retryable: true,
+    },
+    {
+      match: 'plan de travail',
+      what: 'Le plan de travail visé est inutilisable.',
+      why: 'Il n existe pas, ou sa largeur est nulle.',
+      how: 'Réassignez le composant : son cadrage sera recalculé.',
+      retryable: false,
+    },
+  ]
+
+  /**
+   * Traduit un message brut en erreur actionnable.
+   *
+   * Un message inconnu n'est jamais masqué : il devient le détail technique
+   * d'une erreur générique, plutôt que de disparaître.
+   */
+  function describeError(message, action) {
+    var raw = String(message === undefined || message === null ? '' : message)
+    var needle = raw.toLowerCase()
+
+    for (var i = 0; i < ERROR_HINTS.length; i += 1) {
+      if (needle.indexOf(ERROR_HINTS[i].match) === -1) continue
+      var hint = ERROR_HINTS[i]
+      return {
+        what: hint.what,
+        why: hint.why,
+        how: hint.how,
+        retryable: hint.retryable,
+        detail: raw,
+        action: action || '',
+      }
+    }
+
+    return {
+      what: action ? 'Échec : ' + action + '.' : 'Une opération a échoué.',
+      why: 'Illustrator a renvoyé une erreur que Logo Forge ne sait pas ' +
+        'interpréter.',
+      how: 'Le détail technique ci-dessous aide à identifier la cause.',
+      retryable: true,
+      detail: raw,
+      action: action || '',
+    }
   }
 
   /* ---------------------------------------------------------------------- *
@@ -2482,6 +2839,7 @@ var LogoForgeEngine = (function () {
    */
   function runPackageBuild(config, handlers) {
     var plan = planPackageGrid(config)
+    log('PACKAGE_START', plan.cells.length + ' cellules', 'ok')
     var report = {
       expected: plan.cells.length,
       placed: 0,
@@ -2542,6 +2900,7 @@ var LogoForgeEngine = (function () {
           if (result.ok) {
             report.placed += 1
           } else {
+            log('PACKAGE_CELL', cell.component.name, 'fail', result.value)
             report.empty.push(
               cell.component.name + ' / ' + schemeTitle(cell.scheme)
             )
@@ -2617,6 +2976,15 @@ var LogoForgeEngine = (function () {
     documentValues: documentValues,
     deliveredFormats: deliveredFormats,
     buildDocumentation: buildDocumentation,
+    LOG_LIMIT: LOG_LIMIT,
+    log: log,
+    logHistory: logHistory,
+    clearLog: clearLog,
+    formatLog: formatLog,
+    diagnosticPlan: diagnosticPlan,
+    runDiagnostics: runDiagnostics,
+    ERROR_HINTS: ERROR_HINTS,
+    describeError: describeError,
     MANIFEST_NAME: MANIFEST_NAME,
     buildManifest: buildManifest,
     parseFileListing: parseFileListing,

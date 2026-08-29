@@ -696,3 +696,94 @@ describe('pont Illustrator', () => {
     expect(SCRIPT).toMatch(/POLL_MS = 3000/)
   })
 })
+
+describe('erreurs actionnables', () => {
+  it('affiche une erreur en trois temps plutôt qu’un message brut', () => {
+    expect(SCRIPT).toContain('function renderError(')
+    expect(SCRIPT).toContain('engine.describeError(')
+    expect(SCRIPT).toContain('À faire :')
+  })
+
+  it('offre de rejouer exactement l’opération échouée', () => {
+    // Sans l'action mémorisée, « Réessayer » obligerait le designer à
+    // retrouver lui-même par où reprendre.
+    expect(SCRIPT).toContain('state.lastAction = retry || null')
+    expect(SCRIPT).toContain('data-retry="1"')
+    expect(SCRIPT).toContain("data-retry') !== null")
+  })
+
+  it('ne propose pas de réessayer ce qui ne peut pas réussir', () => {
+    expect(SCRIPT).toContain('error.retryable')
+  })
+
+  it('garde le message d’Illustrator, replié', () => {
+    expect(SCRIPT).toContain('data-details="1"')
+    expect(SCRIPT).toContain('<span class="detail" hidden>')
+    expect(STYLE).toContain('.fault')
+  })
+
+  it('efface l’erreur avant de rejouer', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf("data-retry') !== null"))
+    expect(block.slice(0, 300)).toContain('clearError()')
+  })
+
+  it('journalise chaque échec signalé au designer', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function fail('))
+    expect(block.slice(0, 400)).toContain('engine.log(')
+    expect(block.slice(0, 400)).toContain("'fail'")
+  })
+
+  it('donne la priorité à l’erreur sur les autres indications', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function renderMessages('))
+    expect(block.indexOf('state.lastError')).toBeLessThan(
+      block.indexOf('state.refusedNotice'),
+    )
+  })
+})
+
+describe('diagnostics et journal', () => {
+  it('offre un onglet dédié', () => {
+    expect(HTML).toContain('data-sub="diag"')
+    expect(HTML).toContain('id="sub-diag"')
+  })
+
+  it('interroge Illustrator sans rien écrire de définitif', () => {
+    expect(HTML).toContain('id="run-diagnostics"')
+    expect(SCRIPT).toContain('engine.runDiagnostics(')
+    // Une sonde qui écrirait dans le document ne serait plus un diagnostic.
+    expect(HTML).toContain("Aucune n'écrit")
+  })
+
+  it('montre l’avancement sonde par sonde', () => {
+    expect(SCRIPT).toContain('onStep:')
+    expect(SCRIPT).toContain("done + ' / ' + total")
+  })
+
+  it('accompagne une sonde en échec du geste à faire', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function renderDiagnostics('))
+    expect(block.slice(0, 1600)).toContain('check.hint')
+    expect(block.slice(0, 1600)).toContain('check.detail')
+  })
+
+  it('n’annonce rien avant d’avoir contrôlé', () => {
+    expect(SCRIPT).toContain('Aucun contrôle effectué.')
+  })
+
+  it('affiche le journal du plus récent au plus ancien', () => {
+    expect(HTML).toContain('id="log-view"')
+    expect(HTML).toContain('id="log-summary"')
+    expect(SCRIPT).toContain('engine.logHistory()')
+    expect(SCRIPT).toContain('la plus récente en tête')
+  })
+
+  it('relit le journal à la demande, pas en continu', () => {
+    // Rafraîchir pendant un export ralentirait ce qu'on cherche à observer.
+    expect(HTML).toContain('id="refresh-log"')
+    expect(HTML).toContain('id="clear-log"')
+    expect(SCRIPT).toContain('engine.clearLog()')
+  })
+
+  it('borne l’extrait affiché', () => {
+    expect(SCRIPT).toMatch(/i < history\.length && i < \d+/)
+  })
+})
