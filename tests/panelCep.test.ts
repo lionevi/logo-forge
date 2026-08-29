@@ -378,6 +378,58 @@ describe('planche de revue', () => {
   })
 })
 
+describe('persistance', () => {
+  it('déclare ce qui survit à la fermeture', () => {
+    expect(SCRIPT).toContain('var PERSISTED_SETTINGS = {')
+    expect(SCRIPT).toContain('var PERSISTED_COMPONENT = [')
+    for (const setting of [
+      'folderTemplate',
+      'nameTemplate',
+      'collision',
+      'docLanguage',
+      'studio',
+    ]) {
+      expect(SCRIPT, setting).toContain(`${setting}:`)
+    }
+  })
+
+  it('conserve les composants capturés, pas seulement les couleurs', () => {
+    expect(SCRIPT).toContain('function persistProject(')
+    expect(SCRIPT).toContain('function restoreProject(')
+    expect(SCRIPT).toContain("'logo-forge-project'")
+  })
+
+  it('ne stocke pas les vignettes, seulement leur chemin', () => {
+    // Des images encodées satureraient le stockage.
+    const block = SCRIPT.slice(
+      SCRIPT.indexOf('var PERSISTED_COMPONENT = ['),
+      SCRIPT.indexOf('function persistProject('),
+    )
+    expect(block).toContain("'thumbnailPath'")
+    expect(block).not.toContain("'thumbnail'")
+  })
+
+  it('ignore un enregistrement d une autre version', () => {
+    expect(SCRIPT).toContain('var STORAGE_VERSION')
+    expect(SCRIPT).toContain('saved.version !== STORAGE_VERSION')
+  })
+
+  it('replace les valeurs restaurées dans les champs', () => {
+    // Un réglage actif mais invisible ferait croire à une perte.
+    expect(SCRIPT).toContain('function applyRestoredSettings(')
+  })
+
+  it('sépare la remise à zéro du projet de celle des réglages', () => {
+    expect(SCRIPT).toContain("byId('reset-settings').onclick")
+    expect(SCRIPT).toContain('Vos composants sont')
+    expect(SCRIPT).toContain('vos réglages sont conservés')
+  })
+
+  it('refuse une marge négative', () => {
+    expect(SCRIPT).toContain('function positiveField(')
+  })
+})
+
 describe('contrôle du pack livré', () => {
   it('affiche un verdict fondé sur la relecture du disque', () => {
     expect(SCRIPT).toContain('function renderAudit(')

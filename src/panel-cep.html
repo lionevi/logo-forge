@@ -1350,7 +1350,16 @@
             </div>
           </div>
 
-          <button class="button small" id="close-settings">Fermer</button>
+          <div class="row">
+            <div class="col">
+              <button class="button small" id="reset-settings">
+                Réglages par défaut
+              </button>
+            </div>
+            <div class="col">
+              <button class="button small" id="close-settings">Fermer</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1599,7 +1608,15 @@
         /** Couleurs de référence, pour les prévisualisations du panneau. */
         var SAMPLE = ['#2680eb', '#e34850', '#e68619', '#2d9d78']
 
-        var STORAGE_KEY = 'logo-forge-color-schemes'
+        var STORAGE_KEY = 'logo-forge-project'
+
+        /**
+         * Version du format enregistré.
+         *
+         * Un enregistrement d'une version antérieure est ignoré plutôt que
+         * réinterprété : restaurer à moitié serait pire que repartir à neuf.
+         */
+        var STORAGE_VERSION = 2
 
         var state = {
           document: null,
@@ -1649,16 +1666,149 @@
          * ---------------------------------------------------------------- */
 
         /** Relit les déclinaisons mémorisées d'une session à l'autre. */
-        function restoreSchemes() {
+        /**
+         * Réglages persistés, et leur valeur par défaut.
+         *
+         * La liste sert de contrat : ce qui n'y figure pas ne survit pas à la
+         * fermeture du panneau, et cela doit être un choix, jamais un oubli.
+         */
+        var PERSISTED_SETTINGS = {
+          separator: '_',
+          formats: null,
+          scales: null,
+          padding: null,
+          favicon: true,
+          passes: null,
+          grid: null,
+          folderTemplate: 'client',
+          nameTemplate: '',
+          brandName: '',
+          projectName: '',
+          version: '',
+          collision: 'overwrite',
+          documentation: true,
+          docLanguage: 'fr',
+          docMessage: '',
+          studio: null,
+          clientName: '',
+          destination: '',
+          blockOnPreflight: false,
+          preflightMode: 'print',
+          rememberSchemes: true,
+        }
+
+        /** Champs d'un composant qui méritent d'être conservés. */
+        var PERSISTED_COMPONENT = [
+          'id',
+          'name',
+          'type',
+          'path',
+          'thumbnailPath',
+          'width',
+          'height',
+          'colorMode',
+          'copied',
+          'refused',
+          'bytes',
+          'dark',
+          'createdAt',
+          'updatedAt',
+        ]
+
+        /**
+         * Enregistre le projet.
+         *
+         * Les vignettes ne sont pas conservées : ce sont des images encodées,
+         * elles satureraient le stockage. Seul leur chemin l'est, et l'image
+         * est relue au chargement.
+         */
+        function persistProject() {
+          try {
+            if (!window.localStorage) return
+
+            var components = []
+            for (var i = 0; i < state.components.length; i += 1) {
+              var source = state.components[i]
+              var kept = {}
+              for (var f = 0; f < PERSISTED_COMPONENT.length; f += 1) {
+                kept[PERSISTED_COMPONENT[f]] = source[PERSISTED_COMPONENT[f]]
+              }
+              components.push(kept)
+            }
+
+            var settings = {}
+            for (var key in PERSISTED_SETTINGS) {
+              if (!PERSISTED_SETTINGS.hasOwnProperty(key)) continue
+              settings[key] = state[key]
+            }
+
+            var payload = {
+              version: STORAGE_VERSION,
+              components: components,
+              settings: settings,
+            }
+
+            // Les déclinaisons ne sont conservées que si le designer l'a
+            // demandé : c'est le sens de la case « Remember ».
+            if (state.rememberSchemes) {
+              payload.schemes = state.schemes
+              payload.customs = state.customs
+              payload.threshold = state.threshold
+            }
+
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+          } catch (error) {
+            /* stockage indisponible ou saturé : sans conséquence */
+          }
+        }
+
+        /**
+         * Relit le projet enregistré.
+         *
+         * Un enregistrement d'une autre version, illisible ou incohérent est
+         * écarté sans bruit : mieux vaut repartir des valeurs par défaut que
+         * démarrer sur un état à moitié restauré.
+         */
+        function restoreProject() {
           try {
             if (!window.localStorage) return
             var raw = window.localStorage.getItem(STORAGE_KEY)
             if (!raw) return
+
             var saved = JSON.parse(raw)
-            if (saved && saved.schemes) state.schemes = saved.schemes
-            if (saved && saved.customs) state.customs = saved.customs
-            if (saved && typeof saved.threshold === 'number') {
-              state.threshold = saved.threshold
+            if (!saved || saved.version !== STORAGE_VERSION) return
+
+            if (saved.settings) {
+              for (var key in PERSISTED_SETTINGS) {
+                if (!PERSISTED_SETTINGS.hasOwnProperty(key)) continue
+                var value = saved.settings[key]
+                if (value === undefined || value === null) continue
+                state[key] = value
+              }
+            }
+
+            if (saved.components && saved.components.length) {
+              var restored = []
+              for (var i = 0; i < saved.components.length; i += 1) {
+                var entry = saved.components[i]
+                if (!entry || !entry.name) continue
+                var component = newComponent(entry.name, entry.type)
+                for (var f = 0; f < PERSISTED_COMPONENT.length; f += 1) {
+                  var field = PERSISTED_COMPONENT[f]
+                  if (entry[field] !== undefined) component[field] = entry[field]
+                }
+                component.thumbnail = readImageAsDataUri(entry.thumbnailPath)
+                restored.push(component)
+              }
+              if (restored.length) state.components = restored
+            }
+
+            if (state.rememberSchemes) {
+              if (saved.schemes) state.schemes = saved.schemes
+              if (saved.customs) state.customs = saved.customs
+              if (typeof saved.threshold === 'number') {
+                state.threshold = saved.threshold
+              }
             }
           } catch (error) {
             // Un stockage indisponible ou corrompu ne doit pas empêcher le
@@ -1666,23 +1816,63 @@
           }
         }
 
-        function persistSchemes() {
+        /**
+         * Recopie l'état restauré dans les champs du formulaire.
+         *
+         * Sans cela, les réglages seraient bien actifs mais l'interface
+         * afficherait ses valeurs par défaut : le designer croirait ses
+         * réglages perdus.
+         */
+        function applyRestoredSettings() {
+          var fields = [
+            ['separator', state.separator],
+            ['client-name', state.clientName],
+            ['brand-name', state.brandName],
+            ['project-name', state.projectName],
+            ['pack-version', state.version],
+            ['doc-language', state.docLanguage],
+            ['doc-message', state.docMessage],
+            ['studio-name', state.studio.name],
+            ['designer-name', state.studio.designer],
+            ['studio-email', state.studio.email],
+            ['studio-website', state.studio.website],
+            ['preflight-mode', state.preflightMode],
+          ]
+          for (var i = 0; i < fields.length; i += 1) {
+            var element = byId(fields[i][0])
+            if (element) element.value = fields[i][1] || ''
+          }
+
+          var checks = [
+            ['doc-enabled', state.documentation !== false],
+            ['remember-schemes', state.rememberSchemes !== false],
+            ['block-on-preflight', !!state.blockOnPreflight],
+            ['want-favicon', state.favicon !== false],
+            ['pass-print', !state.passes || state.passes.print !== false],
+            ['pass-web', !state.passes || state.passes.web !== false],
+          ]
+          for (var c = 0; c < checks.length; c += 1) {
+            var box = byId(checks[c][0])
+            if (box) box.checked = checks[c][1]
+          }
+
+          var padding = state.padding || {}
+          var sides = ['top', 'right', 'bottom', 'left']
+          for (var p = 0; p < sides.length; p += 1) {
+            var pad = byId('pad-' + sides[p])
+            if (pad) pad.value = padding[sides[p]] || 0
+          }
+
+          var slider = byId('threshold')
+          if (slider) slider.value = state.threshold
+        }
+
+        /** Efface l'état enregistré. */
+        function forgetProject() {
           try {
-            if (!window.localStorage) return
-            if (!state.rememberSchemes) {
-              window.localStorage.removeItem(STORAGE_KEY)
-              return
-            }
-            window.localStorage.setItem(
-              STORAGE_KEY,
-              JSON.stringify({
-                schemes: state.schemes,
-                customs: state.customs,
-                threshold: state.threshold,
-              })
-            )
+            if (window.localStorage) window.localStorage.removeItem(STORAGE_KEY)
           } catch (error) {
-            /* stockage indisponible : sans conséquence */
+            /* stockage indisponible */
           }
         }
 
@@ -2535,7 +2725,7 @@
 
             custom.map.push({ from: chosen, to: custom.hex })
             state.lastError = ''
-            persistSchemes()
+            persistProject()
             renderSchemes()
             renderDerived()
           })
@@ -3155,6 +3345,9 @@
          * en arrière d'un changement parce qu'un appelant l'a oubliée.
          */
         function renderDerived() {
+          // Toute évolution de l'état passe par ici : c'est le point où
+          // l'enregistrer, plutôt que de l'oublier dans un gestionnaire.
+          persistProject()
           renderContrast()
           renderMessages()
           renderExportButton()
@@ -3227,6 +3420,7 @@
             colorMode: '',
             dark: false,
             thumbnail: '',
+            thumbnailPath: '',
             copied: 0,
             refused: 0,
             bytes: 0,
@@ -3296,7 +3490,8 @@
             component.copied = parseInt(fields[5], 10) || 0
             component.refused = parseInt(fields[6], 10) || 0
             component.bytes = parseInt(fields[7], 10) || 0
-            component.thumbnail = readImageAsDataUri(fields[8] || '')
+            component.thumbnailPath = fields[8] || ''
+            component.thumbnail = readImageAsDataUri(component.thumbnailPath)
 
             state.lastError = component.refused
               ? component.refused +
@@ -3325,7 +3520,8 @@
                 component.thumbnail = ''
               } else {
                 var fields = result.value.split(String.fromCharCode(31))
-                component.thumbnail = readImageAsDataUri(fields[0] || '')
+                component.thumbnailPath = fields[0] || ''
+                component.thumbnail = readImageAsDataUri(component.thumbnailPath)
                 component.copied = parseInt(fields[1], 10) || component.copied
               }
               renderComponents()
@@ -3415,7 +3611,7 @@
           var id = event.target.getAttribute('data-scheme')
           if (!id) return
           state.schemes[id] = event.target.checked
-          persistSchemes()
+          persistProject()
           renderDerived()
         }
 
@@ -3425,7 +3621,7 @@
           var kill = target.getAttribute('data-custom')
           if (kill !== null) {
             state.customs.splice(parseInt(kill, 10), 1)
-            persistSchemes()
+            persistProject()
             renderSchemes()
             renderDerived()
             return
@@ -3439,7 +3635,7 @@
               hex: source.hex,
               map: cloneMap(source.map),
             })
-            persistSchemes()
+            persistProject()
             renderSchemes()
             renderDerived()
             return
@@ -3450,7 +3646,7 @@
             var coordinates = unmap.split(':')
             var owner = state.customs[parseInt(coordinates[0], 10)]
             owner.map.splice(parseInt(coordinates[1], 10), 1)
-            persistSchemes()
+            persistProject()
             renderSchemes()
             renderDerived()
             return
@@ -3478,7 +3674,7 @@
           var renamed = event.target.getAttribute('data-custom-name')
           if (renamed === null) return
           state.customs[parseInt(renamed, 10)].name = event.target.value
-          persistSchemes()
+          persistProject()
           renderDerived()
         }
 
@@ -3492,7 +3688,7 @@
           if (editing === null) return
           state.customs[parseInt(editing, 10)].hex = this.value
           this.removeAttribute('data-editing')
-          persistSchemes()
+          persistProject()
           renderSchemes()
         }
 
@@ -3509,21 +3705,21 @@
             map: [],
           })
           byId('custom-name').value = ''
-          persistSchemes()
+          persistProject()
           renderSchemes()
           renderDerived()
         }
 
         byId('remember-schemes').onchange = function () {
           state.rememberSchemes = this.checked
-          persistSchemes()
+          persistProject()
         }
 
         byId('threshold').oninput = function () {
           state.threshold = parseInt(this.value, 10)
           renderInversion()
           renderSchemes()
-          persistSchemes()
+          persistProject()
         }
 
         /* ---------------------------------------------------------------- *
@@ -3600,9 +3796,16 @@
           renderDerived()
         }
 
+        /** Valeur de champ numérique, jamais négative. */
+        function positiveField(id) {
+          var value = parseFloat(byId(id).value)
+          if (isNaN(value) || value < 0) return 0
+          return value
+        }
+
         function readPadding() {
           var mode = document.querySelector('input[name="padmode"]:checked').value
-          var top = parseFloat(byId('pad-top').value) || 0
+          var top = positiveField('pad-top')
           if (mode === 'square') {
             state.padding = {
               mode: mode,
@@ -3619,10 +3822,11 @@
           state.padding = {
             mode: mode,
             top: top,
-            right: parseFloat(byId('pad-right').value) || 0,
-            bottom: parseFloat(byId('pad-bottom').value) || 0,
-            left: parseFloat(byId('pad-left').value) || 0,
+            right: positiveField('pad-right'),
+            bottom: positiveField('pad-bottom'),
+            left: positiveField('pad-left'),
           }
+          persistProject()
         }
 
         byId('export-veil').onclick = function (event) {
@@ -3657,16 +3861,50 @@
           renderDestination()
         }
 
+        /**
+         * Rétablit les réglages, sans toucher au projet.
+         *
+         * Réglages et projet ne se perdent pas ensemble : le designer peut
+         * vouloir repartir de conventions neuves en gardant ses captures.
+         */
+        byId('reset-settings').onclick = function () {
+          if (typeof window.confirm === 'function') {
+            if (
+              !window.confirm(
+                'Rétablir tous les réglages par défaut ? Vos composants sont ' +
+                  'conservés.'
+              )
+            ) {
+              return
+            }
+          }
+
+          for (var key in PERSISTED_SETTINGS) {
+            if (!PERSISTED_SETTINGS.hasOwnProperty(key)) continue
+            if (PERSISTED_SETTINGS[key] === null) continue
+            state[key] = PERSISTED_SETTINGS[key]
+          }
+          state.studio = { name: '', designer: '', email: '', website: '' }
+          state.grid = {}
+          state.nameTemplate = ''
+
+          applyRestoredSettings()
+          renderAll()
+        }
+
         byId('doc-enabled').onchange = function () {
           state.documentation = this.checked
+          persistProject()
         }
 
         byId('doc-language').onchange = function () {
           state.docLanguage = this.value
+          persistProject()
         }
 
         byId('doc-message').oninput = function () {
           state.docMessage = this.value
+          persistProject()
         }
 
         byId('doc-variables').onclick = function (event) {
@@ -3675,32 +3913,37 @@
           var field = byId('doc-message')
           field.value = field.value + '{{' + token + '}}'
           state.docMessage = field.value
+          persistProject()
         }
 
         byId('studio-name').oninput = function () {
           state.studio.name = this.value
+          persistProject()
         }
 
         byId('designer-name').oninput = function () {
           state.studio.designer = this.value
+          persistProject()
         }
 
         byId('studio-email').oninput = function () {
           state.studio.email = this.value
+          persistProject()
         }
 
         byId('studio-website').oninput = function () {
           state.studio.website = this.value
+          persistProject()
         }
 
         byId('folder-template').onchange = function () {
           state.folderTemplate = this.value
-          renderFolderTemplate()
+          renderDerived()
         }
 
         byId('name-template').oninput = function () {
           state.nameTemplate = this.value
-          renderNamePreview()
+          renderDerived()
         }
 
         byId('name-variables').onclick = function (event) {
@@ -3715,31 +3958,32 @@
             current === '' || /[\s._-]$/.test(current) ? '' : state.separator
           field.value = current + joiner + '{{' + variable + '}}'
           state.nameTemplate = field.value
-          renderNamePreview()
+          renderDerived()
         }
 
         byId('reset-template').onclick = function () {
           state.nameTemplate = ''
-          renderNamePreview()
+          renderDerived()
         }
 
         byId('collision-policy').onchange = function () {
           state.collision = this.value
+          persistProject()
         }
 
         byId('brand-name').oninput = function () {
           state.brandName = this.value
-          renderNamePreview()
+          renderDerived()
         }
 
         byId('project-name').oninput = function () {
           state.projectName = this.value
-          renderNamePreview()
+          renderDerived()
         }
 
         byId('pack-version').oninput = function () {
           state.version = this.value
-          renderNamePreview()
+          renderDerived()
         }
 
         byId('run-preflight').onclick = function () {
@@ -3896,7 +4140,25 @@
         }
 
         /** Vide les composants et repart d'une feuille blanche. */
+        /**
+         * Repart d'un projet vierge.
+         *
+         * Les réglages — arborescence, gabarit, studio — survivent : ils
+         * décrivent la façon de travailler du designer, pas le projet en
+         * cours. Seul le projet est effacé, et l'opération est confirmée.
+         */
         byId('reset-all').onclick = function () {
+          if (typeof window.confirm === 'function') {
+            if (
+              !window.confirm(
+                'Repartir d un projet vide ? Les composants capturés seront ' +
+                  'perdus ; vos réglages sont conservés.'
+              )
+            ) {
+              return
+            }
+          }
+
           for (var i = 0; i < state.components.length; i += 1) {
             if (state.components[i].path) {
               engine.call(
@@ -3907,7 +4169,10 @@
             }
           }
           state.components = [newComponent('Logo', 'logo')]
-          state.lastResult = null
+          state.scope = { components: {}, schemes: {} }
+          state.packageResult = null
+          state.preflight = null
+          state.lastError = ''
           byId('progress-veil').className = 'veil'
           renderAll()
         }
@@ -4030,7 +4295,8 @@
         guard('démarrage', function () {
           byId('open-settings').innerHTML = ICONS.settings
           byId('refresh').innerHTML = ICONS.refresh
-          restoreSchemes()
+          restoreProject()
+          applyRestoredSettings()
           state.components = [
             newComponent('Logo', 'logo'),
             newComponent('Logo Mark', 'logoMark'),
