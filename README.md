@@ -1,131 +1,111 @@
 # Logo Forge
 
-Plugin **Adobe Illustrator (UXP)** d'export automatisé de packs de logo.
-En un clic, il produit toutes les déclinaisons d'une identité — variantes,
-couleurs, formats, tailles — dans une arborescence de dossiers propre et
-prévisible, prête à être livrée au client.
+Plugin **Adobe Illustrator** qui produit un pack de logos livrable : toutes
+les déclinaisons d'une identité — composants, couleurs, formats, tailles —
+écrites dans une arborescence prête à être envoyée au client, avec sa
+documentation et son rapport.
 
-> État : le moteur d'export Illustrator est implémenté et branché sur le
-> panneau. Il n'a pas encore été exécuté dans Illustrator — l'API UXP n'est
-> joignable que depuis l'application. Voir [docs/ROADMAP.md](docs/ROADMAP.md).
+> **État.** Le plugin est complet et vérifié de bout en bout **hors
+> Illustrator** : suite de tests, scénarios en navigateur sur le panneau
+> construit, doublure fidèle du modèle objet. Il n'a **jamais été exécuté
+> dans Illustrator** — cet environnement de développement n'y a pas accès.
+> Le premier essai réel suit le protocole de
+> [docs/TEST-ILLUSTRATOR.md](docs/TEST-ILLUSTRATOR.md).
 
 ## Ce que fait le plugin
 
-Un pack de logo livrable, c'est le produit cartésien de quatre axes :
+Un pack livrable est le produit de quatre axes — composants × déclinaisons ×
+formats × tailles — soit couramment plus de deux cents fichiers. Logo Forge
+calcule ce produit, l'affiche avant d'écrire, puis le produit et le vérifie.
 
-| Axe              | Valeurs                                                       |
-| ---------------- | ------------------------------------------------------------- |
-| **Variantes**    | Principal, Horizontal, Vertical, Icône seule, Typographique   |
-| **Déclinaisons** | Couleur, Noir, Blanc, Niveaux de gris, Réserve                |
-| **Formats**      | AI, EPS, PDF, SVG, PNG, JPEG, WebP                            |
-| **Tailles**      | Toute liste de tailles en pixels, pour les formats matriciels |
+| Axe              | Valeurs                                                         |
+| ---------------- | --------------------------------------------------------------- |
+| **Composants**   | 14 types : logo, mark, logotype, lockups, favicon, tampon…      |
+| **Déclinaisons** | Couleur, Noir, Blanc, Réserve, plus les couleurs personnalisées |
+| **Formats**      | AI, EPS, PDF, SVG, PNG, JPEG, plus `favicon.ico`                |
+| **Tailles**      | Toute liste de largeurs, avec leur résolution                   |
 
-Logo Forge calcule ce produit, le déduplique, en déduit l'arborescence, puis
-écrit les fichiers. Un pack de livraison complet représente couramment plus de
-200 fichiers.
+### Ce qui est réellement livré
 
-### Ce qui le distingue
+- **Capture depuis la sélection.** « Set Component » copie la sélection dans
+  un document autonome, compte les objets copiés **et refusés**, cadre le
+  plan de travail et rend une vignette issue d'un vrai export — pas un
+  dessin d'approximation.
+- **Couleurs contrôlées.** Déclinaisons appliquées aux tracés, correspondance
+  source → cible par couleur, seuil d'inversion réglable, et contraste mesuré
+  sur quatre fonds avant d'exporter quoi que ce soit.
+- **Contrôle de production.** Douze contrôles automatiques (mode
+  colorimétrique, points isolés, contours non vectorisés, surimpression, noir
+  riche, texte vivant, nuances inutilisées…), deux réserves qui ne se voient
+  qu'à l'œil, et des corrections classées : sûres ou à valider.
+- **Export vérifié.** Chaque fichier est confronté au disque : chemin **et**
+  taille. Un fichier vide est un échec, pas un succès. L'échec d'un fichier
+  n'arrête pas les deux cents autres.
+- **Nommage à variables.** Gabarit composable (11 variables), aperçu en
+  direct, séparateur au choix, politique de collision explicite.
+- **Trois arborescences** — client, designer, agence — et la documentation du
+  pack en français ou en anglais, écrite pour un destinataire qui n'est pas
+  designer.
+- **Contrôle du pack.** À la fin, le dossier livré est **relu sur le disque**
+  et confronté au manifeste : manquants, vides, doublons, intrus.
+- **Reprise.** Un lot interrompu — panne, panneau fermé, machine éteinte —
+  se reprend là où il s'est arrêté, après vérification de ce qui est
+  réellement présent.
+- **Kit réseaux sociaux.** Huit canevas aux dimensions exactes des
+  plateformes, logo centré, fond assumé.
+- **Diagnostics et journal.** Six sondes en lecture seule, et un journal de
+  toutes les opérations avec leur durée — de quoi rendre un échec analysable.
 
-- **Le plan avant l'export.** L'arborescence complète est calculée et affichée
-  _avant_ la première écriture. Aucune surprise à l'arrivée.
-- **Diagnostics en amont.** Contraste WCAG insuffisant, tailles invalides,
-  combinaisons impossibles (CMJN sur PNG), pack anormalement volumineux : tout
-  est signalé avant de lancer l'export, pas après.
-- **Nommage sûr par construction.** Accents retirés, caractères interdits
-  filtrés, noms réservés Windows échappés, collisions suffixées. Un pack ne peut
-  pas contenir deux fichiers qui s'écrasent.
-- **Export résilient.** L'échec d'un fichier n'annule pas les 200 autres : les
-  erreurs sont collectées et rapportées à la fin.
-- **UXP, pas ExtendScript.** Interface React moderne, API Illustrator actuelle.
+## Deux chaînes dans un même dépôt
 
-## Architecture
+Le dépôt porte **deux** implémentations. Une seule est chargée par
+Illustrator :
 
-Le principe structurant : **le cœur métier ne connaît ni Illustrator ni UXP.**
+| Chaîne                                                                | Rôle                                                                                             |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `src/panel-cep.html` + `src/js/export-engine.js` + `src/jsx/main.jsx` | **Ce qui est livré.** Extension CEP, panneau en JavaScript ES5, couche ExtendScript.             |
+| `src/core/` + `src/ui/` + `src/illustrator/`                          | Chaîne UXP/React, **conservée pour un portage ultérieur**. `CSXS/manifest.xml` ne la charge pas. |
 
-```
-src/core/     Logique pure, testable en Node, sans aucune dépendance externe
-  types.ts          Types partagés
-  colorManager.ts   Conversions RVB/CMJN, contraste WCAG, déclinaisons
-  folderManager.ts  Nommage des fichiers, arborescence, déduplication
-  planner.ts        Calcul du pack complet + diagnostics
-  exporter.ts       Écriture générique (FileWriter/DocumentRenderer injectés)
-  exportOrchestrator.ts  Duplique, teinte, exporte, referme — moteur injecté
-  presets.ts        Préréglages livrés
-
-src/illustrator/  Seuls modules qui parlent à Illustrator
-  host.ts             require('illustrator'), remplaçable en test
-  illustratorEngine.ts  Export SVG/PNG/PDF/EPS/AI/JPEG, duplication, teinte
-
-src/ui/       Interface React et pont UXP
-  Panel.tsx              Panneau principal, détient l'état
-  ExportSettings.tsx     Options d'export (composant contrôlé)
-  PresetSelector.tsx     Sélecteur de préréglages
-  illustratorBridge.ts   FileWriter UXP et accès au moteur
-```
-
-`exportOrchestrator.ts` reçoit un `IllustratorEngine` par injection : en
-production celui de `src/illustrator/`, en test une doublure qui enregistre ce
-qu'on lui demande. C'est ce découplage qui permet de couvrir la totalité de la
-logique d'export sans lancer Illustrator — et qui garde `src/core/` vierge de
-tout appel à l'API Illustrator.
-
-## Préréglages livrés
-
-| Préréglage                    | Contenu                                                            |
-| ----------------------------- | ------------------------------------------------------------------ |
-| **Livraison client complète** | Toutes variantes et déclinaisons, vecteur + matriciel, web + print |
-| **Kit web**                   | SVG, PNG, WebP transparents, RVB, tailles d'écran usuelles         |
-| **Dossier d'impression**      | AI, EPS, PDF en CMJN, sans matriciel                               |
-| **Réseaux sociaux**           | Icônes matricielles aux tailles attendues par les plateformes      |
+Le panneau CEP vise Chromium 61 : pas de syntaxe postérieure à ES5, pas de
+`gap` ni de `inset` en CSS. La couche ExtendScript est un moteur ES3 sans
+`JSON` — d'où le protocole texte `OK|charge`. Ces contraintes sont vérifiées
+par des tests, pas seulement documentées.
 
 ## Installation en développement
 
-Prérequis : Node 22 (voir `.nvmrc`), Adobe Illustrator 2021 (25.0) ou plus
-récent, et [UXP Developer Tools](https://developer.adobe.com/photoshop/uxp/devtool/).
+Prérequis : Node 22 (voir `.nvmrc`) et Adobe Illustrator.
 
 ```bash
 npm ci
 npm run build          # produit dist/
 ```
 
-Puis dans UXP Developer Tools : **Add Plugin** → sélectionner `dist/manifest.json`
-→ **Load**. Le panneau apparaît dans Illustrator sous _Fenêtre → Extensions →
-Logo Forge_.
-
-`npm run dev` relance le build à chaque modification ; un **Reload** dans UXP
-Developer Tools suffit alors à recharger le panneau.
+Copier `dist/` dans le dossier des extensions CEP, puis autoriser les
+extensions non signées — la marche à suivre, par système, est dans
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). Le panneau apparaît sous
+_Fenêtre → Extensions → Logo Forge_.
 
 ## Commandes
 
-| Commande                | Rôle                                         |
-| ----------------------- | -------------------------------------------- |
-| `npm run build`         | Bundle UXP dans `dist/`                      |
-| `npm run dev`           | Build en watch                               |
-| `npm test`              | Suite Vitest                                 |
-| `npm run test:coverage` | Couverture du cœur métier (seuils appliqués) |
-| `npm run lint`          | ESLint                                       |
-| `npm run typecheck`     | TypeScript strict, sans émission             |
-| `npm run format:check`  | Vérification Prettier                        |
-| `npm run package`       | Build puis archive `.ccx` dans `build/`      |
-| `npm run verify`        | Lint + typecheck + tests + build             |
-
-## Contraintes techniques
-
-**UXP ne charge pas de modules ES.** Le build produit donc un IIFE unique
-(`dist/index.js`), sans import dynamique ni découpage de chunks. `src/index.html`
-est écrit à la main et copié tel quel : Vite ne bundle un HTML que si son script
-porte `type="module"`, ce que UXP refuse.
-
-**Zéro dépendance externe pour le cœur métier.** Conversions colorimétriques,
-calcul de contraste, manipulation de chemins et écriture ZIP (`scripts/package-ccx.ts`,
-bâti sur le seul `node:zlib`) sont implémentés dans le dépôt. Les seules
-dépendances d'exécution sont React et React DOM.
+| Commande                | Rôle                                             |
+| ----------------------- | ------------------------------------------------ |
+| `npm run build`         | Construit `dist/`                                |
+| `npm test`              | Suite complète (735 cas)                         |
+| `npm run test:e2e`      | Scénarios en navigateur sur le panneau construit |
+| `npm run test:coverage` | Couverture du cœur métier, seuils appliqués      |
+| `npm run lint`          | ESLint                                           |
+| `npm run typecheck`     | TypeScript strict, sans émission                 |
+| `npm run format:check`  | Vérification Prettier                            |
+| `npm run package`       | Build puis archive `.ccx` dans `build/`          |
+| `npm run verify`        | Lint + typecheck + tests + build                 |
 
 ## Documentation
 
-- [docs/LOADING-UXP.md](docs/LOADING-UXP.md) — charger le plugin dans Illustrator, pas à pas (macOS et Windows)
+- [docs/AUDIT.md](docs/AUDIT.md) — l'audit d'origine et les défauts corrigés
+- [docs/TEST-ILLUSTRATOR.md](docs/TEST-ILLUSTRATOR.md) — protocole du premier essai réel
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — mise en place, conventions, débogage
-- [docs/ROADMAP.md](docs/ROADMAP.md) — état actuel et suite des travaux
+- [docs/ROADMAP.md](docs/ROADMAP.md) — état et suite des travaux
+- [docs/LOADING-UXP.md](docs/LOADING-UXP.md) — chargement de la chaîne UXP, dormante
 
 ## Licence
 

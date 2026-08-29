@@ -548,3 +548,89 @@ messages orientés, journal consultable.
 **Ce qui est engagé immédiatement (P0, phase 3) :** BUG-001, BUG-002, BUG-003,
 BUG-004, plus une sonde de sélection pour rendre le diagnostic définitif au
 premier essai dans Illustrator.
+
+---
+
+## P. Défauts trouvés après l'audit
+
+L'audit portait sur le code tel qu'il était. Ces défauts-là ne s'y trouvaient
+pas : ils sont apparus en éprouvant les corrections — la plupart en écrivant
+un scénario qui exerçait un chemin que rien n'avait encore parcouru. Ils sont
+consignés ici pour que le dossier reste le récit complet.
+
+### BUG-011 — La persistance des composants était sans effet
+
+**Cause :** le démarrage réamorçait `state.components` avec quatre composants
+neufs, juste après que `restoreProject()` eut restauré ceux du projet.
+**Fichier :** `src/panel-cep.html`.
+**Fonction :** bloc de démarrage.
+**Impact :** toute capture était perdue à la fermeture du panneau — c'est-à-dire
+exactement ce que la phase 13–14 prétendait avoir corrigé.
+**Solution :** ne semer les quatre composants par défaut que si la restauration
+n'en a rendu aucun.
+**Test :** `tests/panelCep.test.ts`, et le scénario de bout en bout, dont le
+compteur passe de 0/4 à 2/4 après rechargement.
+
+**Pourquoi il n'avait pas été vu :** la doublure du scénario répondait « absent »
+à toute vérification d'existence de fichier. Les composants restaurés étaient
+donc marqués manquants, et le compteur à zéro paraissait normal. Une doublure
+trop complaisante masque exactement ce qu'elle est censée révéler.
+
+### BUG-012 — Cinq réglages changeaient l'état sans l'enregistrer
+
+**Cause :** les gestionnaires du dossier de livraison, du nom du client, des
+passes, du séparateur et de la case Favicons appelaient un rendu, jamais
+`persistProject()`.
+**Fichier :** `src/panel-cep.html`.
+**Impact :** le dossier de livraison — le réglage le plus pénible à ressaisir —
+était perdu à chaque ouverture. La reprise d'un lot devenait impossible, son
+empreinte ne pouvant plus correspondre.
+**Solution :** enregistrer dans chacun des cinq gestionnaires.
+**Test :** scénario de reprise, qui échoue sans cela.
+
+### BUG-013 — Un appel sans réponse suspendait le panneau indéfiniment
+
+**Cause :** aucune borne sur `evalScript`. Illustrator peut ne jamais rappeler :
+boîte de dialogue modale ouverte par un script, hôte planté.
+**Fichier :** `src/js/export-engine.js`.
+**Fonction :** `call`.
+**Impact :** bouton grisé, aucune erreur, aucun recours — l'inverse exact de
+l'exigence « aucune erreur silencieuse ».
+**Solution :** un délai de garde par appel, et un appel qui ne se règle qu'une
+fois — ni la réponse tardive d'un appel abandonné, ni un hôte qui rappellerait
+deux fois ne relancent la suite du lot.
+**Test :** `tests/robustness.test.ts`, horloge simulée.
+
+### BUG-014 — Un enregistrement abîmé rendait le panneau inutilisable, durablement
+
+**Cause :** `restoreProject()` recopiait les valeurs enregistrées sans vérifier
+leur forme. Un `formats` devenu chaîne faisait lever le démarrage.
+**Fichier :** `src/panel-cep.html`.
+**Impact :** l'état fautif étant relu à chaque ouverture, le panneau restait
+mort tant que le stockage local n'était pas vidé à la main — ce qu'un designer
+n'a aucune raison de savoir faire.
+**Solution :** vérifier la forme de chaque valeur relue, ramener les champs
+calculés à des nombres, et proposer sur place de repartir des réglages par
+défaut quand le démarrage échoue malgré tout.
+**Test :** `tests/robustness.test.ts` et le scénario « conditions dégradées ».
+
+### BUG-015 — Un élément d'interface manquant arrêtait le script en silence
+
+**Cause :** les gestionnaires sont câblés au chargement, hors de tout
+garde-fou ; `byId()` rendait `null`, et l'affectation levait.
+**Fichier :** `src/panel-cep.html`.
+**Fonction :** `byId`, et le câblage au niveau du module.
+**Impact :** panneau vide, aucun message — le symptôme même qui avait motivé
+l'audit.
+**Solution :** un élément absent rend un substitut inerte ; le reste du panneau
+continue de fonctionner, et l'absence est nommée à l'écran.
+**Test :** `tests/panelCep.test.ts` et le scénario « conditions dégradées ».
+
+### Deux imprécisions corrigées sans être des bugs
+
+- **Le journal séparait ses colonnes par une flèche.** Un glyphe pictographique,
+  interdit comme icône fonctionnelle ; remplacé par un point médian. Trouvé par
+  le garde-fou d'iconographie, sur du code que j'avais écrit après lui.
+- **`state.runTraceLost` était posé et jamais lu.** Un drapeau que personne ne
+  regarde ne protège de rien : la perte de la trace est maintenant annoncée à
+  la fin du lot.

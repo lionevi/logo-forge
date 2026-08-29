@@ -1,64 +1,68 @@
 # Feuille de route
 
-## État actuel — v0.1.0
+## État — après l'audit et la remise en état
 
-Le socle est en place et vérifié par la CI.
+Le plugin livré est l'**extension CEP** (`src/panel-cep.html`,
+`src/js/export-engine.js`, `src/jsx/main.jsx`). La chaîne UXP/React est
+conservée pour un portage ultérieur ; `CSXS/manifest.xml` ne la charge pas.
 
-**Fait**
+**Fait, et vérifié hors Illustrator**
 
-- [x] Cœur métier complet et testé : planification, nommage, couleur, export
-- [x] Conversions RVB ↔ CMJN et contraste WCAG, sans dépendance externe
-- [x] Nommage sûr : accents, caractères interdits, noms réservés Windows, collisions
-- [x] Quatre stratégies d'arborescence (usage/format, format, variante, à plat)
-- [x] Moteur d'export résilient, annulable, avec rapport de progression
-- [x] Diagnostics avant export (erreurs bloquantes et avertissements)
-- [x] Moteur Illustrator UXP : SVG, PNG24, JPEG, PDF, EPS, AI
-- [x] Duplication du document et déclinaisons chromatiques appliquées aux tracés
-- [x] Interface React : document actif, préréglages, aperçu du pack, progression
-- [x] Quatre préréglages livrés
-- [x] Build UXP en IIFE, manifest v5, packaging `.ccx` sans dépendance
-- [x] CI : format, lint, typecheck, 177 tests, build, packaging, artefact
+- [x] Capture d'un composant : ordre de superposition, objets refusés
+      comptés, cadrage, vignette issue d'un export réel, vérification du
+      fichier écrit
+- [x] Déclinaisons chromatiques, correspondance source → cible, seuil
+      d'inversion, contraste mesuré sur quatre fonds
+- [x] Contrôle de production : douze contrôles, deux réserves à l'œil,
+      corrections classées sûres / à valider
+- [x] Export des six formats, chacun confronté au disque (chemin et taille)
+- [x] Portée d'export par composant et par déclinaison
+- [x] Nommage à variables, aperçu, séparateur, politique de collision
+- [x] Trois modèles d'arborescence, documentation client fr/en, manifeste
+- [x] Contrôle du pack livré : manquants, vides, doublons, intrus
+- [x] Persistance complète du projet, et reprise d'un lot interrompu
+- [x] `favicon.ico` assemblé à partir des PNG du pack
+- [x] Kit réseaux sociaux : huit canevas aux dimensions des plateformes
+- [x] Erreurs actionnables, journal, six sondes système
+- [x] Conditions dégradées : hôte muet, enregistrement abîmé, stockage en
+      refus, élément d'interface manquant
+- [x] Suite de 739 cas, quatre scénarios de bout en bout en navigateur,
+      compatibilité ES5 et Chromium 61 vérifiées par des tests
 
-**Limite connue**
+**La limite, et elle est entière**
 
-Le moteur n'a jamais tourné dans Illustrator : cet environnement de
-développement n'y a pas accès. Le code suit le modèle objet documenté et se
-protège des écarts de version (`assignIfSupported` n'écrit que les propriétés
-que l'hôte déclare), mais la première exécution réelle reste à faire.
+Rien n'a jamais tourné dans Illustrator. Ce qui est vérifié, c'est le
+**contrat** passé avec Illustrator — une doublure fidèle du modèle objet —
+pas Illustrator lui-même. Les usages les plus incertains sont énumérés,
+classés par risque, dans [TEST-ILLUSTRATOR.md](TEST-ILLUSTRATOR.md).
 
-Le WebP est refusé explicitement : Illustrator ne l'expose pas au script.
+## Suite — validation dans Illustrator
 
-## v0.2 — Validation dans Illustrator
+- [ ] Dérouler le protocole de `TEST-ILLUSTRATOR.md`, versions 2021 et 2024
+- [ ] Corriger les écarts d'API relevés (options d'export, commandes de menu)
+- [ ] Dégradés et motifs : les recolorer, ou les signaler explicitement
+- [ ] Détection des composants depuis les calques du document
 
-- [ ] Première exécution réelle dans Illustrator 2021 et 2024
-- [ ] Vérification des noms d'options d'export selon la version de l'hôte
-- [ ] Détection des calques de variantes dans le document ouvert
-- [ ] Conversion des dégradés et motifs en niveaux de gris
-- [ ] Choix du plan de travail par variante, plutôt qu'un index global
+## Ensuite — qualité du pack
 
-## v0.3 — Qualité du pack livré
-
-- [ ] Génération d'un `README` de pack (usages, couleurs, zones de protection)
-- [ ] Planche de contrôle PDF récapitulant toutes les variantes
 - [ ] Zones de protection et tailles minimales paramétrables
-- [ ] Vérification automatique des tracés (contours non vectorisés, texte non converti)
 - [ ] Export des nuances en `.ase`
+- [ ] Planche de contrôle PDF récapitulant toutes les déclinaisons
 
-## v0.4 — Productivité
+## Productivité
 
-- [ ] Préréglages personnalisés, enregistrés et exportables
+- [ ] Préréglages de projet, enregistrés et exportables
 - [ ] Traitement par lot sur plusieurs documents
-- [ ] Reprise d'un export interrompu
-- [ ] Historique des exports par projet
+- [ ] Historique des livraisons par client
 
-## v1.0 — Distribution
+## Distribution
 
-- [ ] Icônes du panneau et de la liste des plugins
-- [ ] Localisation anglaise complète
+- [ ] Traduction de l'interface (la documentation client l'est déjà)
 - [ ] Signature et soumission à Adobe Exchange
 - [ ] Documentation utilisateur illustrée
 
 ## Non prévu
 
-- Support d'ExtendScript. UXP est la plateforme cible, sans repli.
 - Édition ou création de logo. Logo Forge exporte ; il ne dessine pas.
+- WebP : Illustrator ne l'expose pas au script. Annoncer le format sans
+  pouvoir l'écrire serait un mensonge de plus dans une case à cocher.

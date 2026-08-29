@@ -163,23 +163,52 @@ function buildZip(sourceDir: string, fileNames: string[]): Buffer {
   return Buffer.concat(chunks)
 }
 
-function main(): void {
-  const files = listFiles(DIST)
+/**
+ * Fichiers de la chaîne UXP, présents dans `dist/` mais jamais chargés.
+ *
+ * `CSXS/manifest.xml` ne les mentionne pas : les emporter dans l'archive
+ * ajouterait un plugin entier — bundle React compris — à une extension qui ne
+ * s'en sert pas. Ils restent dans `dist/` pour le portage à venir, décrit
+ * dans docs/LOADING-UXP.md.
+ */
+const UXP_ONLY = ['index.js', 'manifest.json', 'panel-react.html']
 
-  if (files.length === 0) {
+function isUxpOnly(name: string): boolean {
+  return UXP_ONLY.includes(name) || name.startsWith('assets/')
+}
+
+/** Fichiers sans lesquels l'extension ne se charge pas. */
+const REQUIRED = [
+  'CSXS/manifest.xml',
+  'index.html',
+  'js/export-engine.js',
+  'jsx/main.jsx',
+]
+
+function main(): void {
+  const all = listFiles(DIST)
+
+  if (all.length === 0) {
     throw new Error('dist/ est vide : lancez `npm run build` avant le packaging.')
   }
-  if (!files.includes('manifest.json')) {
-    throw new Error('manifest.json absent de dist/ : le plugin serait rejeté par UXP.')
+
+  const files = all.filter((name) => !isUxpOnly(name))
+  for (const required of REQUIRED) {
+    if (!files.includes(required)) {
+      throw new Error(`${required} absent de dist/ : l extension ne se chargerait pas.`)
+    }
   }
 
-  const manifest = JSON.parse(readFileSync(join(DIST, 'manifest.json'), 'utf8')) as {
-    id: string
-    version: string
+  // La version fait foi là où l'hôte la lit : dans le descripteur CEP.
+  const descriptor = readFileSync(join(DIST, 'CSXS/manifest.xml'), 'utf8')
+  const id = /ExtensionBundleId="([^"]+)"/.exec(descriptor)
+  const version = /ExtensionBundleVersion="([^"]+)"/.exec(descriptor)
+  if (!id || !version) {
+    throw new Error('CSXS/manifest.xml : identifiant ou version illisible.')
   }
 
   mkdirSync(BUILD, { recursive: true })
-  const output = join(BUILD, `${manifest.id}-${manifest.version}.ccx`)
+  const output = join(BUILD, `${id[1]}-${version[1]}.ccx`)
   const archive = buildZip(DIST, files)
   writeFileSync(output, archive)
 
