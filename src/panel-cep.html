@@ -1625,6 +1625,39 @@
           }
         }
 
+        /**
+         * Ce que le panneau attend du moteur.
+         *
+         * Les deux fichiers évoluent ensemble mais se déploient séparément.
+         * Copier `index.html` sans recopier `js/export-engine.js` laissait le
+         * panneau appeler des fonctions qui n'existaient pas encore : une
+         * exception au démarrage, un corps à moitié rendu, et rien qui dise
+         * pourquoi. La liste est vérifiée par un test, qui la tient à jour.
+         */
+        var REQUIRED_ENGINE = [
+          'COLLISION_POLICIES', 'CONTRAST_BACKGROUNDS', 'DOC_VARIABLES', 'FOLDER_TEMPLATES',
+          'NAME_VARIABLES', 'PREFLIGHT_MANUAL', 'SOCIAL_PRESETS', 'call',
+          'checkContrast', 'checkHostScript', 'clearLog', 'countFailures',
+          'countWarnings', 'defaultTemplate', 'deliveryName', 'describeError',
+          'evaluatePreflight', 'folderTemplate', 'formatBytes', 'formatDuration',
+          'gridSettings', 'inkColor', 'log', 'logHistory',
+          'planDirectories', 'planExport', 'planPackageGrid', 'planSocialKit',
+          'readDocumentInfo', 'runDiagnostics', 'runFullExport', 'runPackageBuild',
+          'runSocialKit', 'sanitize', 'schemeTitle', 'snapshotMatches',
+          'totalBytes', 'verifySnapshot',
+        ]
+
+        /** Fonctions attendues et absentes du moteur chargé. */
+        function missingEngineSymbols(engine) {
+          var missing = []
+          for (var i = 0; i < REQUIRED_ENGINE.length; i += 1) {
+            if (engine[REQUIRED_ENGINE[i]] === undefined) {
+              missing.push(REQUIRED_ENGINE[i])
+            }
+          }
+          return missing
+        }
+
         if (typeof LogoForgeEngine === 'undefined') {
           showError(
             'Moteur introuvable :',
@@ -1634,6 +1667,25 @@
           return
         }
         var engine = LogoForgeEngine
+
+        // Un moteur d'une version antérieure se reconnaît à ce qui lui manque.
+        // Le dire ici, en clair, vaut mieux qu'une exception trois écrans plus
+        // loin sur un panneau à moitié construit.
+        var absent = missingEngineSymbols(engine)
+        if (absent.length) {
+          showError(
+            'Moteur périmé :',
+            'js/export-engine.js ne correspond pas à ce panneau — ' +
+              absent.length +
+              ' fonction(s) manquante(s) : ' +
+              absent.slice(0, 6).join(', ') +
+              (absent.length > 6 ? '…' : '') +
+              '\n\nÀ faire : recopiez tout le contenu de dist/ dans le ' +
+              'dossier de l extension, dossiers js/ et jsx/ compris, puis ' +
+              'rouvrez le panneau.'
+          )
+          return
+        }
 
         /* ---------------------------------------------------------------- *
          * Environnement
@@ -4037,22 +4089,35 @@
           renderFolderTemplate()
         }
 
+        /**
+         * Redessine tout le panneau.
+         *
+         * Chaque rendu est isolé : un seul qui échoue laissait tous les
+         * suivants sans exécution, et le panneau à moitié construit — sans
+         * document interrogé, sans sondage, sans reprise proposée. Un défaut
+         * localisé doit rester localisé.
+         */
         function renderAll() {
-          renderStatus()
-          renderDocument()
-          renderComponents()
-          renderSchemes()
-          renderInversion()
-          renderFormats()
-          renderScales()
-          renderCollisionPolicy()
-          renderDocVariables()
-          renderDiagnostics()
-          renderHostScript()
-          renderLog()
-          renderPreflight()
-          renderSocialPresets()
-          renderDerived()
+          var steps = [
+            ['état', renderStatus],
+            ['document', renderDocument],
+            ['composants', renderComponents],
+            ['déclinaisons', renderSchemes],
+            ['inversion', renderInversion],
+            ['formats', renderFormats],
+            ['échelles', renderScales],
+            ['collisions', renderCollisionPolicy],
+            ['variables', renderDocVariables],
+            ['diagnostics', renderDiagnostics],
+            ['chargement', renderHostScript],
+            ['journal', renderLog],
+            ['contrôle', renderPreflight],
+            ['réseaux sociaux', renderSocialPresets],
+            ['dérivés', renderDerived]
+          ]
+          for (var i = 0; i < steps.length; i += 1) {
+            guard('affichage — ' + steps[i][0], steps[i][1])
+          }
         }
 
         /* ---------------------------------------------------------------- *

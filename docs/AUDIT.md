@@ -705,3 +705,35 @@ utilisable précisément quand aucune n'existe.
 C'est le bouton « Vérifier jsx/main.jsx », dans Réglages → Diagnostics. La
 prochaine panne de ce genre se diagnostique en un clic, sans redéploiement et
 sans bissection : le verdict vient d'Illustrator, pas d'une hypothèse.
+
+### BUG-018 — Un moteur périmé laissait le panneau à moitié construit
+
+**Cause :** `index.html` et `js/export-engine.js` évoluent ensemble mais se
+déploient séparément. Recopier le premier sans le second laissait le panneau
+appeler des fonctions qui n'existaient pas encore dans le moteur installé.
+**Fichier :** `src/panel-cep.html`.
+**Impact :** exception au démarrage, `renderAll` interrompu à mi-parcours, et
+tout ce qui suivait — interrogation du document, sondage, reprise proposée —
+jamais exécuté. À l'écran : l'en-tête, et un corps quasi vide. Le défaut
+revenait à **chaque build ajoutant une fonction au moteur**, ce qui le faisait
+ressembler à une régression de mise en page.
+**Solution :** le panneau déclare les 38 symboles qu'il attend et refuse de
+démarrer sans eux, en nommant les manquants et le geste à faire. Et chaque
+rendu est isolé : un rendu qui échoue n'emporte plus les suivants.
+**Test :** `tests/panelCep.test.ts` compare la liste déclarée aux appels
+réellement présents dans la source, et aux exports du moteur. La liste ne peut
+donc pas vieillir en silence.
+
+**Reproduit avant correction**, avec le moteur de `fcc9eba` à côté du panneau
+courant : `TypeError: Cannot read properties of undefined (reading 'length')
+at renderSocialPresets`. Après correction, le même montage rend :
+« Moteur périmé : js/export-engine.js ne correspond pas à ce panneau —
+6 fonction(s) manquante(s) : SOCIAL_PRESETS, checkHostScript, planSocialKit,
+runSocialKit, snapshotMatches, verifySnapshot ».
+
+**Sur la piste CSS.** L'hypothèse examinée était une propriété incompatible
+réintroduite à chaque phase. Elle ne l'était pas : `100vh`, `100dvh`, `100svh`,
+`calc(100v` et `position: fixed` sont absents de la source comme du fichier
+livré, et la mise en page est en positionnement absolu borné depuis le début.
+Le garde-fou demandé a été ajouté quand même — la régression est plausible, le
+contrôle coûte trois lignes, et il vaut mieux qu'il existe avant.

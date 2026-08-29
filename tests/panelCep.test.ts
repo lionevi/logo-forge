@@ -7,13 +7,18 @@
  * symptôme y est un panneau muet.
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import * as acorn from 'acorn'
 import { describe, expect, it } from 'vitest'
 
 const HTML = readFileSync(resolve(import.meta.dirname, '../src/panel-cep.html'), 'utf8')
+
+const ENGINE = readFileSync(
+  resolve(import.meta.dirname, '../src/js/export-engine.js'),
+  'utf8',
+)
 
 /** Scripts inline du document, hors balises à `src`. */
 const INLINE_SCRIPTS = [
@@ -939,5 +944,105 @@ describe('contrôle du chargement de la couche Illustrator', () => {
     const block = SCRIPT.slice(SCRIPT.indexOf('function renderHostScript('))
     expect(block.slice(0, 1600)).toContain('result.defined')
     expect(block.slice(0, 1600)).toContain('ScriptPath')
+  })
+})
+
+describe('mise en page compatible CEP', () => {
+  /**
+   * Unités et positionnements qui ont déjà vidé le panneau.
+   *
+   * `vh` ne se résout pas sur la fenêtre d'un panneau CEP : une hauteur qui
+   * en dépend s'effondre à zéro, et il ne reste que l'en-tête sur un fond
+   * gris. Le panneau se dimensionne donc en positionnement absolu, borné par
+   * `top` et `bottom`.
+   */
+  const FORBIDDEN = [
+    '100vh',
+    '100dvh',
+    '100svh',
+    'min-height: 100v',
+    'min-height:100v',
+    'calc(100v',
+    'position: fixed',
+    'position:fixed',
+  ]
+
+  it('n’emploie aucune unité ni position proscrite', () => {
+    for (const property of FORBIDDEN) {
+      expect(STYLE, property).not.toContain(property)
+    }
+  })
+
+  it('ne les laisse pas non plus passer dans le fichier livré', () => {
+    // Le panneau est copié tel quel, mais le vérifier ici garde le contrôle
+    // vrai même si le build venait à transformer la feuille de style.
+    const built = resolve(import.meta.dirname, '../dist/index.html')
+    if (!existsSync(built)) return
+
+    const contents = readFileSync(built, 'utf8')
+    for (const property of FORBIDDEN) {
+      expect(contents, property).not.toContain(property)
+    }
+  })
+
+  it('borne le panneau et son corps par leurs quatre côtés', () => {
+    // C'est ce qui remplace `height: 100vh` : une hauteur déduite du bloc
+    // conteneur, que CEP résout toujours.
+    expect(STYLE).toMatch(/html,\s*body\s*\{[^}]*height:\s*100%/)
+    expect(STYLE).toMatch(
+      /\.panel\s*\{[^}]*position:\s*absolute[^}]*top:\s*0[^}]*bottom:\s*0/,
+    )
+    expect(STYLE).toMatch(
+      /\.panel-body\s*\{[^}]*position:\s*absolute[^}]*top:[^}]*bottom:\s*0/,
+    )
+  })
+})
+
+describe('accord entre le panneau et le moteur', () => {
+  /**
+   * Ce que le panneau appelle réellement, relevé dans sa source.
+   *
+   * La négation en tête écarte `export-engine.js`, qui ressemble à un appel
+   * sans en être un.
+   */
+  const USED = [
+    ...new Set(
+      [...SCRIPT.matchAll(/(?<![-\w])engine\.([A-Za-z_$][\w$]*)/g)].map((m) => m[1]),
+    ),
+  ]
+
+  const DECLARED = (() => {
+    const block = /var REQUIRED_ENGINE = \[([\s\S]*?)\]/.exec(SCRIPT)
+    return block ? [...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : []
+  })()
+
+  const EXPORTED = new Set(
+    [...ENGINE.matchAll(/^ {4}([A-Za-z_$][\w$]*):\s/gm)].map((m) => m[1]),
+  )
+
+  it('déclare tout ce qu’il appelle', () => {
+    // Sans cela, la liste vieillirait en silence et le contrôle de version
+    // laisserait passer précisément ce qu'il doit attraper.
+    expect([...USED].sort()).toEqual([...DECLARED].sort())
+  })
+
+  it('n’attend rien que le moteur n’exporte', () => {
+    for (const name of DECLARED) {
+      expect(EXPORTED.has(name), name).toBe(true)
+    }
+  })
+
+  it('refuse de démarrer sur un moteur incomplet', () => {
+    // Deux fichiers qui évoluent ensemble et se déploient séparément : un
+    // index.html recopié sans son moteur laissait le panneau à moitié
+    // construit, sans rien dire.
+    expect(SCRIPT).toContain('function missingEngineSymbols(')
+    expect(SCRIPT).toContain('Moteur périmé :')
+    expect(SCRIPT).toContain('dossiers js/ et jsx/ compris')
+  })
+
+  it('isole chaque rendu du panneau', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function renderAll('))
+    expect(block.slice(0, 1400)).toContain("guard('affichage — '")
   })
 })
