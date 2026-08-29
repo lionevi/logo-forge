@@ -18,14 +18,16 @@ export type Bounds = [number, number, number, number]
 /** Fichier en mémoire : un chemin, une taille. */
 export interface FakeFileEntry {
   bytes: number
+  /** Contenu, quand il a été écrit par le code testé. */
+  content?: string
 }
 
 export class FakeFileSystem {
   readonly files = new Map<string, FakeFileEntry>()
   readonly folders = new Set<string>(['/tmp'])
 
-  write(path: string, bytes: number): void {
-    this.files.set(path, { bytes })
+  write(path: string, bytes: number, content?: string): void {
+    this.files.set(path, { bytes, content })
   }
 
   reset(): void {
@@ -365,7 +367,7 @@ class FakeApp {
   }
 }
 
-interface Host {
+export interface Host {
   app: FakeApp
   filesystem: FakeFileSystem
   api: Record<string, (...args: unknown[]) => string>
@@ -402,7 +404,10 @@ export function loadExtendScript(): Host {
       return true
     }
     write(text: string): void {
-      filesystem.write(this.fsName, text.length)
+      filesystem.write(this.fsName, text.length, text)
+    }
+    read(): string {
+      return filesystem.files.get(this.fsName)?.content ?? ''
     }
     close(): void {
       /* rien à libérer */
@@ -526,6 +531,7 @@ export function loadExtendScript(): Host {
     'lfExportPNG',
     'lfExportSVG',
     'lfExportAI',
+    'lfWriteIco',
   ]
 
   const factory = new Function(

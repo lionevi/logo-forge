@@ -207,6 +207,111 @@ var LogoForge = (function () {
   }
 
   /* ---------------------------------------------------------------------- *
+   * Assemblage d'un favicon.ico
+   *
+   * Illustrator n'exporte pas d'ICO. Le format est pourtant le seul que les
+   * navigateurs réclament d'eux-mêmes, à la racine du site. Un ICO n'étant
+   * qu'un conteneur, il est ici assemblé à partir des PNG déjà exportés :
+   * un en-tête, une entrée par taille, puis les PNG tels quels.
+   *
+   * Les PNG sont recopiés sans être recompressés : le format le permet depuis
+   * Windows Vista, et tous les navigateurs actuels le lisent. Un système
+   * antérieur à Vista n'en verrait rien — c'est la limite assumée de cette
+   * approche, la seule qui n'exige pas d'encodeur BMP.
+   * ---------------------------------------------------------------------- */
+
+  /** Entier sur deux octets, petit-boutiste. */
+  function uint16(value) {
+    return String.fromCharCode(value & 255, (value >> 8) & 255)
+  }
+
+  /** Entier sur quatre octets, petit-boutiste. */
+  function uint32(value) {
+    return String.fromCharCode(
+      value & 255,
+      (value >> 8) & 255,
+      (value >> 16) & 255,
+      (value >> 24) & 255
+    )
+  }
+
+  /** Lit un fichier octet par octet, sans conversion d'encodage. */
+  function readBinary(path) {
+    var file = new File(path)
+    if (!file.exists) return null
+    file.encoding = 'BINARY'
+    if (!file.open('r')) return null
+    var data = file.read()
+    file.close()
+    return data
+  }
+
+  /**
+   * Assemble un ICO à partir de PNG existants.
+   *
+   * @param targetPath fichier à écrire.
+   * @param sources chemins des PNG, séparés par UNIT, du plus petit au plus
+   *   grand ; chacun doit être carré et d'au plus 256 pixels de côté.
+   * @param sizes côtés correspondants, séparés par UNIT.
+   * @returns `chemin | octets`.
+   */
+  function writeIco(targetPath, sources, sizes) {
+    try {
+      var paths = String(sources).split(UNIT)
+      var sides = String(sizes).split(UNIT)
+      var images = []
+      var i
+
+      for (i = 0; i < paths.length; i += 1) {
+        if (!paths[i]) continue
+        var side = parseInt(sides[i], 10)
+        if (!(side > 0) || side > 256) continue
+        var data = readBinary(paths[i])
+        // Un PNG absent ou vide est écarté : mieux vaut un ICO à deux
+        // tailles qu'un ICO annonçant une image qu'il ne contient pas.
+        if (!data || !data.length) continue
+        images.push({ side: side, data: data })
+      }
+
+      if (images.length === 0) return err('aucun PNG lisible pour le favicon')
+
+      // L'en-tête est de 6 octets, chaque entrée de 16 : les images
+      // commencent après le catalogue.
+      var offset = 6 + images.length * 16
+      var header = String.fromCharCode(0, 0, 1, 0) + uint16(images.length)
+      var catalog = ''
+      var payload = ''
+
+      for (i = 0; i < images.length; i += 1) {
+        var image = images[i]
+        // 256 s'écrit 0 : l'octet ne va que jusqu'à 255.
+        var dimension = image.side === 256 ? 0 : image.side
+        catalog +=
+          String.fromCharCode(dimension, dimension, 0, 0) +
+          uint16(1) +
+          uint16(32) +
+          uint32(image.data.length) +
+          uint32(offset)
+        offset += image.data.length
+        payload += image.data
+      }
+
+      var file = new File(targetPath)
+      file.encoding = 'BINARY'
+      if (!file.open('w')) return err('ouverture en ecriture refusee : ' + targetPath)
+      file.write(header + catalog + payload)
+      file.close()
+
+      var written = new File(targetPath)
+      if (!written.exists) return err('favicon.ico non ecrit : ' + targetPath)
+      if (!written.length) return err('favicon.ico vide : ' + targetPath)
+      return ok(targetPath + UNIT + written.length)
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
+  /* ---------------------------------------------------------------------- *
    * Session de travail
    *
    * Toute exportation passe par une copie temporaire du document. Deux raisons :
@@ -1935,6 +2040,7 @@ var LogoForge = (function () {
     createFolder: createFolder,
     pathExists: pathExists,
     writeTextFile: writeTextFile,
+    writeIco: writeIco,
     listFiles: listFiles,
     beginSession: beginSession,
     endSession: endSession,
@@ -1997,6 +2103,9 @@ function lfListFiles(root, limit) {
 
 function lfWriteTextFile(path, contents) {
   return LogoForge.writeTextFile(path, contents)
+}
+function lfWriteIco(targetPath, sources, sizes) {
+  return LogoForge.writeIco(targetPath, sources, sizes)
 }
 function lfBeginSession() {
   return LogoForge.beginSession()

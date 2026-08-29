@@ -125,6 +125,15 @@ var LogoForgeEngine = (function () {
   /** Tailles de favicon attendues par les navigateurs et les plateformes. */
   var FAVICON_SIZES = [16, 32, 128, 180, 192]
 
+  /**
+   * Tailles retenues dans le favicon.ico.
+   *
+   * Un ICO n'a pas à porter toutes les tailles du pack : les navigateurs
+   * n'en lisent que les petites, et chaque image alourdit un fichier demandé
+   * à chaque visite. Les grandes tailles restent livrées en PNG.
+   */
+  var ICO_SIZES = [16, 32, 48]
+
   /* ---------------------------------------------------------------------- *
    * Pont ExtendScript
    * ---------------------------------------------------------------------- */
@@ -636,10 +645,12 @@ var LogoForgeEngine = (function () {
               format: 'png',
               favicon: true,
             }),
-            fileName:
-              'favicon' + separator + FAVICON_SIZES[v] + 'px.png',
+            fileName: 'favicon' + separator + FAVICON_SIZES[v] + 'px.png',
             width: FAVICON_SIZES[v],
             resolution: 72,
+            // Marque la tâche pour l'assemblage de l'ICO : un PNG de 32 px
+            // n'est pas forcément un favicon.
+            favicon: true,
           })
         }
       }
@@ -1261,6 +1272,94 @@ var LogoForgeEngine = (function () {
     }
 
     /**
+     * Assemble le favicon.ico à partir des PNG réellement écrits.
+     *
+     * Illustrator n'exporte pas d'ICO, et c'est pourtant le seul fichier que
+     * les navigateurs réclament d'eux-mêmes. Il est donc assemblé après coup,
+     * à partir des favicons du pack — et seulement de ceux qui existent : un
+     * ICO annonçant une image absente serait illisible.
+     */
+    function assembleFavicon(result, done) {
+      if (!config.favicon) {
+        done()
+        return
+      }
+
+      var sources = []
+      var sizes = []
+      var folder = ''
+      var origin = null
+
+      for (var i = 0; i < written.length; i += 1) {
+        var task = written[i]
+        if (task.format !== 'png' || !task.favicon) continue
+        if (ICO_SIZES.indexOf(task.width) < 0) continue
+        sources.push(joinPath(root, task.folder.split('/').concat([task.fileName])))
+        sizes.push(task.width)
+        folder = task.folder
+        origin = task
+      }
+
+      if (sources.length === 0) {
+        done()
+        return
+      }
+
+      var target = joinPath(root, folder.split('/').concat(['favicon.ico']))
+      call(
+        'lfWriteIco',
+        [target, sources.join(UNIT), sizes.join(UNIT)],
+        function (answer) {
+          if (!answer.ok) {
+            failures.push({
+              task: {
+                component: origin.component,
+                scheme: origin.scheme,
+                format: 'ico',
+                folder: folder,
+                fileName: 'favicon.ico',
+              },
+              message: answer.value,
+            })
+            done()
+            return
+          }
+
+          var bytes = parseInt(String(answer.value).split(UNIT)[1], 10) || 0
+          if (!bytes) {
+            failures.push({
+              task: {
+                component: origin.component,
+                scheme: origin.scheme,
+                format: 'ico',
+                folder: folder,
+                fileName: 'favicon.ico',
+              },
+              message: 'favicon.ico vide',
+            })
+            done()
+            return
+          }
+
+          written.push({
+            pass: 'web',
+            kind: 'ico',
+            format: 'ico',
+            folder: folder,
+            fileName: 'favicon.ico',
+            component: origin.component,
+            scheme: origin.scheme,
+            bytes: bytes,
+            warnings: [],
+            status: JOB_STATUS.success,
+          })
+          log('FAVICON_ICO', sizes.join('/') + ' px', 'ok', '', null)
+          done()
+        }
+      )
+    }
+
+    /**
      * Écrit la documentation destinée au client.
      *
      * Elle décrit le pack réellement livré : elle ne peut donc être composée
@@ -1421,7 +1520,9 @@ var LogoForgeEngine = (function () {
                 message: write.value,
               })
             }
-            writeDocumentation(result)
+            assembleFavicon(result, function () {
+              writeDocumentation(result)
+            })
           }
         )
       })
@@ -1658,6 +1759,7 @@ var LogoForgeEngine = (function () {
       pdf: 'Pour l impression et pour joindre le logo à un courrier ou un devis.',
       svg: 'Pour votre site internet. Reste net à toutes les tailles.',
       png: 'Pour un écran, une présentation, un réseau social. Fond transparent.',
+      ico: 'Icône de votre site dans l onglet du navigateur. À déposer à la racine du site.',
       jpg: 'Pour un écran, quand un fond blanc convient. Ne gère pas la transparence.',
     },
     en: {
@@ -1666,6 +1768,7 @@ var LogoForgeEngine = (function () {
       pdf: 'For printing, and for attaching the logo to a letter or a quote.',
       svg: 'For your website. Stays sharp at any size.',
       png: 'For screens, slides and social media. Transparent background.',
+      ico: 'Your site icon in the browser tab. Drop it at the root of the website.',
       jpg: 'For screens when a white background is fine. No transparency.',
     },
   }
@@ -3154,7 +3257,9 @@ var LogoForgeEngine = (function () {
     parseFileListing: parseFileListing,
     auditPackage: auditPackage,
     folderTemplate: folderTemplate,
+    FORMAT_USE: FORMAT_USE,
     FAVICON_SIZES: FAVICON_SIZES,
+    ICO_SIZES: ICO_SIZES,
     PRINT_FORMATS: PRINT_FORMATS,
     WEB_FORMATS: WEB_FORMATS,
     joinFolder: joinFolder,
