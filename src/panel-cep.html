@@ -994,6 +994,26 @@
   </head>
 
   <body>
+    <!--
+      Témoin de démarrage. Il est écrit dans le HTML, donc affiché dès que la
+      page est servie. Le script le fait avancer d'étape en étape et l'efface
+      quand le panneau est prêt : s'il reste visible, il nomme l'endroit exact
+      où le démarrage s'est arrêté — et s'il porte encore « script non
+      exécuté », c'est que le JavaScript n'a pas tourné du tout.
+    -->
+    <div
+      id="lf-startup-check"
+      style="
+        padding: 6px 10px;
+        background: #d97706;
+        color: #ffffff;
+        font-family: monospace;
+        font-size: 11px;
+        line-height: 1.4;
+      "
+    >
+      Logo Forge — script non exécuté
+    </div>
     <div class="panel">
       <div class="panel-header">
         <div class="brand">
@@ -1097,6 +1117,7 @@
               </div>
             </div>
             <button class="button small" id="add-custom">+ Color Scheme</button>
+            <div id="custom-refusal"></div>
           </div>
 
           <div class="section">
@@ -1494,6 +1515,21 @@
             </div>
 
             <div class="section">
+              <h2 class="section-title">Essai d'export</h2>
+              <p class="summary">
+                Écrit le document ouvert en SVG, PNG et PDF dans le dossier
+                temporaire, et rend le chemin et la taille de chaque fichier.
+                Une option d'export refusée par cette version d'Illustrator se
+                voit ici en quelques secondes, au lieu d'arrêter une livraison
+                entière. Rien n'est écrit dans le dossier de livraison.
+              </p>
+              <button class="button small" id="test-export" data-t="test_export">
+                Essayer les trois exports
+              </button>
+              <div id="test-export-result"></div>
+            </div>
+
+            <div class="section">
               <h2 class="section-title">Journal</h2>
               <p class="summary" id="log-summary"></p>
               <pre class="tree" id="log-view"></pre>
@@ -1613,6 +1649,28 @@
          * Filet de diagnostic
          * ---------------------------------------------------------------- */
 
+        /**
+         * Fait avancer le témoin de démarrage d'une étape.
+         *
+         * Il ne sert que si quelque chose échoue : le texte qu'il porte alors
+         * est la dernière étape franchie, ce qui situe la panne sans avoir à
+         * ouvrir une console — inaccessible dans un panneau CEP livré.
+         */
+        function beacon(phase) {
+          var witness = document.getElementById('lf-startup-check')
+          if (witness) witness.textContent = 'Logo Forge — ' + phase
+        }
+
+        /** Retire le témoin : le panneau est monté. */
+        function beaconClear() {
+          var witness = document.getElementById('lf-startup-check')
+          if (witness && witness.parentNode) {
+            witness.parentNode.removeChild(witness)
+          }
+        }
+
+        beacon('script démarré')
+
         function showError(title, detail) {
           var host = document.querySelector('.panel-body') || document.body
           if (!host) return
@@ -1660,6 +1718,7 @@
          * cause. Le recours est donc proposé sur place.
          */
         function startup(label, fn) {
+          beacon(label)
           try {
             return fn()
           } catch (error) {
@@ -1906,7 +1965,8 @@
             black: 'Noir',
             white: 'Blanc',
             inverted: 'Réserve',
-            grayscale: 'Niveaux de gris'
+            grayscale: 'Niveaux de gris',
+            test_export: 'Essayer les trois exports'
           },
           en: {
             components: 'Components',
@@ -1925,7 +1985,8 @@
             black: 'Black',
             white: 'White',
             inverted: 'Inverted',
-            grayscale: 'Grayscale'
+            grayscale: 'Grayscale',
+            test_export: 'Test Export'
           }
         }
 
@@ -2050,6 +2111,7 @@
           studio: { name: '', designer: '', email: '', website: '' },
           diagnostics: null,
           hostScript: null,
+          testExport: null,
           // Planche vivante dans Illustrator, complétée à chaque capture.
           livePreview: true,
           previewNotice: '',
@@ -3422,6 +3484,101 @@
           })
         }
 
+        /**
+         * Écrit le document ouvert dans les trois formats, pour voir.
+         *
+         * L'export n'était éprouvé qu'au bout d'une livraison : une option
+         * refusée par cette version d'Illustrator ne se voyait qu'après
+         * plusieurs minutes. Ici, trois fichiers temporaires répondent tout
+         * de suite, avec leur taille — la seule preuve qu'un export a eu lieu.
+         */
+        function runTestExport() {
+          var button = byId('test-export')
+          button.disabled = true
+          button.innerHTML = 'Export…'
+
+          engine.call('lfTestExport', [], function (result) {
+            button.disabled = false
+            button.innerHTML = t('test_export')
+            state.testExport = result.ok
+              ? { ok: true, trials: readExportTrials(result.value) }
+              : { ok: false, message: result.value, trials: [] }
+            engine.log(
+              'test-export: ' +
+                (result.ok ? String(result.value).replace(/\u001f/g, ' | ') : 'ERR — ' + result.value)
+            )
+            renderTestExport()
+            renderLog()
+          })
+        }
+
+        /** Relit la réponse de l'essai : quatre champs par format. */
+        function readExportTrials(value) {
+          var fields = String(value).split(String.fromCharCode(31))
+          var trials = []
+          for (var i = 0; i + 3 < fields.length; i += 4) {
+            trials.push({
+              format: fields[i],
+              ok: fields[i + 1] === 'OK',
+              path: fields[i + 2],
+              detail: fields[i + 3]
+            })
+          }
+          return trials
+        }
+
+        function renderTestExport() {
+          var report = state.testExport
+          var host = byId('test-export-result')
+          if (!host) return
+          if (!report) {
+            host.innerHTML = '<p class="summary">Aucun essai effectué.</p>'
+            return
+          }
+
+          if (!report.ok) {
+            host.innerHTML =
+              '<p class="notice error">' +
+              escapeHtml('Essai impossible : ' + report.message) +
+              '</p>'
+            return
+          }
+
+          var failed = 0
+          var html = ''
+          for (var i = 0; i < report.trials.length; i += 1) {
+            var trial = report.trials[i]
+            if (!trial.ok) failed += 1
+            html +=
+              '<p class="check-row static"><span class="dot ' +
+              (trial.ok ? 'pass' : 'error') +
+              '"></span><span class="check-body"><b>' +
+              escapeHtml(trial.format) +
+              '</b> — ' +
+              escapeHtml(
+                trial.ok
+                  ? engine.formatBytes(parseInt(trial.detail, 10) || 0) +
+                      ' écrits'
+                  : trial.detail
+              ) +
+              '<br /><span class="hint">' +
+              escapeHtml(trial.path) +
+              '</span></span></p>'
+          }
+
+          host.innerHTML =
+            '<p class="notice ' +
+            (failed ? 'error' : 'done') +
+            '">' +
+            escapeHtml(
+              failed
+                ? failed + ' export(s) sur 3 en échec.'
+                : 'Les trois exports ont écrit un fichier non vide.'
+            ) +
+            '</p>' +
+            html
+        }
+
         function renderHostScript() {
           var result = state.hostScript
           var host = byId('host-script-result')
@@ -4370,6 +4527,7 @@
             ['variables', renderDocVariables],
             ['diagnostics', renderDiagnostics],
             ['chargement', renderHostScript],
+            ['essai d’export', renderTestExport],
             ['journal', renderLog],
             ['contrôle', renderPreflight],
             ['réseaux sociaux', renderSocialPresets],
@@ -4547,7 +4705,10 @@
             rows.push(
               [
                 scheme.id,
-                (scheme.hex || '').replace('#', ''),
+                // Telle qu'elle part à l'export : les deux chemins doivent
+                // transmettre exactement la même valeur, sans quoi l'un des
+                // deux finit par la refuser.
+                scheme.hex || '',
                 engine.schemeTitle(scheme).replace(/[:\u001f]/g, ' '),
                 ground,
                 ground ? 'E3E3E3' : '6E6E6E',
@@ -4572,6 +4733,7 @@
           var rows = previewRows()
           if (!rows) return
 
+          engine.log('preview-doc: demande — ' + component.name)
           engine.call(
             'lfBuildPreview',
             [
@@ -4582,19 +4744,43 @@
             ],
             function (result) {
               if (!result.ok) {
+                engine.log('preview-doc: ERR — ' + result.value)
                 state.previewNotice =
                   'Planche de prévisualisation : ' + result.value
-                renderMessages()
-                return
+              } else {
+                var fields = String(result.value).split(String.fromCharCode(31))
+                var missed = fields[3] || ''
+                state.previewNotice = missed
+                  ? 'Planche de prévisualisation — cellules manquées : ' + missed
+                  : ''
               }
-              var fields = String(result.value).split(String.fromCharCode(31))
-              var missed = fields[3] || ''
-              state.previewNotice = missed
-                ? 'Planche de prévisualisation — cellules manquées : ' + missed
-                : ''
+              // Le journal d'Illustrator est relu dans tous les cas : c'est
+              // précisément quand la construction échoue qu'il faut savoir
+              // jusqu'où elle était allée.
+              readPreviewTrace()
               renderMessages()
             }
           )
+        }
+
+        /**
+         * Recopie dans le journal les étapes de la dernière planche.
+         *
+         * La planche se construit dans Illustrator, hors de portée du panneau.
+         * Sans ces lignes, un échec ne laissait qu'un message final, sans dire
+         * si le document avait été créé ni combien de colonnes avaient tenu.
+         */
+        function readPreviewTrace() {
+          engine.call('lfPreviewTrace', [], function (trace) {
+            if (!trace.ok) {
+              engine.log('preview-doc: journal illisible — ' + trace.value)
+              return
+            }
+            var steps = String(trace.value).split(String.fromCharCode(31))
+            for (var i = 0; i < steps.length; i += 1) {
+              if (steps[i]) engine.log('preview-doc: ' + steps[i])
+            }
+          })
         }
 
         /** Régénère la vignette d'un composant depuis son fichier. */
@@ -4789,11 +4975,19 @@
 
         byId('add-custom').onclick = function () {
           var name = byId('custom-name').value
+          var refusal = byId('custom-refusal')
           if (!name) {
-            byId('messages').innerHTML =
-              '<p class="notice">Donnez un nom à la couleur.</p>'
+            // Le refus se lit sous le bouton, pas au bas du panneau : c'est
+            // là que regarde celui qui vient de cliquer. Placé ailleurs, il
+            // passait inaperçu, et l'ajout paraissait sans effet.
+            if (refusal) {
+              refusal.innerHTML =
+                '<p class="notice error">Donnez un nom à la couleur.</p>'
+            }
+            byId('custom-name').focus()
             return
           }
+          if (refusal) refusal.innerHTML = ''
           state.customs.push({
             name: name,
             hex: byId('custom-hex').value,
@@ -5152,6 +5346,10 @@
           guard('diagnostics', runDiagnostics)
         }
 
+        byId('test-export').onclick = function () {
+          guard('essai d’export', runTestExport)
+        }
+
         byId('refresh-log').onclick = function () {
           renderLog()
         }
@@ -5227,6 +5425,7 @@
         }
 
         byId('refresh').onclick = function () {
+          beacon('lecture du document')
           refreshDocument()
           guard('vérification des composants', function () {
             verifyComponents()
@@ -5538,6 +5737,7 @@
           if (LF_BRAND.icon) byId('brand-mark').innerHTML = LF_BRAND.icon
           byId('open-settings').innerHTML = ICONS.settings
           byId('refresh').innerHTML = ICONS.refresh
+          beacon('projet enregistré relu')
           restoreProject()
           applyRestoredSettings()
           // Les quatre composants par défaut ne sont qu'une amorce : un projet
@@ -5551,6 +5751,7 @@
               newComponent('Stacked Logo', 'stacked'),
             ]
           }
+          beacon('rendu de l’interface')
           renderAll()
           renderDestination()
           // La langue vient de l'hôte : le panneau suit celle d'Illustrator.
@@ -5571,6 +5772,10 @@
             )
             offerReset()
           }
+
+          // Le témoin ne disparaît que si rien n'est à signaler : un panneau
+          // monté mais amputé garde sa bannière, et le cadre rouge dit quoi.
+          if (!document.getElementById('fatal')) beaconClear()
         })
       })()
     </script>

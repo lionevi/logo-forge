@@ -119,6 +119,25 @@ export function hostScript() {
         } else if (name === 'lfWriteTextFile') {
           put(filePath(script))
           value = 'OK|'
+        } else if (name === 'lfTestExport') {
+          const stamp = '/tmp/logo-forge-essai-1'
+          value =
+            'OK|' +
+            [
+              'SVG', 'OK', stamp + '.svg', '20480',
+              'PNG', 'OK', stamp + '.png', '40960',
+              'PDF', 'ERR', stamp + '.pdf', 'format refusé par cette version',
+            ].join(UNIT_)
+        } else if (name === 'lfPreviewTrace') {
+          value =
+            'OK|' +
+            [
+              'début',
+              'document créé (5 lignes)',
+              'colonne Logo ajoutée (5/5 cellules)',
+            ].join(UNIT_)
+        } else if (name === 'lfBuildPreview') {
+          value = 'OK|' + ['5', '1', '5', '', 'nouvelle', 'Logo'].join(UNIT_)
         } else if (name === 'lfPing') value = 'OK|pong'
         else if (name === 'lfGetDocumentInfo')
           value = 'OK|' + ['brand.ai', '/tmp/brand.ai', 'rgb', '2'].join(UNIT_)

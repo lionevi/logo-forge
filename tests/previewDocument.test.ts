@@ -95,10 +95,13 @@ describe('ouverture de la planche', () => {
     component('/tmp/Logo.ai')
     build('/tmp/Logo.ai', rows('fullColor::Color', 'white::White:1d1d1d'))
     const preview = host.app.created[0]
-    const grounds = preview.pathItems.filter((item) => item.filled)
+    // Le fond se reconnaît à sa place dans la pile : les autres tracés de la
+    // planche sont les copies du logo, elles n'y descendent jamais.
+    const grounds = preview.pathItems.filter(
+      (item) => item.zOrderCalls.indexOf('sendToBack') >= 0,
+    )
 
     expect(grounds).toHaveLength(1)
-    expect(grounds[0].zOrderCalls).toContain('sendToBack')
   })
 
   it('refuse de travailler sans déclinaison', () => {
@@ -215,5 +218,91 @@ describe('fermeture', () => {
 
   it('ne se plaint pas quand il n’y a rien à fermer', () => {
     expect(parseResult(host.api.lfClosePreview()).ok).toBe(true)
+  })
+})
+
+describe('déclinaisons personnalisées', () => {
+  /**
+   * Le panneau envoyait la teinte sans son dièse, et la couche ExtendScript
+   * exigeait sept caractères : chaque couleur personnalisée était écartée de
+   * la planche, sans message ailleurs que dans le décompte des cellules
+   * manquées. C'est ce que l'utilisateur voyait comme « les couleurs
+   * personnalisées ne fonctionnent pas ».
+   */
+  it('place la cellule, que la teinte porte un dièse ou non', () => {
+    for (const hex of ['2680eb', '#2680eb']) {
+      host = loadExtendScript()
+      component('/tmp/Logo.ai')
+      const result = build(
+        '/tmp/Logo.ai',
+        rows('fullColor::Couleur', 'custom:' + hex + ':Bleu marque'),
+      )
+
+      expect(result.fields[3]).toBe('')
+      expect(result.fields[2]).toBe('2')
+    }
+  })
+
+  it('recolore la cellule à la teinte demandée', () => {
+    component('/tmp/Logo.ai')
+    build('/tmp/Logo.ai', rows('custom:2680eb:Bleu marque'))
+    const item = host.app.created[0].groupItems[0].pageItems[0]
+
+    expect(item.fillColor).toMatchObject({ red: 0x26, green: 0x80, blue: 0xeb })
+  })
+
+  it('refuse une teinte illisible en le disant', () => {
+    component('/tmp/Logo.ai')
+    const result = build('/tmp/Logo.ai', rows('custom:pasunecouleur:Bleu'))
+
+    expect(result.fields[3]).toContain('Bleu')
+  })
+})
+
+describe('journal de construction', () => {
+  it('nomme chaque étape franchie', () => {
+    component('/tmp/Logo.ai')
+    build('/tmp/Logo.ai', rows('fullColor::Couleur', 'black::Noir'))
+    const trace = parseResult(host.api.lfPreviewTrace())
+
+    expect(trace.fields[0]).toBe('début')
+    expect(trace.fields[1]).toContain('document créé')
+    expect(trace.fields[2]).toContain('colonne Logo ajoutée')
+  })
+
+  it('dit « document retrouvé » à la deuxième colonne', () => {
+    component('/tmp/Logo.ai')
+    build('/tmp/Logo.ai', rows('fullColor::Couleur'))
+    component('/tmp/Mark.ai')
+    build('/tmp/Mark.ai', rows('fullColor::Couleur'), 'Logo Mark')
+
+    expect(parseResult(host.api.lfPreviewTrace()).fields[1]).toContain(
+      'document retrouvé',
+    )
+  })
+
+  /**
+   * L'échec est le cas qui compte : sans journal, il ne rendait qu'un message
+   * final, sans dire jusqu'où la construction était allée.
+   */
+  it('inscrit l’erreur exacte quand la construction échoue', () => {
+    const result = build('/tmp/absent.ai', rows('fullColor::Couleur'))
+    const trace = parseResult(host.api.lfPreviewTrace())
+
+    expect(result.ok).toBe(false)
+    expect(trace.fields[0]).toBe('début')
+    expect(trace.fields[1]).toContain('ERR — composant introuvable')
+  })
+
+  it('repart d’un journal vide à chaque construction', () => {
+    component('/tmp/Logo.ai')
+    build('/tmp/Logo.ai', rows('fullColor::Couleur'))
+    component('/tmp/Logo.ai')
+    build('/tmp/Logo.ai', rows('fullColor::Couleur'))
+
+    expect(parseResult(host.api.lfPreviewTrace()).fields[0]).toBe('début')
+    expect(
+      parseResult(host.api.lfPreviewTrace()).fields.filter((f) => f === 'début'),
+    ).toHaveLength(1)
   })
 })

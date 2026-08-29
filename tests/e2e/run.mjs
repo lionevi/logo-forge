@@ -15,12 +15,13 @@
 import { existsSync } from 'node:fs'
 
 import { findChromium, loadPlaywright, PANEL } from './harness.mjs'
+import * as diagnostics from './diagnostics.e2e.mjs'
 import * as parcours from './parcours.e2e.mjs'
 import * as reprise from './reprise.e2e.mjs'
 import * as robustesse from './robustesse.e2e.mjs'
 import * as social from './social.e2e.mjs'
 
-const SCENARIOS = [parcours, reprise, social, robustesse]
+const SCENARIOS = [parcours, reprise, social, robustesse, diagnostics]
 
 function stop(message) {
   console.error(message)

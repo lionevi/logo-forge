@@ -1173,3 +1173,146 @@ describe('planche vivante', () => {
     expect(SCRIPT).toContain("'lfClosePreview'")
   })
 })
+
+describe('témoin de démarrage', () => {
+  /**
+   * Un panneau CEP n'a pas de console : quand il reste vide, rien ne dit si
+   * le script ne s'est pas exécuté ou s'il s'est arrêté en route. Le témoin
+   * est écrit dans le HTML, donc affiché avant toute exécution, puis avancé
+   * d'étape en étape et retiré quand le panneau est monté.
+   */
+  it('est écrit dans le document, avant tout script', () => {
+    const body = HTML.slice(HTML.indexOf('<body>'))
+
+    expect(body).toContain('id="lf-startup-check"')
+    expect(body.indexOf('id="lf-startup-check"')).toBeLessThan(
+      body.indexOf('<script'),
+    )
+  })
+
+  it('porte un texte qui dit ce que son maintien signifie', () => {
+    expect(RENDERED).toContain('script non exécuté')
+  })
+
+  it('nomme chaque étape franchie', () => {
+    for (const step of [
+      'script démarré',
+      'projet enregistré relu',
+      'rendu de l’interface',
+      'lecture du document',
+    ]) {
+      expect(SCRIPT).toContain("beacon('" + step + "')")
+    }
+  })
+
+  it('avance à chaque étape de démarrage nommée', () => {
+    expect(SCRIPT).toMatch(/function startup\(label, fn\) \{\s*beacon\(label\)/)
+  })
+
+  it('ne s’efface que si rien n’est à signaler', () => {
+    expect(SCRIPT).toContain("if (!document.getElementById('fatal')) beaconClear()")
+  })
+})
+
+describe('journal de la planche de prévisualisation', () => {
+  it('relit le journal d’Illustrator après chaque construction', () => {
+    expect(SCRIPT).toContain("engine.call('lfPreviewTrace'")
+    expect(SCRIPT).toContain("engine.log('preview-doc: ' + steps[i])")
+  })
+
+  it('relit le journal aussi bien après un échec qu’après une réussite', () => {
+    const window_ = SCRIPT.slice(
+      SCRIPT.indexOf('function updatePreview'),
+      SCRIPT.indexOf('function readPreviewTrace'),
+    )
+    const branches = window_.slice(window_.indexOf('function (result)'))
+
+    // Un seul appel, hors des deux branches : c'est ce qui garantit qu'un
+    // échec laisse tout de même sa trace.
+    expect(branches.match(/readPreviewTrace\(\)/g)).toHaveLength(1)
+    expect(branches.indexOf('readPreviewTrace()')).toBeGreaterThan(
+      branches.indexOf('} else {'),
+    )
+  })
+
+  it('inscrit l’erreur exacte sous le préfixe attendu', () => {
+    expect(SCRIPT).toContain("engine.log('preview-doc: ERR — ' + result.value)")
+  })
+})
+
+describe('déclinaisons personnalisées', () => {
+  /**
+   * La teinte partait vers l'export avec son dièse et vers la planche sans :
+   * la couche ExtendScript refusait la seconde, et la couleur personnalisée
+   * n'apparaissait jamais sur la planche.
+   */
+  it('transmet la teinte à la planche telle qu’elle part à l’export', () => {
+    const window_ = SCRIPT.slice(
+      SCRIPT.indexOf('function previewRows'),
+      SCRIPT.indexOf('function updatePreview'),
+    )
+
+    expect(window_).not.toContain("replace('#', '')")
+    expect(window_).toContain("scheme.hex || ''")
+  })
+})
+
+describe('essai d’export', () => {
+  it('offre un bouton dans les diagnostics', () => {
+    const pane = HTML.slice(
+      HTML.indexOf('id="sub-diag"'),
+      HTML.indexOf('id="export-veil"'),
+    )
+
+    expect(pane).toContain('id="test-export"')
+    expect(pane).toContain('id="test-export-result"')
+  })
+
+  it('appelle les trois exports par la couche Illustrator', () => {
+    expect(SCRIPT).toContain("engine.call('lfTestExport'")
+  })
+
+  it('rend la taille écrite, seule preuve qu’un export a eu lieu', () => {
+    const window_ = SCRIPT.slice(
+      SCRIPT.indexOf('function renderTestExport'),
+      SCRIPT.indexOf('function renderHostScript'),
+    )
+
+    expect(window_).toContain('engine.formatBytes')
+    expect(window_).toContain('trial.path')
+  })
+
+  it('est branché sur un clic', () => {
+    expect(SCRIPT).toContain("byId('test-export').onclick")
+  })
+})
+
+describe('refus d’ajout d’une couleur', () => {
+  /**
+   * Le refus s'affichait au bas du panneau, loin du formulaire : le designer
+   * qui cliquait « + » ne voyait rien se produire et concluait que les
+   * couleurs personnalisées ne fonctionnaient pas.
+   */
+  it('se lit sous le bouton qui vient d’être cliqué', () => {
+    const section = HTML.slice(
+      HTML.indexOf('Custom Color Schemes'),
+      HTML.indexOf('Contraste'),
+    )
+
+    expect(section).toContain('id="custom-refusal"')
+  })
+
+  it('ne renvoie plus le message au bas du panneau', () => {
+    const handler = SCRIPT.slice(
+      SCRIPT.indexOf("byId('add-custom').onclick"),
+      SCRIPT.indexOf("byId('add-custom').onclick") + 900,
+    )
+
+    expect(handler).not.toContain("byId('messages')")
+    expect(handler).toContain('Donnez un nom à la couleur')
+  })
+
+  it('ramène le curseur dans le champ à remplir', () => {
+    expect(SCRIPT).toContain("byId('custom-name').focus()")
+  })
+})

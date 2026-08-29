@@ -109,6 +109,13 @@ export class FakeItem {
     const copy = new FakeItem(this.typename, [...this.visibleBounds], this.label)
     copy.hidden = this.hidden
     copy.locked = this.locked
+    // Une copie garde son aspect : sans cela, la planche de prévisualisation
+    // paraissait n'avoir rien recoloré, alors que la recoloration précède la
+    // duplication.
+    copy.filled = this.filled
+    copy.stroked = this.stroked
+    copy.fillColor = this.fillColor
+    copy.strokeColor = this.strokeColor
     copy.refuseMove = this.refuseMoveOnCopy
     target.insert(copy, placement)
     return copy
@@ -282,7 +289,11 @@ function createCollection<T>(factory: () => T): T[] & { add: () => T } {
 
 export class FakeDocument {
   layers: FakeLayer[] = [new FakeLayer()]
-  artboards: FakeArtboard[] & { add?: (rect: Bounds) => FakeArtboard }
+  artboards: FakeArtboard[] & {
+    add?: (rect: Bounds) => FakeArtboard
+    setActiveArtboardIndex?: (index: number) => void
+    getActiveArtboardIndex?: () => number
+  }
 
   /**
    * Sélection : dans Illustrator c'est une vue vivante sur les objets marqués,
@@ -319,6 +330,8 @@ export class FakeDocument {
     }
   }
   closed = false
+  /** Plan de travail visé par le prochain export. */
+  activeArtboardIndex = 0
   /** Chemin du dernier `saveAs`, qui ré-associe le document. */
   savedTo: string | null = null
   /** Taille écrite par le prochain `saveAs`, pour simuler un fichier vide. */
@@ -333,12 +346,23 @@ export class FakeDocument {
   ) {
     const boards = [new FakeArtboard([0, 0, width, -height])] as FakeArtboard[] & {
       add?: (rect: Bounds) => FakeArtboard
+      setActiveArtboardIndex?: (index: number) => void
+      getActiveArtboardIndex?: () => number
     }
     boards.add = (rect: Bounds) => {
       const board = new FakeArtboard([...rect] as Bounds)
       boards.push(board)
       return board
     }
+    // Illustrator désigne le plan de travail à exporter par son index : sans
+    // ces deux méthodes, aucun export ne pouvait être éprouvé ici.
+    boards.setActiveArtboardIndex = (index: number) => {
+      if (index < 0 || index >= boards.length) {
+        throw new Error('index de plan de travail hors limites : ' + index)
+      }
+      this.activeArtboardIndex = index
+    }
+    boards.getActiveArtboardIndex = () => this.activeArtboardIndex
     this.artboards = boards
     for (const layer of this.layers) layer.ownerDocument = this
   }
@@ -354,8 +378,28 @@ export class FakeDocument {
 
   private paths: FakeItem[] = []
 
+  /**
+   * Tracés du document, où qu'ils se trouvent.
+   *
+   * Illustrator y range tous les tracés, calques et groupes confondus. La
+   * doublure n'y mettait que ceux créés par `rectangle`, si bien qu'un
+   * recolorage paraissait sans effet sur un document ouvert : ses objets
+   * vivent dans un calque.
+   */
   get pathItems(): FakeItem[] & { rectangle: (...args: number[]) => FakeItem } {
-    const collection = this.paths as FakeItem[] & {
+    const seen = [...this.paths]
+    for (const layer of this.layers) {
+      for (const item of layer.items) {
+        if (item.typename === 'PathItem' && seen.indexOf(item) < 0) seen.push(item)
+      }
+      for (const group of layer.groups) {
+        for (const item of group.pageItems) {
+          if (item.typename === 'PathItem' && seen.indexOf(item) < 0) seen.push(item)
+        }
+      }
+    }
+
+    const collection = seen as FakeItem[] & {
       rectangle: (...args: number[]) => FakeItem
     }
     collection.rectangle = (
@@ -405,7 +449,18 @@ export class FakeDocument {
     this.name = file.fsName.split('/').pop() ?? this.name
   }
 
+  /**
+   * Extension qu'Illustrator refusera d'écrire.
+   *
+   * Une version d'Illustrator peut rejeter un format que les autres
+   * acceptent : c'est le cas que l'essai d'export sert à distinguer.
+   */
+  refuseExport = ''
+
   exportFile(file: { fsName: string }, type: string, _options: unknown): void {
+    if (this.refuseExport && file.fsName.indexOf('.' + this.refuseExport) > 0) {
+      throw new Error('format refusé par cette version : ' + this.refuseExport)
+    }
     filesystem.write(file.fsName, 2048)
     this.exports.push({ path: file.fsName, type })
   }
@@ -700,9 +755,11 @@ export function loadExtendScript(): Host {
     'lfExportPNG',
     'lfExportSVG',
     'lfExportAI',
+    'lfTestExport',
     'lfWriteIco',
     'lfPackageBackground',
     'lfBuildPreview',
+    'lfPreviewTrace',
     'lfClosePreview',
   ]
 

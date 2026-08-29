@@ -692,10 +692,14 @@ var LogoForge = (function () {
 
       var custom = [0, 0, 0];
       if (scheme === 'custom') {
-        if (!hex || String(hex).length < 7) {
-          return err('couleur personnalisee manquante');
+        // La teinte arrive de deux endroits : l'export l'envoie telle que
+        // saisie, « #2680eb », la planche de prévisualisation sans son dièse.
+        // Exiger sept caractères écartait silencieusement la seconde : les
+        // couleurs personnalisées n'apparaissaient jamais sur la planche.
+        var clean = String(hex || '').replace('#', '');
+        if (!/^[0-9a-fA-F]{6}$/.test(clean)) {
+          return err('couleur personnalisee illisible : ' + String(hex));
         }
-        var clean = String(hex).replace('#', '');
         custom = [
           parseInt(clean.substring(0, 2), 16),
           parseInt(clean.substring(2, 4), 16),
@@ -2084,6 +2088,21 @@ var LogoForge = (function () {
   var previewColumns = 0;
   var previewRows = 0;
 
+  /**
+   * Journal de la dernière planche construite.
+   *
+   * La planche est fabriquée ici, dans Illustrator, où rien n'est observable
+   * depuis le panneau : un échec n'y rendait qu'un message, sans dire jusqu'où
+   * la construction était allée. Chaque étape franchie s'inscrit donc ici, et
+   * le panneau la recopie dans son journal, réussite ou échec.
+   */
+  var previewTrace = [];
+
+  /** Note une étape de la construction de la planche. */
+  function tracePreview(step) {
+    previewTrace.push(String(step));
+  }
+
   /** Géométrie de la planche, en points. */
   var PREVIEW = {
     labelWidth: 150,
@@ -2220,6 +2239,8 @@ var LogoForge = (function () {
    * @returns lignes, colonnes, cellules remplies, cellules manquées.
    */
   function buildPreviewColumn(componentName, path, spec, threshold) {
+    previewTrace = [];
+    tracePreview('début');
     try {
       var raw = String(spec).split(UNIT);
       var rows = [];
@@ -2237,13 +2258,24 @@ var LogoForge = (function () {
           map: parts[5] || ''
         });
       }
-      if (rows.length === 0) return err('aucune declinaison a prévisualiser');
+      if (rows.length === 0) {
+        tracePreview('ERR — aucune declinaison a prévisualiser');
+        return err('aucune declinaison a prévisualiser');
+      }
 
       var source = new File(path);
-      if (!source.exists) return err('composant introuvable : ' + path);
+      if (!source.exists) {
+        tracePreview('ERR — composant introuvable : ' + path);
+        return err('composant introuvable : ' + path);
+      }
 
       var fresh = !previewIsOpen();
       ensurePreviewDocument(rows);
+      tracePreview(
+        fresh
+          ? 'document créé (' + rows.length + ' lignes)'
+          : 'document retrouvé (' + rows.length + ' lignes)'
+      );
       var column = previewColumns;
       widenPreview(column + 1);
 
@@ -2331,6 +2363,17 @@ var LogoForge = (function () {
 
       previewColumns = column + 1;
       app.activeDocument = previewDocument;
+      tracePreview(
+        'colonne ' +
+          componentName +
+          ' ajoutée (' +
+          placed +
+          '/' +
+          rows.length +
+          ' cellules' +
+          (missed.length ? ', manquées : ' + missed.join(' ; ') : '') +
+          ')'
+      );
 
       return ok(
         [
@@ -2343,8 +2386,62 @@ var LogoForge = (function () {
         ].join(UNIT)
       );
     } catch (e) {
+      tracePreview('ERR — ' + describe(e));
       return err(describe(e));
     }
+  }
+
+  /**
+   * Essaie les trois exports sur le document ouvert.
+   *
+   * L'export n'était jusqu'ici éprouvé qu'au bout d'une livraison complète :
+   * une option refusée par cette version d'Illustrator ne se voyait qu'après
+   * plusieurs minutes de travail. Trois écritures dans le dossier temporaire
+   * répondent en quelques secondes, sans rien toucher au projet.
+   *
+   * @returns par format : nom, issue, chemin, octets ou message.
+   */
+  function testExports() {
+    try {
+      var doc = workingDocument();
+      if (!doc) {
+        return err('aucun document ouvert : ouvrez un document à essayer');
+      }
+
+      var base =
+        Folder.temp.fsName + '/logo-forge-essai-' + new Date().getTime();
+      var formats = ['SVG', 'PNG', 'PDF'];
+      var report = [];
+
+      for (var i = 0; i < formats.length; i += 1) {
+        var format = formats[i];
+        var path = base + '.' + format.toLowerCase();
+        var answer;
+        if (format === 'SVG') {
+          answer = exportArtboardAsSVG(0, path);
+        } else if (format === 'PNG') {
+          answer = exportArtboardAsPNG(0, path, 512, 72);
+        } else {
+          answer = exportArtboardAsPDF(0, path);
+        }
+
+        if (String(answer).indexOf('OK') !== 0) {
+          report.push(format, 'ERR', path, String(answer).slice(4));
+          continue;
+        }
+        var fields = String(answer).slice(3).split(UNIT);
+        report.push(format, 'OK', fields[0] || path, fields[1] || '0');
+      }
+
+      return ok(report.join(UNIT));
+    } catch (e) {
+      return err(describe(e));
+    }
+  }
+
+  /** Rend le journal de la dernière planche, une étape par champ. */
+  function previewJournal() {
+    return ok(previewTrace.join(UNIT));
   }
 
   /** Met un groupe à l'échelle de sa cellule, et l'y centre. */
@@ -2538,6 +2635,8 @@ var LogoForge = (function () {
     writeIco: writeIco,
     setPackageBackground: setPackageBackground,
     buildPreviewColumn: buildPreviewColumn,
+    previewJournal: previewJournal,
+    testExports: testExports,
     closePreviewDocument: closePreviewDocument,
     listFiles: listFiles,
     beginSession: beginSession,
@@ -2582,6 +2681,24 @@ function lfPing() {
   // répondrait « OK » à tout ne prouverait rien.
   return 'OK|pong';
 }
+function lfBuildPreview(componentName, path, schemes, threshold) {
+  return LogoForge.buildPreviewColumn(componentName, path, schemes, threshold);
+}
+
+/**
+ * Journal de la dernière planche construite, une étape par champ.
+ *
+ * Le panneau le lit après chaque construction, réussie ou non, et le recopie
+ * dans son propre journal : c'est la seule fenêtre sur ce qui se passe côté
+ * Illustrator.
+ */
+function lfPreviewTrace() {
+  return LogoForge.previewJournal();
+}
+function lfClosePreview() {
+  return LogoForge.closePreviewDocument();
+}
+
 /**
  * Langue de l'hôte, telle qu'Illustrator la déclare.
  *
@@ -2589,13 +2706,6 @@ function lfPing() {
  * l'exposerait pas ne doit pas empêcher le panneau de démarrer : l'anglais
  * sert alors de repli, comme le fait Illustrator lui-même.
  */
-function lfBuildPreview(componentName, path, schemes, threshold) {
-  return LogoForge.buildPreviewColumn(componentName, path, schemes, threshold);
-}
-function lfClosePreview() {
-  return LogoForge.closePreviewDocument();
-}
-
 function lfGetLocale() {
   try {
     var locale = String(app.locale || '');
@@ -2725,4 +2835,14 @@ function lfExportEPS(index, path) {
 }
 function lfExportAI(path) {
   return LogoForge.exportAsAI(path);
+}
+
+/**
+ * Essai des trois exports sur le document ouvert.
+ *
+ * Appelé depuis les diagnostics du panneau : il écrit dans le dossier
+ * temporaire, jamais dans la livraison.
+ */
+function lfTestExport() {
+  return LogoForge.testExports();
 }

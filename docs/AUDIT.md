@@ -863,3 +863,115 @@ attend un triplet. Le résultat était `NaN`, la comparaison toujours fausse, et
 cellules vides en affirmant les avoir remplies. Mesuré depuis, sur une encre
 sombre : noir 0, couleur 29, réserve 226, blanc 255. Le seuil est posé à 140,
 sur ces valeurs.
+
+## BUG-022 — Le panneau vide n'était vu par aucun contrôle
+
+Deux garde-fous lisaient déjà `dist/index.html` : la compatibilité CEP de la
+CSS et la compatibilité ES3 de la couche ExtendScript. Aucun ne l'**exécutait**.
+Or le corps du panneau est écrit par son script : une exception au démarrage
+laisse l'en-tête, un fond gris, et rien d'autre — précisément le « panneau
+vide » signalé après chaque redémarrage d'Illustrator.
+
+`scripts/check-panel-boot.mjs` fait démarrer le panneau construit dans un DOM,
+face à un hôte CEP simulé, et refuse la livraison s'il ne rend rien. Il est
+branché sur `npm run build`, aux côtés des deux autres.
+
+**Deux ouvertures y sont éprouvées, pas une.** La première part d'un stockage
+vide ; la seconde relit l'enregistrement écrit par la première — c'est le
+chemin que suit un panneau rouvert après un redémarrage, et il ne passe pas par
+le même code. Le geste joué entre les deux (un nom saisi, un composant ajouté)
+sert à obtenir un enregistrement réel, écrit par le panneau lui-même.
+
+Le contrôle a été éprouvé sur quatre pannes injectées : dossier `js/` oublié
+dans la copie, moteur d'une version antérieure, exception au démarrage, corps
+rendu vide. Chacune est refusée, et nommée.
+
+**Le témoin `#lf-startup-check`** complète le contrôle là où il ne va pas :
+chez le tiers, dans Illustrator. Il est écrit dans le HTML, donc affiché avant
+toute exécution ; le script le fait avancer d'étape en étape (« script
+démarré », « projet enregistré relu », « rendu de l'interface », « lecture du
+document ») et le retire quand le panneau est monté. S'il reste visible, il
+nomme l'endroit exact où le démarrage s'est arrêté — et s'il porte encore
+« script non exécuté », c'est que le JavaScript n'a pas tourné du tout. Un
+panneau CEP n'a pas de console : c'est le seul message disponible.
+
+## BUG-023 — Les couleurs personnalisées n'atteignaient jamais la planche
+
+Défaut confirmé, reproduit, corrigé.
+
+La teinte partait vers deux destinations par deux chemins différents :
+l'export l'envoyait telle que saisie, `#2680eb` ; la planche de
+prévisualisation la dépouillait de son dièse, `2680eb`. Et
+`applyColorScheme` exigeait sept caractères :
+
+```js
+if (!hex || String(hex).length < 7) return err('couleur personnalisee manquante')
+```
+
+Six caractères, donc refus. La ligne était comptée dans les « cellules
+manquées » et la couleur personnalisée n'apparaissait jamais sur la planche —
+alors qu'elle fonctionnait à l'export. Reproduit par la doublure :
+
+```
+résultat : ["2","1","1","Bleu marque : recolorage","nouvelle","Logo"]
+```
+
+Corrigé des deux côtés : la validation accepte désormais les deux formes et
+refuse ce qui n'est pas six chiffres hexadécimaux (en le disant), et le panneau
+transmet à la planche exactement la valeur qu'il transmet à l'export. Après
+correction, la même construction rend `["2","1","2","", …]` : les deux cellules
+sont posées.
+
+**Ce que le panneau faisait bien, et qui a été mesuré avant d'être mis en
+cause :** le formulaire valide le nom, l'ajoute à l'état, le persiste, le
+réaffiche après rechargement, et la couleur entre bien dans les déclinaisons
+actives. Une première lecture semblait montrer un nom perdu — c'était la
+mesure qui était fausse (`innerText` n'inclut pas la valeur d'un `<input>`).
+Le seul défaut d'interface trouvé est réel mais discret : le refus « Donnez un
+nom à la couleur » s'affichait au bas du panneau, loin du formulaire. Il se lit
+désormais sous le bouton, et le curseur revient dans le champ.
+
+## BUG-024 — La planche se construisait sans laisser de trace
+
+La planche est fabriquée dans Illustrator, hors de portée du panneau : un échec
+ne rendait qu'un message final, sans dire si le document avait été créé ni
+combien de colonnes avaient tenu.
+
+`buildPreviewColumn` tient désormais un journal — « début », « document créé
+(N lignes) » ou « document retrouvé », « colonne X ajoutée (n/N cellules) »,
+« ERR — message exact » — que `lfPreviewTrace` rend au panneau. Celui-ci le
+recopie dans son propre journal, sous le préfixe `preview-doc:`, **après chaque
+construction, réussie ou non** : c'est justement quand elle échoue qu'il faut
+savoir jusqu'où elle était allée. C'est ce journal qui a livré BUG-023 :
+
+```
+début | document créé (2 lignes) | colonne Logo ajoutée (1/2 cellules,
+manquées : Bleu marque : recolorage)
+```
+
+## BUG-025 — L'export n'était éprouvé qu'au bout d'une livraison entière
+
+Une option d'export refusée par une version d'Illustrator ne se voyait qu'après
+plusieurs minutes de travail, et jamais pendant la mise au point.
+
+Le bouton « Essayer les trois exports », dans les diagnostics, écrit le
+document ouvert en SVG, PNG et PDF dans le dossier temporaire et rend, pour
+chaque format, son chemin et sa taille — la seule preuve qu'un export a eu
+lieu. Un format refusé n'emporte pas les deux autres : c'est précisément ce que
+l'essai sert à distinguer. Rien n'est écrit dans le dossier de livraison.
+
+### Ce que les doublures cachaient
+
+Trois écarts entre la doublure Illustrator et le vrai DOM ont été trouvés en
+écrivant ces épreuves, et corrigés dans la doublure :
+
+- `artboards` n'avait pas `setActiveArtboardIndex` : **aucun export n'avait
+  jamais été exercé** de bout en bout.
+- `document.pathItems` ne contenait que les tracés créés par `rectangle`, pas
+  ceux des calques : un recolorage paraissait sans effet sur un document
+  ouvert.
+- `duplicate()` ne recopiait pas la peinture : la planche paraissait n'avoir
+  rien recoloré.
+
+Une doublure trop indulgente ne fait pas échouer les épreuves — elle les fait
+réussir pour rien.
