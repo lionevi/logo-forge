@@ -56,6 +56,12 @@ export class FakeItem {
   locked = false
   /** Refus de duplication, pour simuler un calque verrouillé. */
   refuseDuplicate = false
+  /** Refus de déplacement, pour éprouver le regroupement. */
+  refuseMove = false
+  /** Transmet le refus de déplacement aux copies, jamais à l original. */
+  refuseMoveOnCopy = false
+  /** Sélection : ce que lit le repli par presse-papiers. */
+  selected = false
   /** Conteneur : un calque pour un objet de premier niveau, sinon un groupe. */
   parent: FakeLayer | FakeGroup | null = null
 
@@ -94,11 +100,32 @@ export class FakeItem {
     if (this.refuseDuplicate) {
       throw new Error('objet verrouille : ' + this.label)
     }
+    // Illustrator refuse une cible « groupe » appartenant à un autre
+    // document ; la doublure reproduit ce refus, sans quoi le cas ne serait
+    // jamais exercé.
+    if (target instanceof FakeGroup && target.ownerDocument !== this.ownerDocument) {
+      throw new Error('cible d un autre document')
+    }
     const copy = new FakeItem(this.typename, [...this.visibleBounds], this.label)
     copy.hidden = this.hidden
     copy.locked = this.locked
+    copy.refuseMove = this.refuseMoveOnCopy
     target.insert(copy, placement)
     return copy
+  }
+
+  /** Déplacement d'un conteneur à l'autre, dans un même document. */
+  move(target: FakeLayer | FakeGroup, placement: string): void {
+    if (this.refuseMove) throw new Error('deplacement refuse : ' + this.label)
+    this.remove()
+    target.insert(this, placement)
+  }
+
+  /** Document auquel l'objet appartient, en remontant ses conteneurs. */
+  get ownerDocument(): unknown {
+    let node: FakeLayer | FakeGroup | null = this.parent
+    while (node && node instanceof FakeGroup) node = node.parent
+    return node instanceof FakeLayer ? node.ownerDocument : null
   }
 }
 
@@ -115,6 +142,10 @@ export class FakeGroup {
   hidden = false
   locked = false
   parent: FakeLayer | null = null
+
+  get ownerDocument(): unknown {
+    return this.parent ? this.parent.ownerDocument : null
+  }
   visibleBounds: Bounds = [0, 0, 0, 0]
   /** Facteur cumulé appliqué par `resize`, en pourcentage. */
   scale = 100
@@ -186,6 +217,8 @@ export class FakeLayer {
   groups: FakeGroup[] = []
   locked = false
   visible = true
+  /** Document propriétaire : Illustrator refuse une cible d un autre document. */
+  ownerDocument: unknown = null
 
   private direct: FakeItem[] = []
 
@@ -242,7 +275,41 @@ function createCollection<T>(factory: () => T): T[] & { add: () => T } {
 export class FakeDocument {
   layers: FakeLayer[] = [new FakeLayer()]
   artboards: FakeArtboard[]
-  selection: unknown[] = []
+
+  /**
+   * Sélection : dans Illustrator c'est une vue vivante sur les objets marqués,
+   * et non un tableau à part. Le repli par presse-papiers coche `selected` sur
+   * chaque objet et relit `selection` — sans cette fidélité, il ne verrait
+   * rien.
+   */
+  private assigned: unknown[] = []
+
+  get selection(): unknown[] {
+    // Ce qui a été affecté directement — un TextRange n'est pas un objet de
+    // page — plus tout objet de page marqué depuis.
+    const out = [...this.assigned]
+    for (const layer of this.layers) {
+      for (const item of layer.pageItems) {
+        // Un groupe n'est pas marqué : la sélection porte sur ses objets.
+        if (item instanceof FakeItem && item.selected && out.indexOf(item) < 0) {
+          out.push(item)
+        }
+      }
+    }
+    return out
+  }
+
+  set selection(items: unknown[] | null) {
+    for (const layer of this.layers) {
+      for (const item of layer.pageItems) {
+        if (item instanceof FakeItem) item.selected = false
+      }
+    }
+    this.assigned = items ? [...items] : []
+    for (const item of this.assigned as FakeItem[]) {
+      if (item instanceof FakeItem) item.selected = true
+    }
+  }
   closed = false
   /** Chemin du dernier `saveAs`, qui ré-associe le document. */
   savedTo: string | null = null
@@ -257,6 +324,7 @@ export class FakeDocument {
     height: number,
   ) {
     this.artboards = [new FakeArtboard([0, 0, width, -height])]
+    for (const layer of this.layers) layer.ownerDocument = this
   }
 
   textFrames = createCollection<FakeTextFrame>(() => {
@@ -378,8 +446,31 @@ class FakeApp {
     return doc
   }
 
-  executeMenuCommand(): void {
-    /* sans effet dans la doublure */
+  /** Presse-papiers du repli inter-documents. */
+  private clipboard: FakeItem[] = []
+  /** Rend le presse-papiers stérile, pour éprouver l échec complet. */
+  breakClipboard = false
+
+  executeMenuCommand(command?: string): void {
+    const doc = this.activeDocument
+    if (!doc) return
+
+    if (command === 'copy') {
+      this.clipboard = this.breakClipboard ? [] : (doc.selection as FakeItem[]).slice()
+      return
+    }
+
+    if (command === 'pasteFront' || command === 'paste') {
+      const pasted: FakeItem[] = []
+      for (const item of this.clipboard) {
+        const copy = new FakeItem(item.typename, [...item.visibleBounds], item.label)
+        doc.layers[0].insert(copy, 'PLACEATEND')
+        pasted.push(copy)
+      }
+      doc.selection = pasted
+      return
+    }
+    /* les autres commandes restent sans effet */
   }
 }
 

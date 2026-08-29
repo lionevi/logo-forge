@@ -325,6 +325,130 @@ describe('planche de revue', () => {
     expect(result.value).toContain('aucune planche')
   })
 
+  it('ne duplique jamais vers un groupe d’un autre document', () => {
+    // Illustrator refuse cette cible, et sans message : la planche restait
+    // vide et l'erreur ne disait que « aucun objet placé ».
+    host.api.lfCreatePackage(800, 600, 'rgb')
+    registerComponent('/tmp/Logo.ai')
+    const opened = new FakeDocument('Logo.ai', 'RGB', 200, 100)
+    opened.layers[0].items = [new FakeItem('PathItem', [0, 100, 200, 0], 'marque')]
+    host.app.nextOpened = opened
+
+    const result = parseResult(
+      host.api.lfPlaceComponent(
+        '/tmp/Logo.ai',
+        'fullColor',
+        '',
+        100,
+        '',
+        0,
+        0,
+        200,
+        100,
+      ),
+    )
+    const board = host.app.created[0]
+
+    expect(result.ok).toBe(true)
+    // Un seul groupe sur la planche, et l'objet dedans : la copie est passée
+    // par le calque, le regroupement s'est fait ensuite.
+    expect(board.groupItems).toHaveLength(1)
+    expect(board.groupItems[0].pageItems).toHaveLength(1)
+    expect(board.layers[0].items).toHaveLength(0)
+  })
+
+  it('passe par le presse-papiers quand la duplication échoue', () => {
+    host.api.lfCreatePackage(800, 600, 'rgb')
+    registerComponent('/tmp/Logo.ai')
+    const opened = new FakeDocument('Logo.ai', 'RGB', 200, 100)
+    const item = new FakeItem('PathItem', [0, 100, 200, 0], 'marque')
+    // L'API refuse : c'est exactement ce qu'on a observé dans Illustrator.
+    item.refuseDuplicate = true
+    opened.layers[0].items = [item]
+    host.app.nextOpened = opened
+
+    const result = parseResult(
+      host.api.lfPlaceComponent(
+        '/tmp/Logo.ai',
+        'fullColor',
+        '',
+        100,
+        '',
+        0,
+        0,
+        200,
+        100,
+      ),
+    )
+    const board = host.app.created[0]
+
+    expect(result.ok).toBe(true)
+    expect(result.fields[0]).toBe('1')
+    expect(board.groupItems[0].pageItems).toHaveLength(1)
+  })
+
+  it('nomme la cause quand rien ne peut être placé', () => {
+    // « aucun objet placé » seul avait déjà coûté une session de diagnostic.
+    host.api.lfCreatePackage(800, 600, 'rgb')
+    registerComponent('/tmp/Logo.ai')
+    const opened = new FakeDocument('Logo.ai', 'RGB', 200, 100)
+    const item = new FakeItem('PathItem', [0, 100, 200, 0], 'marque')
+    item.refuseDuplicate = true
+    opened.layers[0].items = [item]
+    host.app.nextOpened = opened
+    // Le presse-papiers ne rend rien non plus.
+    host.app.breakClipboard = true
+
+    const result = parseResult(
+      host.api.lfPlaceComponent(
+        '/tmp/Logo.ai',
+        'fullColor',
+        '',
+        100,
+        '',
+        0,
+        0,
+        200,
+        100,
+      ),
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.value).toContain('aucun objet place')
+    expect(result.value).toContain('objet verrouille')
+  })
+
+  it('retire une copie qui refuse d’entrer dans le groupe', () => {
+    // Sinon elle traînerait sur la planche, hors de toute cellule.
+    host.api.lfCreatePackage(800, 600, 'rgb')
+    registerComponent('/tmp/Logo.ai')
+    const opened = new FakeDocument('Logo.ai', 'RGB', 200, 100)
+    const good = new FakeItem('PathItem', [0, 100, 200, 0], 'marque')
+    const bad = new FakeItem('PathItem', [0, 100, 200, 0], 'rebelle')
+    bad.refuseMoveOnCopy = true
+    opened.layers[0].items = [good, bad]
+    host.app.nextOpened = opened
+
+    const result = parseResult(
+      host.api.lfPlaceComponent(
+        '/tmp/Logo.ai',
+        'fullColor',
+        '',
+        100,
+        '',
+        0,
+        0,
+        200,
+        100,
+      ),
+    )
+    const board = host.app.created[0]
+
+    expect(result.fields[0]).toBe('1')
+    expect(board.groupItems[0].pageItems).toHaveLength(1)
+    expect(board.layers[0].items).toHaveLength(0)
+  })
+
   it('place un composant, le met à l’échelle et le centre dans sa cellule', () => {
     host.api.lfCreatePackage(800, 600, 'rgb')
     registerComponent('/tmp/Logo.ai')

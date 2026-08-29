@@ -220,6 +220,22 @@ describe('compatibilité du moteur', () => {
     expect(JSX_SOURCE).not.toMatch(/\bJSON\s*\./)
   })
 
+  it('répond au ping le mot exact que la sonde attend', () => {
+    // Le panneau exige « pong » ; main.jsx répondait « logo-forge », et la
+    // première sonde du contrôle système échouait sur un hôte parfaitement
+    // sain. Les doublures de test disaient « pong » : personne ne confrontait
+    // le vrai fichier à ce que le moteur demande.
+    const expected = /result\.value === '([^']+)'/.exec(
+      ENGINE_SOURCE.slice(ENGINE_SOURCE.indexOf("id: 'bridge'")),
+    )
+    expect(expected, 'le plan de diagnostic doit fixer le mot attendu').toBeTruthy()
+
+    const answered = /function lfPing\(\)[\s\S]*?return '([^']+)'/.exec(JSX_SOURCE)
+    expect(answered, 'lfPing doit rendre une chaîne littérale').toBeTruthy()
+
+    expect(answered![1]).toBe('OK|' + expected![1])
+  })
+
   it('expose toutes les fonctions globales que le moteur appelle', () => {
     const called = [...ENGINE_SOURCE.matchAll(/call\(\s*'(lf\w+)'/g)].map(
       (match) => match[1],

@@ -1844,6 +1844,51 @@ var LogoForge = (function () {
   }
 
   /**
+   * Copie des objets d'un document vers un autre, par le presse-papiers.
+   *
+   * Recours quand `duplicate()` inter-documents ne donne rien : le
+   * presse-papiers passe là où l'API échoue. Il n'est pas le chemin normal —
+   * il écrase ce que l'utilisateur y avait mis, et le résultat dépend du
+   * réglage « Presse-papiers » des préférences (AICB ou PDF).
+   *
+   * @param refusals reçoit la raison d'un échec, pour que l'erreur la nomme.
+   * @returns les objets réellement collés dans `targetDoc`.
+   */
+  function copyThrough(sourceDoc, targetDoc, items, refusals) {
+    try {
+      app.activeDocument = sourceDoc;
+      sourceDoc.selection = null;
+      for (var i = 0; i < items.length; i += 1) {
+        assignIfSupported(items[i], 'selected', true);
+      }
+      if (!sourceDoc.selection || sourceDoc.selection.length === 0) {
+        refusals.push('selection impossible dans le composant');
+        return [];
+      }
+
+      app.executeMenuCommand('copy');
+
+      app.activeDocument = targetDoc;
+      targetDoc.selection = null;
+      app.executeMenuCommand('pasteFront');
+
+      var pasted = targetDoc.selection;
+      if (!pasted || pasted.length === 0) {
+        refusals.push('le presse-papiers n a rien colle');
+        return [];
+      }
+
+      var out = [];
+      for (var p = 0; p < pasted.length; p += 1) out.push(pasted[p]);
+      targetDoc.selection = null;
+      return out;
+    } catch (clipError) {
+      refusals.push('presse-papiers : ' + describe(clipError));
+      return [];
+    }
+  }
+
+  /**
    * Place un composant recoloré dans une cellule de la planche.
    *
    * @returns nombre d'objets réellement placés, largeur et hauteur obtenues.
@@ -1883,18 +1928,65 @@ var LogoForge = (function () {
       // Le document source doit être actif pour que la duplication aboutisse.
       app.activeDocument = doc;
 
-      var group = packageDocument.groupItems.add();
-      var placed = 0;
+      // Duplication vers le CALQUE de la planche, jamais vers un groupe : une
+      // cible « groupe » appartenant à un autre document est refusée par
+      // plusieurs versions d'Illustrator, et sans message. Le regroupement se
+      // fait ensuite, à l'intérieur d'un seul document, où il est sûr.
+      var target = packageDocument.layers[0];
+      assignIfSupported(target, 'locked', false);
+      assignIfSupported(target, 'visible', true);
+
+      var copies = [];
+      var refusals = [];
       for (var i = 0; i < items.length; i += 1) {
         try {
-          items[i].duplicate(group, ElementPlacement.PLACEATEND);
-          placed += 1;
+          copies.push(items[i].duplicate(target, ElementPlacement.PLACEATEND));
         } catch (dupError) {
-          /* objet refusé : compté par différence, jamais fatal */
+          if (refusals.length < 3) refusals.push(describe(dupError));
         }
       }
 
+      // Repli : là où la duplication inter-documents ne donne rien, le
+      // presse-papiers y parvient. Il n'est employé qu'ici — il écrase ce que
+      // l'utilisateur y avait mis, ce qui ne se justifie que pour éviter une
+      // planche vide.
+      if (copies.length === 0) {
+        copies = copyThrough(doc, packageDocument, items, refusals);
+      }
+
       endSession();
+
+      if (copies.length === 0) {
+        // La cause est nommée : « aucun objet placé » seul avait déjà coûté
+        // une session de diagnostic.
+        return err(
+          'aucun objet place pour ' +
+            path +
+            (refusals.length ? ' : ' + refusals.join(' ; ') : '')
+        );
+      }
+
+      app.activeDocument = packageDocument;
+
+      // Regroupement dans le document de la planche : un déplacement local,
+      // que le moteur accepte sans réserve.
+      var group = packageDocument.groupItems.add();
+      var placed = 0;
+      for (var c = 0; c < copies.length; c += 1) {
+        try {
+          copies[c].move(group, ElementPlacement.PLACEATEND);
+          placed += 1;
+        } catch (moveError) {
+          // Une copie qui refuse d'entrer dans le groupe traînerait sur la
+          // planche, hors de sa cellule : elle est retirée.
+          if (refusals.length < 3) refusals.push(describe(moveError));
+          try {
+            copies[c].remove();
+          } catch (removeError) {
+            /* déjà retirée */
+          }
+        }
+      }
 
       if (placed === 0) {
         try {
@@ -1902,10 +1994,12 @@ var LogoForge = (function () {
         } catch (removeError) {
           /* groupe déjà retiré */
         }
-        return err('aucun objet placé pour ' + path);
+        return err(
+          'aucun objet regroupe pour ' +
+            path +
+            (refusals.length ? ' : ' + refusals.join(' ; ') : '')
+        );
       }
-
-      app.activeDocument = packageDocument;
 
       var bounds = group.visibleBounds;
       var width = Math.abs(bounds[2] - bounds[0]);
@@ -2124,7 +2218,9 @@ var LogoForge = (function () {
  */
 
 function lfPing() {
-  return 'OK|logo-forge';
+  // Le mot compte : la sonde du panneau l'exige tel quel. Un hôte qui
+  // répondrait « OK » à tout ne prouverait rien.
+  return 'OK|pong';
 }
 function lfGetDocumentName() {
   return LogoForge.getDocumentName();

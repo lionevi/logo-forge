@@ -783,3 +783,46 @@ celui qui exécute. D'où deux conséquences, désormais tenues :
    classes est éprouvée par injection.
 2. La mise en forme ne laisse plus le choix : point-virgules obligatoires,
    virgules finales interdites, appliqués par `format:check`.
+
+### BUG-020 — Le ping du contrôle système répondait un autre mot
+
+**Cause :** `lfPing` rendait `OK|logo-forge` ; la sonde du panneau exige
+`pong`, et refuse toute autre réponse — un hôte qui dirait « OK » à tout ne
+prouverait rien.
+**Fichier :** `src/jsx/main.jsx`.
+**Impact :** la première sonde du contrôle système échouait sur un hôte
+parfaitement sain, ce qui jetait le doute sur les cinq autres.
+**Solution :** `return 'OK|pong'`.
+**Test :** `tests/exportEngine.test.ts` lit le mot exigé dans le plan de
+diagnostic du moteur, le confronte à ce que rend `lfPing` **dans le vrai
+fichier**, et échoue si les deux divergent.
+
+**Pourquoi il n'avait pas été vu :** toutes les doublures répondaient
+`OK|pong`. Elles décrivaient le contrat tel qu'il aurait dû être, et personne
+ne confrontait le fichier réel à ce que le moteur demande. Une doublure qui
+énonce le contrat des deux côtés ne vérifie plus rien : elle se contente
+d'être d'accord avec elle-même.
+
+### BUG-021 — Duplication vers un groupe d'un autre document
+
+**Cause :** `placeComponentAt` dupliquait chaque objet du composant vers un
+`GroupItem` de la planche — donc une cible appartenant à **un autre
+document**. Illustrator refuse, sans message.
+**Fichier :** `src/jsx/main.jsx`, `placeComponentAt`.
+**Impact :** planche de revue vide, et « aucun objet placé pour <chemin> »
+comme seule explication.
+**Solution :** duplication vers le **calque** de la planche — une cible
+`Layer` est acceptée d'un document à l'autre — puis regroupement à
+l'intérieur du même document, où le déplacement est sûr. En dernier recours,
+un repli par le presse-papiers, employé uniquement si la duplication ne rend
+rien : il écrase ce que l'utilisateur y avait mis, ce qui ne se justifie que
+pour éviter une planche vide.
+**Test :** quatre cas dans `tests/packageDocument.test.ts`, dont un où la
+doublure **refuse** une cible d'un autre document, comme Illustrator.
+
+**Ce qui a coûté le plus cher ici n'est pas le défaut, c'est le silence.** Le
+`catch` autour de `duplicate()` jetait la raison, et l'erreur finale ne
+nommait que le chemin du fichier. Le diagnostic a donc porté d'abord sur
+`setComponent`, qui n'y était pour rien — il vérifie déjà que des objets ont
+été copiés et que le fichier n'est pas vide, et aurait refusé de définir le
+composant. Les causes sont désormais collectées et jointes au message.
