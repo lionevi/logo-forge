@@ -111,6 +111,58 @@ describe('compatibilité du moteur', () => {
     ).not.toThrow()
   })
 
+  it('ne déclare aucune fonction à l intérieur d un bloc', () => {
+    // En ES3, une déclaration de fonction est un « SourceElement » : elle
+    // n'est légale qu'au niveau d'un programme ou d'un corps de fonction.
+    // Dans un `if`, un `try`, une boucle, elle sort de la grammaire —
+    // acorn l'accepte comme le font les navigateurs, ExtendScript non. Le
+    // fichier entier est alors rejeté, et aucune fonction lf* n'existe.
+    const tree = acorn.parse(JSX_SOURCE, {
+      ecmaVersion: 3,
+      sourceType: 'script',
+      locations: true,
+    })
+
+    const offenders: string[] = []
+    const walk = (node: unknown, parent: unknown, sourceElements: boolean) => {
+      if (!node || typeof node !== 'object') return
+      const current = node as Record<string, unknown> & {
+        type?: string
+        id?: { name: string }
+        loc?: { start: { line: number } }
+      }
+      if (typeof current.type !== 'string') return
+
+      if (current.type === 'FunctionDeclaration' && !sourceElements) {
+        offenders.push(`${current.loc!.start.line}: ${current.id!.name}`)
+      }
+
+      const parentType = (parent as { type?: string } | null)?.type ?? ''
+      const opensSourceElements =
+        current.type === 'Program' ||
+        (current.type === 'BlockStatement' && /Function/.test(parentType))
+
+      for (const key of Object.keys(current)) {
+        if (key === 'loc') continue
+        const value = current[key]
+        if (Array.isArray(value)) {
+          for (const child of value) walk(child, current, opensSourceElements)
+        } else if (value && typeof value === 'object') {
+          walk(value, current, opensSourceElements)
+        }
+      }
+    }
+    walk(tree, null, true)
+
+    expect(offenders).toEqual([])
+  })
+
+  it('n emploie pas « finally », que le moteur traite mal', () => {
+    // Un `return` traversant un `finally` y perd sa valeur. Le nettoyage se
+    // fait donc explicitement sur chaque issue.
+    expect(JSX_SOURCE).not.toMatch(/}\s*finally\s*{/)
+  })
+
   it('ne laisse aucune virgule finale dans la couche ExtendScript', () => {
     // ES3 ne les refuse que dans un littéral d'objet — celle d'un tableau y
     // est légale. Toutes sont bannies quand même : le parseur d'ExtendScript

@@ -1432,6 +1432,20 @@
             </div>
 
             <div class="section">
+              <h2 class="section-title">Chargement de la couche Illustrator</h2>
+              <p class="summary">
+                Quand toutes les fonctions répondent « n'est pas une
+                fonction », c'est que jsx/main.jsx n'a pas été chargé. Ce
+                contrôle le fait relire par Illustrator, qui rend l'erreur et
+                sa ligne.
+              </p>
+              <button class="button small" id="check-host-script">
+                Vérifier jsx/main.jsx
+              </button>
+              <div id="host-script-result"></div>
+            </div>
+
+            <div class="section">
               <h2 class="section-title">Journal</h2>
               <p class="summary" id="log-summary"></p>
               <pre class="tree" id="log-view"></pre>
@@ -1756,6 +1770,7 @@
           docMessage: '',
           studio: { name: '', designer: '', email: '', website: '' },
           diagnostics: null,
+          hostScript: null,
           // Lot interrompu retrouvé au démarrage, une fois vérifié sur disque.
           resume: null,
           social: {
@@ -3079,6 +3094,63 @@
          * Diagnostics et journal
          * ---------------------------------------------------------------- */
 
+        /**
+         * Fait relire la couche ExtendScript par Illustrator.
+         *
+         * Ce contrôle ne passe par aucune fonction `lf*` : c'est ce qui le
+         * rend utilisable précisément quand aucune n'existe.
+         */
+        function checkHostScript() {
+          var button = byId('check-host-script')
+          button.disabled = true
+          button.innerHTML = 'Lecture…'
+
+          engine.checkHostScript(function (result) {
+            button.disabled = false
+            button.innerHTML = 'Vérifier jsx/main.jsx'
+            state.hostScript = result
+            renderHostScript()
+            renderLog()
+          })
+        }
+
+        function renderHostScript() {
+          var result = state.hostScript
+          var host = byId('host-script-result')
+          if (!result) {
+            host.innerHTML = '<p class="summary">Aucun contrôle effectué.</p>'
+            return
+          }
+
+          if (!result.ok) {
+            host.innerHTML =
+              '<p class="notice error"><b>Le fichier n a pas été accepté.</b><br />' +
+              escapeHtml(result.message) +
+              '<br /><b>À faire :</b> corrigez la ligne indiquée dans ' +
+              'src/jsx/main.jsx, puis reconstruisez et redéployez.</p>' +
+              (result.path
+                ? '<p class="summary">' + escapeHtml(result.path) + '</p>'
+                : '')
+            return
+          }
+
+          host.innerHTML =
+            '<p class="notice ' +
+            (result.defined ? 'done' : 'error') +
+            '">' +
+            escapeHtml(
+              result.defined
+                ? 'Fichier relu et accepté (' +
+                    engine.formatBytes(result.bytes) +
+                    '). Les fonctions sont définies.'
+                : 'Fichier relu sans erreur (' +
+                  engine.formatBytes(result.bytes) +
+                  '), mais lfPing reste indéfini — vérifiez le ScriptPath du ' +
+                  'manifeste.'
+            ) +
+            '</p>'
+        }
+
         /** Lance les sondes système, une par une. */
         function runDiagnostics() {
           var button = byId('run-diagnostics')
@@ -3976,6 +4048,7 @@
           renderCollisionPolicy()
           renderDocVariables()
           renderDiagnostics()
+          renderHostScript()
           renderLog()
           renderPreflight()
           renderSocialPresets()
@@ -4649,6 +4722,10 @@
 
         byId('build-social').onclick = function () {
           guard('kit reseaux sociaux', buildSocialKit)
+        }
+
+        byId('check-host-script').onclick = function () {
+          guard('controle du chargement', checkHostScript)
         }
 
         byId('run-diagnostics').onclick = function () {

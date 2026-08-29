@@ -37,8 +37,13 @@ même façon pour les quarante autres : `main.jsx` n'a pas été chargé. Une
 erreur de syntaxe y suffit, et elle emporte le fichier entier : ExtendScript
 ne charge pas à moitié.
 
-Pour trancher entre « le fichier n'arrive pas » et « le fichier arrive mais ne
-parse pas », basculer le `ScriptPath` du manifeste vers la sonde minimale :
+**Le plus rapide** : Réglages → Diagnostics → **« Vérifier jsx/main.jsx »**.
+Ce contrôle ne passe par aucune fonction `lf*` — il envoie une expression
+autonome qui fait relire le fichier par le moteur — et rend l'erreur avec son
+numéro de ligne. Un clic, aucun redéploiement.
+
+Si le panneau lui-même ne s'ouvre pas, basculer le `ScriptPath` du manifeste
+vers la sonde minimale :
 
 ```xml
 <ScriptPath>./jsx/test-minimal.jsx</ScriptPath>

@@ -660,3 +660,48 @@ exactement ce qu'il devrait refuser, et le fait avec l'autorité d'un test vert.
 Le même contrôle interdit maintenant les méthodes absentes du moteur ES3
 (`forEach`, `map`, `filter`, `trim`, `JSON`, `Object.keys`, `Array.isArray`,
 `Date.now`, `bind`), qui ne se manifesteraient qu'à l'exécution.
+
+### BUG-017 — Une fonction déclarée dans un bloc faisait rejeter le fichier
+
+**Cause :** deux fonctions étaient déclarées à l'intérieur d'un bloc `try`
+(`record`, `report`). En ES3, une déclaration de fonction est un
+_SourceElement_ : elle n'est légale qu'au niveau d'un programme ou d'un corps
+de fonction. Dans un bloc, elle sort de la grammaire.
+**Fichier :** `src/jsx/main.jsx`, lignes 593 et 1135.
+**Impact :** identique à BUG-016 — le fichier entier rejeté, aucune fonction
+globale définie, « `lf*` n'est pas une fonction » partout.
+**Solution :** expressions de fonction affectées à une variable, forme
+indiscutable en ES3.
+**Test :** `tests/exportEngine.test.ts` parcourt l'arbre syntaxique et refuse
+toute déclaration de fonction hors _SourceElement_.
+
+**Pourquoi il n'avait pas été vu :** acorn accepte cette construction même en
+`ecmaVersion: 3`, parce que tous les navigateurs l'acceptent. Un parseur
+n'applique pas une norme, il imite un moteur — et celui qu'il imite n'est pas
+celui qui exécute. Le contrôle ne pouvait donc pas venir du parseur seul : il
+fallait interroger l'arbre.
+
+**Deux durcissements associés**, sans preuve qu'ils étaient en cause :
+
+- `'use strict'` retiré de l'IIFE — sans effet en ES3, une singularité de
+  moins au chargement.
+- `try { ... } finally { ... }` avec un `return` dans le `try` : remplacé par
+  un nettoyage explicite sur chaque issue. Le moteur ExtendScript est réputé
+  perdre la valeur de retour dans cette configuration.
+
+### Ce qui manquait vraiment : un diagnostic qui vienne d'Illustrator
+
+Deux causes successives ont été trouvées par lecture statique, et la seconde
+ne l'a été qu'en écrivant un contrôle sur mesure. Cette méthode a une limite
+de principe : elle devine ce que le moteur refuse, depuis un environnement qui
+n'a pas le moteur.
+
+`evalScript` évalue **n'importe quelle expression**, pas seulement les
+fonctions déclarées. Le panneau peut donc envoyer un fragment autonome qui lit
+`jsx/main.jsx`, l'évalue, et rapporte l'erreur telle que le moteur la formule,
+avec son numéro de ligne — sans dépendre d'aucune fonction `lf*`, donc
+utilisable précisément quand aucune n'existe.
+
+C'est le bouton « Vérifier jsx/main.jsx », dans Réglages → Diagnostics. La
+prochaine panne de ce genre se diagnostique en un clic, sans redéploiement et
+sans bissection : le verdict vient d'Illustrator, pas d'une hypothèse.

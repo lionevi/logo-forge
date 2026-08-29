@@ -39,6 +39,37 @@ function lfGetDocumentName() {
 }
 
 /**
+ * Fait relire `main.jsx` par le moteur, et rapporte son verdict.
+ *
+ * Utile quand le `ScriptPath` pointe déjà ici : le fichier suspect est lu et
+ * évalué à la demande, et l'erreur rendue est celle du moteur, avec sa ligne.
+ *
+ * @param path chemin absolu de `jsx/main.jsx` dans l'extension installée.
+ */
+function lfCheckMain(path) {
+  try {
+    var file = new File(path)
+    if (!file.exists) return 'ERR|fichier introuvable : ' + path
+    file.encoding = 'UTF-8'
+    if (!file.open('r')) return 'ERR|lecture refusee : ' + path
+    var source = file.read()
+    file.close()
+    if (!source || !source.length) return 'ERR|fichier vide'
+
+    try {
+      eval(source)
+    } catch (parseError) {
+      var where =
+        parseError.line === undefined ? '' : 'ligne ' + parseError.line + ' : '
+      return 'ERR|' + where + parseError.message
+    }
+    return 'OK|' + source.length + ' octets, lfPing ' + typeof lfPing
+  } catch (e) {
+    return 'ERR|' + (e && e.message ? e.message : String(e))
+  }
+}
+
+/**
  * Décrit le moteur qui exécute ce fichier.
  *
  * Sa version dit quelles constructions il accepte : c'est l'information qui

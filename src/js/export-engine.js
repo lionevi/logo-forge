@@ -2135,6 +2135,139 @@ var LogoForgeEngine = (function () {
    * encore servi est déclaré « non éprouvé » plutôt que « fonctionnel » : on
    * ne certifie pas ce qu'on n'a pas exercé.
    */
+  /**
+   * Chemin du dossier d'extension, tel que CEP le connaît.
+   *
+   * @returns le chemin, ou `''` hors de CEP.
+   */
+  function extensionPath() {
+    try {
+      if (
+        typeof window !== 'undefined' &&
+        window.__adobe_cep__ &&
+        typeof window.__adobe_cep__.getSystemPath === 'function'
+      ) {
+        return String(window.__adobe_cep__.getSystemPath('extension') || '')
+      }
+    } catch (error) {
+      /* hors CEP : le chemin n'existe pas */
+    }
+    return ''
+  }
+
+  /**
+   * Expression qui fait relire un script par le moteur ExtendScript lui-même.
+   *
+   * Quand `main.jsx` ne se charge pas, aucune de ses fonctions n'existe et le
+   * pont ne peut plus rien demander d'utile — mais `evalScript` évalue
+   * n'importe quelle expression, pas seulement les fonctions déclarées. Ce
+   * fragment ne dépend donc de rien : il lit le fichier, l'évalue, et rapporte
+   * l'erreur **telle que le moteur la formule, avec son numéro de ligne**.
+   *
+   * C'est la seule façon d'obtenir un diagnostic depuis un environnement qui
+   * n'a pas Illustrator : le verdict vient d'Illustrator.
+   */
+  function hostScriptProbe(path) {
+    var target = quote(path)
+    return (
+      '(function(){' +
+      'try{' +
+      'var f=new File(' +
+      target +
+      ');' +
+      'if(!f.exists)return "ERR' +
+      SEP +
+      'fichier introuvable : "+' +
+      target +
+      ';' +
+      'f.encoding="UTF-8";' +
+      'if(!f.open("r"))return "ERR' +
+      SEP +
+      'lecture refusee : "+' +
+      target +
+      ';' +
+      'var src=f.read();f.close();' +
+      'if(!src||!src.length)return "ERR' +
+      SEP +
+      'fichier vide";' +
+      // `line` existe sur l'objet Error d'ExtendScript ; ailleurs, on rend au
+      // moins le message plutôt qu'un « ligne undefined » qui n'aide personne.
+      'try{eval(src)}catch(p){' +
+      'return "ERR' +
+      SEP +
+      '"+(p.line===undefined?"":"ligne "+p.line+" : ")+p.message}' +
+      'return "OK' +
+      SEP +
+      '"+src.length+"' +
+      UNIT +
+      '"+(typeof lfPing)' +
+      '}catch(e){return "ERR' +
+      SEP +
+      '"+e.message}' +
+      '})()'
+    )
+  }
+
+  /**
+   * Fait relire la couche ExtendScript par Illustrator.
+   *
+   * @param done reçoit `{ok, bytes, defined, message, path}`.
+   */
+  function checkHostScript(done) {
+    var root = extensionPath()
+    if (!root) {
+      done({
+        ok: false,
+        message:
+          'Chemin de l extension inconnu : ce controle ne fonctionne que dans Illustrator.',
+        path: ''
+      })
+      return
+    }
+
+    var path = root + '/jsx/main.jsx'
+    var started = new Date().getTime()
+
+    evalScript(hostScriptProbe(path), function (raw) {
+      var text = raw === undefined || raw === null ? '' : String(raw)
+      var elapsed = new Date().getTime() - started
+
+      if (text === 'EvalScript error.') {
+        log('CHECK_HOST_SCRIPT', path, 'fail', 'expression refusee', elapsed)
+        done({
+          ok: false,
+          message: 'Le moteur a refuse le controle lui-meme.',
+          path: path
+        })
+        return
+      }
+
+      var cut = text.indexOf(SEP)
+      if (cut === -1) {
+        log('CHECK_HOST_SCRIPT', path, 'fail', text, elapsed)
+        done({ ok: false, message: 'Reponse illisible : ' + text, path: path })
+        return
+      }
+
+      var payload = text.substring(cut + 1)
+      if (text.substring(0, cut) !== 'OK') {
+        log('CHECK_HOST_SCRIPT', path, 'fail', payload, elapsed)
+        done({ ok: false, message: payload, path: path })
+        return
+      }
+
+      var fields = payload.split(UNIT)
+      log('CHECK_HOST_SCRIPT', path, 'ok', '', elapsed)
+      done({
+        ok: true,
+        bytes: parseInt(fields[0], 10) || 0,
+        defined: fields[1] === 'function',
+        message: '',
+        path: path
+      })
+    })
+  }
+
   function diagnosticPlan(state) {
     return [
       {
@@ -3591,6 +3724,9 @@ var LogoForgeEngine = (function () {
     planSocialKit: planSocialKit,
     runSocialKit: runSocialKit,
     CALL_TIMEOUT_MS: CALL_TIMEOUT_MS,
+    extensionPath: extensionPath,
+    hostScriptProbe: hostScriptProbe,
+    checkHostScript: checkHostScript,
     JOB_STATUS: JOB_STATUS,
     SNAPSHOT_VERSION: SNAPSHOT_VERSION,
     taskKey: taskKey,

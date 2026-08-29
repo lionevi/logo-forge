@@ -916,3 +916,28 @@ describe('conditions dégradées', () => {
     expect(SCRIPT).toContain('missingElements.join')
   })
 })
+
+describe('contrôle du chargement de la couche Illustrator', () => {
+  it('offre le contrôle là où la panne se constate', () => {
+    expect(HTML).toContain('id="check-host-script"')
+    expect(HTML).toContain('id="host-script-result"')
+    expect(SCRIPT).toContain('engine.checkHostScript(')
+  })
+
+  it('explique le symptôme qu’il sert à lever', () => {
+    expect(HTML).toContain("n'est pas une")
+    expect(HTML).toContain('jsx/main.jsx')
+  })
+
+  it('rend l’erreur du moteur et le geste qui suit', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function renderHostScript('))
+    expect(block.slice(0, 1400)).toContain('result.message')
+    expect(block.slice(0, 1400)).toContain('À faire :')
+  })
+
+  it('distingue « fichier relu » de « fonctions définies »', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function renderHostScript('))
+    expect(block.slice(0, 1600)).toContain('result.defined')
+    expect(block.slice(0, 1600)).toContain('ScriptPath')
+  })
+})

@@ -14,7 +14,6 @@
  */
 
 var LogoForge = (function () {
-  'use strict'
 
   /** Sépare le statut de la charge utile. */
   var SEP = '|'
@@ -590,7 +589,10 @@ var LogoForge = (function () {
       var counts = {}
       var order = []
 
-      function record(color) {
+      // Expression de fonction, et non déclaration : en ES3, une déclaration
+      // de fonction n'est légale qu'au niveau d'un programme ou d'un corps de
+      // fonction — jamais dans un bloc, et ceci est dans un `try`.
+      var record = function (color) {
         var rgb = toRgb(color)
         if (!rgb) return
         var hex = toHex(rgb)
@@ -832,6 +834,17 @@ var LogoForge = (function () {
    * Réservé aux documents à plusieurs plans de travail, où le suffixage
    * d'Illustrator varie selon la version et rend le nom final imprévisible.
    */
+  /** Vide et supprime un dossier de travail temporaire. */
+  function clearStage(stage) {
+    try {
+      var leftovers = stage.getFiles()
+      for (var i = 0; i < leftovers.length; i += 1) leftovers[i].remove()
+      stage.remove()
+    } catch (cleanupError) {
+      /* un temporaire résiduel n'est jamais fatal */
+    }
+  }
+
   function exportThenRename(targetPath, extension, writer) {
     var target = new File(targetPath)
     var stage = new Folder(
@@ -841,29 +854,31 @@ var LogoForge = (function () {
       throw new Error('dossier temporaire impossible a creer')
     }
 
+    // Ni `finally`, ni `return` traversant un `finally` : le moteur
+    // ExtendScript est connu pour perdre la valeur de retour dans ce cas. Le
+    // nettoyage est donc appelé explicitement sur les deux issues.
+    var failure = null
+    var produced = null
+
     try {
       var base = new File(stage.fsName + '/out.' + extension)
       writer(base)
 
-      var produced = stage.getFiles('*.' + extension)
-      if (!produced || produced.length === 0) {
-        throw new Error('Illustrator n a produit aucun fichier ' + extension)
+      var files = stage.getFiles('*.' + extension)
+      if (!files || files.length === 0) {
+        failure = 'Illustrator n a produit aucun fichier ' + extension
+      } else {
+        if (target.exists) target.remove()
+        if (files[0].copy(target.fsName)) produced = target.fsName
+        else failure = 'copie vers ' + targetPath + ' impossible'
       }
-
-      if (target.exists) target.remove()
-      if (!produced[0].copy(target.fsName)) {
-        throw new Error('copie vers ' + targetPath + ' impossible')
-      }
-      return target.fsName
-    } finally {
-      try {
-        var leftovers = stage.getFiles()
-        for (var i = 0; i < leftovers.length; i += 1) leftovers[i].remove()
-        stage.remove()
-      } catch (cleanupError) {
-        /* un temporaire résiduel n'est jamais fatal */
-      }
+    } catch (error) {
+      failure = describe(error)
     }
+
+    clearStage(stage)
+    if (failure) throw new Error(failure)
+    return produced
   }
 
   /**
@@ -1132,7 +1147,9 @@ var LogoForge = (function () {
         doc.documentColorSpace === DocumentColorSpace.CMYK ? 'cmyk' : 'rgb'
 
       var findings = []
-      function report(id, count, detail) {
+      // Expression de fonction : voir `record` — une déclaration dans un bloc
+      // sort de la grammaire ES3.
+      var report = function (id, count, detail) {
         findings.push(id + ':' + count + ':' + (detail === undefined ? '' : detail))
       }
 
