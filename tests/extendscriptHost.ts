@@ -270,8 +270,24 @@ export class FakeDocument {
 
   private paths: FakeItem[] = []
 
-  get pathItems(): FakeItem[] {
-    return this.paths
+  get pathItems(): FakeItem[] & { rectangle: (...args: number[]) => FakeItem } {
+    const collection = this.paths as FakeItem[] & {
+      rectangle: (...args: number[]) => FakeItem
+    }
+    collection.rectangle = (
+      top: number,
+      left: number,
+      width: number,
+      height: number,
+    ) => {
+      const item = new FakeItem('PathItem', [left, top, left + width, top - height])
+      // Le fond est créé avant le logo : il est déjà au fond de la pile.
+      this.layers[0].insert(item, 'PLACEATBEGINNING')
+      item.collection = this.paths
+      this.paths.push(item)
+      return item
+    }
+    return collection
   }
 
   set pathItems(items: FakeItem[]) {
@@ -496,6 +512,7 @@ export function loadExtendScript(): Host {
     EPSSaveOptions: function () {
       return options()
     },
+    ZOrderMethod: { SENDTOBACK: 'sendToBack', BRINGTOFRONT: 'bringToFront' },
     RGBColor: function () {
       return { typename: 'RGBColor', red: 0, green: 0, blue: 0 }
     },
@@ -532,6 +549,7 @@ export function loadExtendScript(): Host {
     'lfExportSVG',
     'lfExportAI',
     'lfWriteIco',
+    'lfPackageBackground',
   ]
 
   const factory = new Function(

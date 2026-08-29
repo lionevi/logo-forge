@@ -1136,6 +1136,7 @@
             <button class="tab" data-sub="grid">Grid</button>
             <button class="tab" data-sub="folders">Dossiers</button>
             <button class="tab" data-sub="doc">Documentation</button>
+            <button class="tab" data-sub="social">Réseaux sociaux</button>
             <button class="tab" data-sub="diag">Diagnostics</button>
           </div>
 
@@ -1369,6 +1370,51 @@
                 Sans message, la documentation reste complète : elle explique
                 le contenu du pack et l'usage de chaque format.
               </p>
+            </div>
+          </div>
+
+          <div class="pane" id="sub-social">
+            <div class="section">
+              <h2 class="section-title">Formats</h2>
+              <p class="summary">
+                Un canevas aux dimensions exactes de chaque plateforme, le
+                logo centré. Produit dans le dossier de livraison, à part du
+                pack.
+              </p>
+              <div id="social-presets"></div>
+            </div>
+
+            <div class="section">
+              <h2 class="section-title">Fond</h2>
+              <div class="row">
+                <div class="col">
+                  <label class="check">
+                    <input type="checkbox" id="social-transparent" />
+                    <span class="check-label">Fond transparent</span>
+                  </label>
+                </div>
+                <div class="col-4">
+                  <label for="social-background">Couleur</label>
+                  <input type="color" id="social-background" value="#FFFFFF" />
+                </div>
+                <div class="col-4">
+                  <label for="social-margin">Marge (%)</label>
+                  <input type="number" id="social-margin" min="0" max="40" />
+                </div>
+              </div>
+              <p class="summary">
+                La plupart des plateformes posent l image sur un fond qu elles
+                choisissent : une version blanche y disparaît. Le fond est donc
+                peint dans le fichier.
+              </p>
+            </div>
+
+            <div class="section">
+              <h2 class="section-title">Production</h2>
+              <button class="button small" id="build-social">
+                Produire le kit
+              </button>
+              <div id="social-result"></div>
             </div>
           </div>
 
@@ -1691,6 +1737,13 @@
           diagnostics: null,
           // Lot interrompu retrouvé au démarrage, une fois vérifié sur disque.
           resume: null,
+          social: {
+            presets: { avatar: true, openGraph: true },
+            margin: 12,
+            background: '#FFFFFF',
+            transparent: false,
+          },
+          socialResult: null,
           runTraceLost: false,
           preflight: null,
           preflightMode: 'print',
@@ -1749,6 +1802,7 @@
           studio: null,
           clientName: '',
           destination: '',
+          social: null,
           blockOnPreflight: false,
           preflightMode: 'print',
           rememberSchemes: true,
@@ -3588,6 +3642,127 @@
                 ' pt'
         }
 
+        /* ---------------------------------------------------------------- *
+         * Kit réseaux sociaux
+         * ---------------------------------------------------------------- */
+
+        function renderSocialPresets() {
+          var presets = engine.SOCIAL_PRESETS
+          var html = ''
+          for (var i = 0; i < presets.length; i += 1) {
+            var preset = presets[i]
+            html +=
+              '<label class="check"><input type="checkbox" data-social="' +
+              escapeHtml(preset.id) +
+              '"' +
+              (state.social.presets[preset.id] ? ' checked' : '') +
+              ' /><span class="check-label">' +
+              escapeHtml(preset.label) +
+              ' <span class="hint">' +
+              preset.width +
+              ' × ' +
+              preset.height +
+              ' px — ' +
+              escapeHtml(preset.use) +
+              '</span></span></label>'
+          }
+          byId('social-presets').innerHTML = html
+
+          byId('social-transparent').checked = !!state.social.transparent
+          byId('social-background').value = state.social.background
+          byId('social-margin').value = state.social.margin
+          // Une couleur de fond n'a pas de sens quand le fond est transparent.
+          byId('social-background').disabled = !!state.social.transparent
+        }
+
+        /** Réglages du kit, tels que le moteur les attend. */
+        function socialConfig() {
+          var config = buildConfig()
+          var chosen = []
+          var presets = engine.SOCIAL_PRESETS
+          for (var i = 0; i < presets.length; i += 1) {
+            if (state.social.presets[presets[i].id]) chosen.push(presets[i].id)
+          }
+          config.social = {
+            presets: chosen,
+            margin: state.social.margin,
+            background: state.social.background,
+            transparent: state.social.transparent,
+          }
+          return config
+        }
+
+        function renderSocialSummary() {
+          var plan = engine.planSocialKit(socialConfig())
+          var host = byId('social-result')
+          if (state.socialResult) return
+          host.innerHTML =
+            '<p class="summary">' +
+            escapeHtml(
+              plan.canvases.length === 0
+                ? 'Aucun canevas : choisissez un format et capturez un composant.'
+                : plan.canvases.length + ' canevas seront produits.'
+            ) +
+            '</p>'
+        }
+
+        function renderSocialResult() {
+          var result = state.socialResult
+          if (!result) {
+            renderSocialSummary()
+            return
+          }
+
+          var html = ''
+          if (result.written.length > 0) {
+            html +=
+              '<p class="notice done">' +
+              escapeHtml(
+                result.written.length +
+                  ' canevas produits · ' +
+                  engine.formatBytes(engine.totalBytes(result.written)) +
+                  ' — ' +
+                  result.folder
+              ) +
+              '</p>'
+          }
+          for (var i = 0; i < result.failures.length; i += 1) {
+            var failure = result.failures[i]
+            html +=
+              '<p class="notice error">' +
+              escapeHtml(failure.canvas.fileName + ' : ' + failure.message) +
+              '</p>'
+          }
+          if (result.written.length === 0 && result.failures.length === 0) {
+            html += '<p class="notice">' + escapeHtml(result.message) + '</p>'
+          }
+          byId('social-result').innerHTML = html
+        }
+
+        function buildSocialKit() {
+          if (!state.destination) {
+            fail('kit reseaux sociaux', 'choisissez un dossier de livraison')
+            return
+          }
+
+          var button = byId('build-social')
+          button.disabled = true
+          state.socialResult = null
+
+          engine.runSocialKit(socialConfig(), {
+            onProgress: function (done, total, label) {
+              button.innerHTML = done + ' / ' + total + ' — ' + label
+            },
+            onDone: function (result) {
+              button.disabled = false
+              button.innerHTML = 'Produire le kit'
+              state.socialResult = result
+              renderSocialResult()
+              renderLog()
+            },
+          })
+        }
+
         function readGridSettings() {
           var next = {}
           for (var i = 0; i < GRID_FIELDS.length; i += 1) {
@@ -3689,6 +3864,7 @@
           renderExportButton()
           renderPackage()
           renderGridSettings()
+          renderSocialSummary()
           renderNamePreview()
           renderFolderTemplate()
         }
@@ -3706,6 +3882,7 @@
           renderDiagnostics()
           renderLog()
           renderPreflight()
+          renderSocialPresets()
           renderDerived()
         }
 
@@ -4345,6 +4522,37 @@
             var detail = event.target.parentNode.querySelector('.detail')
             if (detail) detail.hidden = !detail.hidden
           }
+        }
+
+        byId('social-presets').onchange = function (event) {
+          var id = event.target.getAttribute('data-social')
+          if (id === null) return
+          state.social.presets[id] = event.target.checked
+          state.socialResult = null
+          renderSocialSummary()
+          persistProject()
+        }
+
+        byId('social-transparent').onchange = function () {
+          state.social.transparent = this.checked
+          renderSocialPresets()
+          persistProject()
+        }
+
+        byId('social-background').onchange = function () {
+          state.social.background = this.value
+          persistProject()
+        }
+
+        byId('social-margin').onchange = function () {
+          var value = parseFloat(this.value)
+          state.social.margin = isNaN(value) ? 12 : value
+          renderSocialPresets()
+          persistProject()
+        }
+
+        byId('build-social').onclick = function () {
+          guard('kit reseaux sociaux', buildSocialKit)
         }
 
         byId('run-diagnostics').onclick = function () {

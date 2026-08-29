@@ -853,3 +853,51 @@ describe('reprise d’un export interrompu', () => {
     expect(block.slice(0, 700)).toContain('if (!state.components.length) {')
   })
 })
+
+describe('kit réseaux sociaux', () => {
+  it('offre un onglet et les formats du moteur', () => {
+    expect(HTML).toContain('data-sub="social"')
+    expect(HTML).toContain('id="sub-social"')
+    expect(SCRIPT).toContain('engine.SOCIAL_PRESETS')
+    expect(SCRIPT).toContain('data-social=')
+  })
+
+  it('annonce les dimensions de chaque plateforme', () => {
+    // Le designer choisit une bannière LinkedIn, pas un « 1128 × 191 ».
+    const block = SCRIPT.slice(SCRIPT.indexOf('function renderSocialPresets('))
+    expect(block.slice(0, 1200)).toContain('preset.width')
+    expect(block.slice(0, 1200)).toContain('preset.use')
+  })
+
+  it('laisse choisir le fond, et le justifie', () => {
+    expect(HTML).toContain('id="social-transparent"')
+    expect(HTML).toContain('id="social-background"')
+    expect(HTML).toContain('fond qu elles')
+  })
+
+  it('désactive la couleur quand le fond est transparent', () => {
+    // Un réglage sans effet visible est un réglage qui ment.
+    expect(SCRIPT).toContain("byId('social-background').disabled")
+  })
+
+  it('compte les canevas avant de les produire', () => {
+    expect(SCRIPT).toContain('engine.planSocialKit(socialConfig())')
+    expect(SCRIPT).toContain('canevas seront produits')
+  })
+
+  it('exige un dossier de livraison', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function buildSocialKit('))
+    expect(block.slice(0, 300)).toContain('!state.destination')
+  })
+
+  it('montre l’avancement puis le résultat réel', () => {
+    expect(SCRIPT).toContain('engine.runSocialKit(socialConfig()')
+    const block = SCRIPT.slice(SCRIPT.indexOf('function renderSocialResult('))
+    expect(block.slice(0, 1200)).toContain('result.written.length')
+    expect(block.slice(0, 1200)).toContain('result.failures')
+  })
+
+  it('enregistre les réglages du kit', () => {
+    expect(SCRIPT).toMatch(/PERSISTED_SETTINGS = \{[\s\S]*social: null/)
+  })
+})

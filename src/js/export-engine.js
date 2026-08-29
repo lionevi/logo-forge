@@ -57,6 +57,7 @@ var LogoForgeEngine = (function () {
         'couleur. Le client trouve sans rien connaître au métier.',
       report: 'Rapport',
       documentation: 'Documentation',
+      social: 'Reseaux_Sociaux',
       folder: function (context) {
         if (context.favicon) return joinFolder([FOLDERS.web, 'Favicon'])
         return joinFolder([
@@ -74,6 +75,7 @@ var LogoForgeEngine = (function () {
         'une couleur.',
       report: 'Rapport',
       documentation: 'Documentation',
+      social: 'Social',
       folder: function (context) {
         if (context.favicon) return joinFolder(['Web', 'Favicon'])
         return joinFolder([
@@ -91,6 +93,7 @@ var LogoForgeEngine = (function () {
         'sources, impression, web, favicons, documentation.',
       report: '05_Rapport',
       documentation: '04_Documentation',
+      social: '06_Reseaux_Sociaux',
       folder: function (context) {
         if (context.favicon) return '03_Favicons'
         if (context.format === 'ai') {
@@ -2972,6 +2975,265 @@ var LogoForgeEngine = (function () {
    * ---------------------------------------------------------------------- */
 
   /** Réglages de grille par défaut, en points. */
+  /* ---------------------------------------------------------------------- *
+   * Kit réseaux sociaux
+   *
+   * Un logo carré posé sur une bannière de 1500 × 500 n'est pas un logo
+   * livré : chaque plateforme impose ses dimensions, et le designer les
+   * refait à la main, une par une, à chaque projet. Ces formats sont donc
+   * produits comme le reste du pack — canevas exact, logo centré, marge
+   * respirable, fond assumé.
+   *
+   * Les dimensions sont celles publiées par les plateformes ; elles bougent.
+   * Elles sont donc énumérées ici, lisiblement, plutôt que calculées.
+   * ---------------------------------------------------------------------- */
+
+  var SOCIAL_PRESETS = [
+    { id: 'avatar', label: 'Photo de profil', width: 400, height: 400, use: 'Profil carré, la plupart des plateformes' },
+    { id: 'avatarLarge', label: 'Profil haute définition', width: 1000, height: 1000, use: 'Profil, écrans à forte densité' },
+    { id: 'linkedinCover', label: 'Bannière LinkedIn', width: 1128, height: 191, use: 'Page entreprise LinkedIn' },
+    { id: 'facebookCover', label: 'Couverture Facebook', width: 820, height: 312, use: 'Couverture de page Facebook' },
+    { id: 'xHeader', label: 'Bannière X', width: 1500, height: 500, use: 'En-tête de compte X' },
+    { id: 'youtubeArt', label: 'Bannière YouTube', width: 2048, height: 1152, use: 'Chaîne YouTube' },
+    { id: 'openGraph', label: 'Aperçu de partage', width: 1200, height: 630, use: 'Vignette d un lien partagé' },
+    { id: 'story', label: 'Story', width: 1080, height: 1920, use: 'Story verticale' },
+  ]
+
+  /** Un identifiant de format, ou `null`. */
+  function socialPreset(id) {
+    for (var i = 0; i < SOCIAL_PRESETS.length; i += 1) {
+      if (SOCIAL_PRESETS[i].id === id) return SOCIAL_PRESETS[i]
+    }
+    return null
+  }
+
+  /** Réglages du kit, complétés de leurs valeurs par défaut. */
+  var SOCIAL_DEFAULTS = {
+    // Part du canevas laissée libre autour du logo, de chaque côté.
+    margin: 12,
+    background: '#FFFFFF',
+    transparent: false,
+  }
+
+  function socialSettings(config) {
+    var settings = {}
+    for (var key in SOCIAL_DEFAULTS) {
+      if (!SOCIAL_DEFAULTS.hasOwnProperty(key)) continue
+      var value = config && config.social ? config.social[key] : undefined
+      settings[key] = value === undefined || value === null ? SOCIAL_DEFAULTS[key] : value
+    }
+    var margin = parseFloat(settings.margin)
+    // Au-delà de 40 % de marge de chaque côté, il ne resterait rien à voir.
+    if (!(margin >= 0) || margin > 40) margin = SOCIAL_DEFAULTS.margin
+    settings.margin = margin
+    return settings
+  }
+
+  /**
+   * Liste les canevas à produire.
+   *
+   * Un canevas par format retenu et par composant retenu : la déclinaison,
+   * elle, est unique — un kit réseaux sociaux se décline par plateforme, pas
+   * par couleur, et livrer huit fois quatre versions noierait le client.
+   */
+  function planSocialKit(config) {
+    var settings = socialSettings(config)
+    var chosen = (config.social && config.social.presets) || []
+    var components = config.components || []
+    var scheme = (config.colorSchemes || [])[0] || { id: 'fullColor' }
+    var template = folderTemplate(config.folderTemplate)
+    var separator = config.separator || '_'
+    var canvases = []
+
+    for (var c = 0; c < components.length; c += 1) {
+      if (!components[c].path) continue
+      for (var p = 0; p < chosen.length; p += 1) {
+        var preset = socialPreset(chosen[p])
+        if (!preset) continue
+
+        var marginX = (preset.width * settings.margin) / 100
+        var marginY = (preset.height * settings.margin) / 100
+        canvases.push({
+          preset: preset,
+          component: components[c],
+          scheme: scheme,
+          folder: template.social || 'Reseaux_Sociaux',
+          fileName:
+            sanitize(pascal(config.clientName || 'Client')) +
+            separator +
+            pascal(components[c].name) +
+            separator +
+            preset.id +
+            separator +
+            preset.width +
+            'x' +
+            preset.height +
+            '.png',
+          width: preset.width,
+          height: preset.height,
+          // Le plan de travail va de 0 à -hauteur : la cellule utile est
+          // encadrée par la marge, de chaque côté.
+          left: marginX,
+          top: -marginY,
+          cellWidth: preset.width - marginX * 2,
+          cellHeight: preset.height - marginY * 2,
+        })
+      }
+    }
+
+    return { canvases: canvases, settings: settings }
+  }
+
+  /**
+   * Produit le kit, un canevas après l'autre.
+   *
+   * Chaque canevas est un document jetable : créé, peint, rempli, exporté,
+   * refermé sans être enregistré. Un canevas raté n'arrête pas les suivants,
+   * et rien n'est déclaré produit sans octets sur le disque.
+   */
+  function runSocialKit(config, handlers) {
+    var plan = planSocialKit(config)
+    var canvases = plan.canvases
+    var settings = plan.settings
+    var root = joinPath(config.outputFolder, [sanitize(config.clientName)])
+    var threshold = typeof config.threshold === 'number' ? config.threshold : 100
+
+    var written = []
+    var failures = []
+    var index = 0
+    var cancelled = false
+
+    log('SOCIAL_START', canvases.length + ' canevas', 'ok')
+
+    if (canvases.length === 0) {
+      handlers.onDone({
+        written: [],
+        failures: [],
+        message:
+          'Aucun canevas : choisissez au moins un format et capturez un composant.',
+      })
+      return { cancel: function () {} }
+    }
+
+    function fail(canvas, message) {
+      log('SOCIAL_CANVAS', canvas.fileName, 'fail', message)
+      failures.push({ canvas: canvas, message: message })
+      // La planche ratée est refermée avant de passer à la suivante : la
+      // laisser ouverte encombrerait Illustrator d'un document par échec.
+      call('lfAbortPackage', [], function () {
+        setTimeout(next, 0)
+      })
+    }
+
+    function next() {
+      if (cancelled || index >= canvases.length) {
+        handlers.onDone({
+          written: written,
+          failures: failures,
+          cancelled: cancelled,
+          root: root,
+          folder: canvases[0].folder,
+          message: '',
+        })
+        return
+      }
+
+      var canvas = canvases[index]
+      index += 1
+      handlers.onProgress(index, canvases.length, canvas.preset.label)
+
+      call(
+        'lfCreatePackage',
+        [canvas.width, canvas.height, 'rgb'],
+        function (created) {
+          if (!created.ok) {
+            fail(canvas, 'création du canevas : ' + created.value)
+            return
+          }
+          paint(canvas)
+        }
+      )
+    }
+
+    function paint(canvas) {
+      if (settings.transparent) {
+        place(canvas)
+        return
+      }
+      call('lfPackageBackground', [settings.background], function (painted) {
+        if (!painted.ok) {
+          fail(canvas, 'fond : ' + painted.value)
+          return
+        }
+        place(canvas)
+      })
+    }
+
+    function place(canvas) {
+      call(
+        'lfPlaceComponent',
+        [
+          canvas.component.path,
+          canvas.scheme.id,
+          canvas.scheme.hex || '',
+          threshold,
+          formatColorMap(canvas.scheme.map),
+          canvas.left,
+          canvas.top,
+          canvas.cellWidth,
+          canvas.cellHeight,
+        ],
+        function (placed) {
+          if (!placed.ok) {
+            fail(canvas, 'placement : ' + placed.value)
+            return
+          }
+          write(canvas)
+        }
+      )
+    }
+
+    function write(canvas) {
+      var target = joinPath(root, [canvas.folder, canvas.fileName])
+      call('lfExportPNG', [0, target, canvas.width, 72], function (exported) {
+        if (!exported.ok) {
+          fail(canvas, exported.value)
+          return
+        }
+        var bytes = parseInt(String(exported.value).split(UNIT)[1], 10) || 0
+        if (!bytes) {
+          fail(canvas, 'fichier vide ou absent : ' + canvas.fileName)
+          return
+        }
+        canvas.bytes = bytes
+        written.push(canvas)
+        log('SOCIAL_CANVAS', canvas.fileName, 'ok', '', null)
+        // Le canevas a servi : il est refermé sans être enregistré.
+        call('lfAbortPackage', [], function () {
+          setTimeout(next, 0)
+        })
+      })
+    }
+
+    createDirectories(root, [canvases[0].folder], function (folderError) {
+      if (folderError) {
+        handlers.onDone({
+          written: [],
+          failures: [{ canvas: canvases[0], message: folderError }],
+          message: folderError,
+        })
+        return
+      }
+      next()
+    })
+
+    return {
+      cancel: function () {
+        cancelled = true
+      },
+    }
+  }
+
   var GRID_DEFAULTS = {
     margin: 48,
     columnGap: 28,
@@ -3287,6 +3549,12 @@ var LogoForgeEngine = (function () {
     totalBytes: totalBytes,
     countWarnings: countWarnings,
     countFailures: countFailures,
+    SOCIAL_PRESETS: SOCIAL_PRESETS,
+    SOCIAL_DEFAULTS: SOCIAL_DEFAULTS,
+    socialPreset: socialPreset,
+    socialSettings: socialSettings,
+    planSocialKit: planSocialKit,
+    runSocialKit: runSocialKit,
     JOB_STATUS: JOB_STATUS,
     SNAPSHOT_VERSION: SNAPSHOT_VERSION,
     taskKey: taskKey,

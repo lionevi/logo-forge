@@ -1800,6 +1800,54 @@ var LogoForge = (function () {
   }
 
   /**
+   * Peint un fond plein derrière la planche.
+   *
+   * Un logo livré sur fond transparent est juste sur un site, faux sur un
+   * réseau social : la plupart des plateformes le posent sur un fond qu'elles
+   * choisissent, et une version blanche y disparaît. Le fond est donc peint
+   * dans le fichier, pas laissé au hasard.
+   *
+   * @param hex couleur du fond, `#rrggbb`.
+   */
+  function setPackageBackground(hex) {
+    try {
+      if (!packageDocument) return err('aucune planche ouverte')
+
+      var clean = String(hex).replace(/^#/, '')
+      if (!/^[0-9a-fA-F]{6}$/.test(clean)) {
+        return err('couleur de fond invalide : ' + hex)
+      }
+
+      var board = packageDocument.artboards[0].artboardRect
+      var left = board[0]
+      var top = board[1]
+      var width = Math.abs(board[2] - board[0])
+      var height = Math.abs(board[1] - board[3])
+
+      var rect = packageDocument.pathItems.rectangle(top, left, width, height)
+      var color = new RGBColor()
+      color.red = parseInt(clean.substring(0, 2), 16)
+      color.green = parseInt(clean.substring(2, 4), 16)
+      color.blue = parseInt(clean.substring(4, 6), 16)
+      rect.filled = true
+      rect.fillColor = color
+      rect.stroked = false
+
+      // Derrière tout le reste : le fond ne doit rien masquer.
+      try {
+        rect.zOrder(ZOrderMethod.SENDTOBACK)
+      } catch (orderError) {
+        // Version d'Illustrator sans zOrder sur cet objet : le fond ayant été
+        // posé avant le logo, il est déjà au fond.
+      }
+
+      return ok([width, height].join(UNIT))
+    } catch (e) {
+      return err(describe(e))
+    }
+  }
+
+  /**
    * Place un composant recoloré dans une cellule de la planche.
    *
    * @returns nombre d'objets réellement placés, largeur et hauteur obtenues.
@@ -2041,6 +2089,7 @@ var LogoForge = (function () {
     pathExists: pathExists,
     writeTextFile: writeTextFile,
     writeIco: writeIco,
+    setPackageBackground: setPackageBackground,
     listFiles: listFiles,
     beginSession: beginSession,
     endSession: endSession,
@@ -2106,6 +2155,9 @@ function lfWriteTextFile(path, contents) {
 }
 function lfWriteIco(targetPath, sources, sizes) {
   return LogoForge.writeIco(targetPath, sources, sizes)
+}
+function lfPackageBackground(hex) {
+  return LogoForge.setPackageBackground(hex)
 }
 function lfBeginSession() {
   return LogoForge.beginSession()
