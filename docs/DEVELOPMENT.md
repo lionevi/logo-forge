@@ -59,6 +59,32 @@ Les tests couvrent `src/core/` uniquement, et n'ont besoin ni de DOM ni
 d'Illustrator (`environment: 'node'`). Les seuils de couverture sont appliqués
 par `vitest.config.ts` : un cœur métier sous-testé fait échouer la CI.
 
+### Compatibilité ExtendScript
+
+```bash
+npm run check:jsx
+```
+
+`src/jsx/` vise un moteur **ECMA-262 3e édition**, et ExtendScript ne charge
+pas un fichier à moitié : la moindre construction refusée emporte le fichier
+entier, et aucune fonction n'existe plus dans Illustrator.
+
+Un parseur ne suffit pas — acorn imite les navigateurs, pas ExtendScript.
+`scripts/check-jsx-es3.mjs` interroge donc l'arbre et interdit nommément :
+`for…of`, décomposition, décomposition/reste, gabarits, fonctions fléchées,
+classes, propriétés raccourcies, **fonctions déclarées dans un bloc**,
+**`continue`/`break`/`return` sans point-virgule**, virgules finales, et les
+méthodes absentes du moteur (`forEach`, `map`, `filter`, `trim`, `JSON`,
+`Object.keys`, `Array.isArray`, `Date.now`, `bind`).
+
+Le style de cette couche n'est pas négociable : **point-virgules obligatoires**
+(`semi: true`), **virgules finales interdites**. Prettier les applique,
+`format:check` les impose.
+
+Quand Illustrator refuse quand même de charger le fichier : Réglages →
+Diagnostics → **« Vérifier jsx/main.jsx »**. Le moteur relit le fichier et rend
+l'erreur avec son numéro de ligne.
+
 ### Scénarios de bout en bout
 
 ```bash

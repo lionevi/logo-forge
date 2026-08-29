@@ -11,6 +11,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import * as acorn from 'acorn'
+
+import { checkAll } from '../scripts/check-jsx-es3.mjs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ENGINE_SOURCE = readFileSync(
@@ -109,6 +111,14 @@ describe('compatibilité du moteur', () => {
     expect(() =>
       acorn.parse(PROBE_SOURCE, { ecmaVersion: 3, sourceType: 'script' }),
     ).not.toThrow()
+  })
+
+  it('passe le contrôle de compatibilité ExtendScript', () => {
+    // `scripts/check-jsx-es3.mjs` est l'autorité : il interdit nommément ce
+    // que le moteur a réellement refusé, là où un parseur seul ne voit rien.
+    // Il est appelé ici pour que la CI l'exécute sans dépendre d'une commande
+    // qu'on peut oublier de lancer.
+    expect(checkAll()).toEqual([])
   })
 
   it('ne déclare aucune fonction à l intérieur d un bloc', () => {

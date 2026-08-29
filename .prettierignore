@@ -9,6 +9,5 @@ src/index.html
 
 # Panneau CEP vanilla : figé tel quel, il est livré sans transformation.
 src/panel-cep.html
-# Couches CEP en ES5 pur, livrées telles quelles.
-src/jsx/
+# Moteur du panneau, en ES5 pur : livré tel quel, style sans point-virgule.
 src/js/

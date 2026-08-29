@@ -737,3 +737,49 @@ réintroduite à chaque phase. Elle ne l'était pas : `100vh`, `100dvh`, `100svh
 livré, et la mise en page est en positionnement absolu borné depuis le début.
 Le garde-fou demandé a été ajouté quand même — la régression est plausible, le
 contrôle coûte trois lignes, et il vaut mieux qu'il existe avant.
+
+### BUG-019 — ExtendScript n'insère pas le point-virgule d'un `continue` en corps d'`if`
+
+**Cause :** `if (!paths[i]) continue`, sans point-virgule. En ES3, `continue`,
+`break` et `return` sont des _productions restreintes_ : la norme veut qu'un
+point-virgule soit inséré à la fin de la ligne. ExtendScript ne le fait pas
+dans ce cas ; il continue de lire, tombe sur l'instruction suivante, et rend
+**« Attendu : ; »**.
+**Fichier :** `src/jsx/main.jsx`, ligne 266 de la révision déployée.
+**Impact :** identique aux deux précédents — fichier entier rejeté, aucune
+fonction globale, « `lf*` n'est pas une fonction » partout.
+**Solution :** la couche ExtendScript n'est plus mise en forme sans
+point-virgule. `src/jsx/` sort de `.prettierignore`, avec une exception
+`semi: true, trailingComma: none` : Prettier les pose et `npm run format:check`
+les impose. La classe entière disparaît, plutôt qu'une occurrence.
+**Test :** `scripts/check-jsx-es3.mjs`, appelé par la suite et par
+`npm run verify`.
+
+**Ce qui a permis de le trouver.** Le bouton « Vérifier jsx/main.jsx » a rendu
+« ligne 266 : Attendu : ; » — le verdict d'Illustrator, pas une hypothèse. La
+lecture seule aurait pu continuer longtemps : les quatre `continue` nus des
+lignes 172, 182, 1238 et 1759 sont **suivis d'une accolade fermante** et ne
+gênent pas le moteur ; le premier suivi d'une vraie instruction est
+exactement celui qui l'arrête. Rien, dans le code, ne distinguait les uns des
+autres à l'œil.
+
+### Ce que trois pannes de suite ont appris
+
+Trois causes, trois classes différentes, un seul symptôme, et à chaque fois un
+garde-fou vert :
+
+| Défaut                | Ce que le contrôle faisait | Ce qu'il fallait                                 |
+| --------------------- | -------------------------- | ------------------------------------------------ |
+| Virgule finale        | parsait en ES5             | parser en ES3                                    |
+| Fonction dans un bloc | parsait en ES3             | interroger l'arbre — acorn imite les navigateurs |
+| `continue` sans `;`   | parsait en ES3             | interdire l'ASI — le moteur ne l'applique pas    |
+
+La leçon n'est pas « il fallait un meilleur parseur » : c'est qu'**un parseur
+n'applique pas une norme, il imite un moteur** — et celui qu'il imite n'est pas
+celui qui exécute. D'où deux conséquences, désormais tenues :
+
+1. `scripts/check-jsx-es3.mjs` interdit **nommément** ce que le moteur a
+   réellement refusé, en plus de ce que la grammaire refuse. Chacune des onze
+   classes est éprouvée par injection.
+2. La mise en forme ne laisse plus le choix : point-virgules obligatoires,
+   virgules finales interdites, appliqués par `format:check`.

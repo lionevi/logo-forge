@@ -24,17 +24,17 @@
  */
 
 function lfPing() {
-  return 'pong'
+  return 'pong';
 }
 
 function lfGetDocumentName() {
   try {
     if (app.documents.length > 0) {
-      return 'OK|' + app.activeDocument.name
+      return 'OK|' + app.activeDocument.name;
     }
-    return 'OK|no-doc'
+    return 'OK|no-doc';
   } catch (e) {
-    return 'ERR|' + (e && e.message ? e.message : String(e))
+    return 'ERR|' + (e && e.message ? e.message : String(e));
   }
 }
 
@@ -48,24 +48,24 @@ function lfGetDocumentName() {
  */
 function lfCheckMain(path) {
   try {
-    var file = new File(path)
-    if (!file.exists) return 'ERR|fichier introuvable : ' + path
-    file.encoding = 'UTF-8'
-    if (!file.open('r')) return 'ERR|lecture refusee : ' + path
-    var source = file.read()
-    file.close()
-    if (!source || !source.length) return 'ERR|fichier vide'
+    var file = new File(path);
+    if (!file.exists) return 'ERR|fichier introuvable : ' + path;
+    file.encoding = 'UTF-8';
+    if (!file.open('r')) return 'ERR|lecture refusee : ' + path;
+    var source = file.read();
+    file.close();
+    if (!source || !source.length) return 'ERR|fichier vide';
 
     try {
-      eval(source)
+      eval(source);
     } catch (parseError) {
       var where =
-        parseError.line === undefined ? '' : 'ligne ' + parseError.line + ' : '
-      return 'ERR|' + where + parseError.message
+        parseError.line === undefined ? '' : 'ligne ' + parseError.line + ' : ';
+      return 'ERR|' + where + parseError.message;
     }
-    return 'OK|' + source.length + ' octets, lfPing ' + typeof lfPing
+    return 'OK|' + source.length + ' octets, lfPing ' + typeof lfPing;
   } catch (e) {
-    return 'ERR|' + (e && e.message ? e.message : String(e))
+    return 'ERR|' + (e && e.message ? e.message : String(e));
   }
 }
 
@@ -77,10 +77,8 @@ function lfCheckMain(path) {
  */
 function lfEngineInfo() {
   try {
-    return (
-      'OK|' + $.version + ' · ' + $.os + ' · ' + app.name + ' ' + app.version
-    )
+    return 'OK|' + $.version + ' · ' + $.os + ' · ' + app.name + ' ' + app.version;
   } catch (e) {
-    return 'ERR|' + (e && e.message ? e.message : String(e))
+    return 'ERR|' + (e && e.message ? e.message : String(e));
   }
 }
