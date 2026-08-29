@@ -114,6 +114,13 @@ export class FakeItem {
     return copy
   }
 
+  /** Position dans la pile, telle que la doublure la retient. */
+  zOrderCalls: string[] = []
+
+  zOrder(method: string): void {
+    this.zOrderCalls.push(method)
+  }
+
   /** Déplacement d'un conteneur à l'autre, dans un même document. */
   move(target: FakeLayer | FakeGroup, placement: string): void {
     if (this.refuseMove) throw new Error('deplacement refuse : ' + this.label)
@@ -258,6 +265,7 @@ export class FakeLayer {
 }
 
 export class FakeArtboard {
+  name = ''
   constructor(public artboardRect: Bounds) {}
 }
 
@@ -274,7 +282,7 @@ function createCollection<T>(factory: () => T): T[] & { add: () => T } {
 
 export class FakeDocument {
   layers: FakeLayer[] = [new FakeLayer()]
-  artboards: FakeArtboard[]
+  artboards: FakeArtboard[] & { add?: (rect: Bounds) => FakeArtboard }
 
   /**
    * Sélection : dans Illustrator c'est une vue vivante sur les objets marqués,
@@ -323,7 +331,15 @@ export class FakeDocument {
     width: number,
     height: number,
   ) {
-    this.artboards = [new FakeArtboard([0, 0, width, -height])]
+    const boards = [new FakeArtboard([0, 0, width, -height])] as FakeArtboard[] & {
+      add?: (rect: Bounds) => FakeArtboard
+    }
+    boards.add = (rect: Bounds) => {
+      const board = new FakeArtboard([...rect] as Bounds)
+      boards.push(board)
+      return board
+    }
+    this.artboards = boards
     for (const layer of this.layers) layer.ownerDocument = this
   }
 
@@ -427,16 +443,39 @@ class FakeApp {
     })
   }
 
-  /** Document que le prochain `open` renverra, pour scénariser un composant. */
+  /**
+   * Document que `open` renverra, pour scénariser un composant.
+   *
+   * Il sert à chaque ouverture, recopié : ouvrir deux fois le même fichier
+   * rend deux fois le même contenu, comme le fait Illustrator. Servir
+   * l'original une seule fois laissait les ouvertures suivantes sur un
+   * document vide, et faisait passer pour un défaut ce qui n'en était pas un.
+   */
   nextOpened: FakeDocument | null = null
 
   open(file: { fsName: string }): FakeDocument {
     if (this.nextOpened) {
-      const prepared = this.nextOpened
-      this.nextOpened = null
-      this.documents.push(prepared)
-      this.activeDocument = prepared
-      return prepared
+      const model = this.nextOpened
+      const copy = new FakeDocument(
+        model.name,
+        model.documentColorSpace,
+        Math.abs(
+          model.artboards[0].artboardRect[2] - model.artboards[0].artboardRect[0],
+        ),
+        Math.abs(
+          model.artboards[0].artboardRect[1] - model.artboards[0].artboardRect[3],
+        ),
+      )
+      copy.layers[0].items = model.layers[0].items.map((item) => {
+        const clone = new FakeItem(item.typename, [...item.visibleBounds], item.label)
+        clone.refuseDuplicate = item.refuseDuplicate
+        clone.refuseMove = item.refuseMove
+        clone.refuseMoveOnCopy = item.refuseMoveOnCopy
+        return clone
+      })
+      this.documents.push(copy)
+      this.activeDocument = copy
+      return copy
     }
     const doc = new FakeDocument(
       file.fsName.split('/').pop() ?? 'ouvert',
@@ -663,6 +702,8 @@ export function loadExtendScript(): Host {
     'lfExportAI',
     'lfWriteIco',
     'lfPackageBackground',
+    'lfBuildPreview',
+    'lfClosePreview',
   ]
 
   const factory = new Function(

@@ -1043,6 +1043,24 @@
           </div>
 
           <div class="section">
+            <h2 class="section-title">Planche vivante</h2>
+            <label class="check">
+              <input type="checkbox" id="live-preview" checked />
+              <span class="check-label"
+                >Tenir une planche à jour dans Illustrator</span
+              >
+            </label>
+            <p class="summary">
+              Une colonne par composant capturé, une ligne par déclinaison. Elle
+              s ouvre à la première capture et se complète ensuite, sans se
+              refermer.
+            </p>
+            <button class="button small" id="close-preview">
+              Fermer la planche
+            </button>
+          </div>
+
+          <div class="section">
             <h2 class="section-title">Planche de revue</h2>
             <p class="summary" id="package-summary"></p>
             <button class="button small" id="build-package" data-t="create_board" disabled>
@@ -1669,12 +1687,14 @@
           'NAME_VARIABLES', 'PREFLIGHT_MANUAL', 'SOCIAL_PRESETS', 'call',
           'checkContrast', 'checkHostScript', 'clearLog', 'countFailures',
           'countWarnings', 'defaultTemplate', 'deliveryName', 'describeError',
-          'evaluatePreflight', 'folderTemplate', 'formatBytes', 'formatDuration',
-          'gridSettings', 'inkColor', 'log', 'logHistory',
-          'planDirectories', 'planExport', 'planPackageGrid', 'planSocialKit',
-          'readDocumentInfo', 'runDiagnostics', 'runFullExport', 'runPackageBuild',
-          'runSocialKit', 'sanitize', 'schemeTitle', 'snapshotMatches',
-          'totalBytes', 'verifySnapshot',
+          'evaluatePreflight', 'folderTemplate', 'formatBytes', 'formatColorMap',
+          'formatDuration', 'gridSettings', 'hexToRgb', 'inkColor',
+          'log', 'logHistory', 'perceivedLuminance', 'planDirectories',
+          'planExport', 'planPackageGrid', 'planSocialKit', 'readDocumentInfo',
+          'runDiagnostics', 'runFullExport', 'runPackageBuild', 'runSocialKit',
+          'sanitize', 'schemeTitle', 'snapshotMatches', 'totalBytes',
+          'verifySnapshot',
+
         ]
 
         /** Fonctions attendues et absentes du moteur chargé. */
@@ -2030,6 +2050,9 @@
           studio: { name: '', designer: '', email: '', website: '' },
           diagnostics: null,
           hostScript: null,
+          // Planche vivante dans Illustrator, complétée à chaque capture.
+          livePreview: true,
+          previewNotice: '',
           // Lot interrompu retrouvé au démarrage, une fois vérifié sur disque.
           resume: null,
           social: {
@@ -2098,6 +2121,7 @@
           clientName: '',
           destination: '',
           social: null,
+          livePreview: true,
           blockOnPreflight: false,
           preflightMode: 'print',
           rememberSchemes: true,
@@ -2307,6 +2331,7 @@
           }
 
           var checks = [
+            ['live-preview', state.livePreview !== false],
             ['doc-enabled', state.documentation !== false],
             ['remember-schemes', state.rememberSchemes !== false],
             ['block-on-preflight', !!state.blockOnPreflight],
@@ -3965,7 +3990,11 @@
           if (state.lastError) html += renderError(state.lastError)
 
           // Un avertissement n'est pas une erreur : il informe sans bloquer.
-          var notices = [state.refusedNotice, state.mappingNotice]
+          var notices = [
+            state.refusedNotice,
+            state.mappingNotice,
+            state.previewNotice
+          ]
           for (var n = 0; n < notices.length; n += 1) {
             if (!notices[n]) continue
             html += '<p class="notice">' + escapeHtml(notices[n]) + '</p>'
@@ -4488,9 +4517,84 @@
               state.refusedNotice = ''
             }
 
+            updatePreview(component)
             renderComponents()
             renderDerived()
           })
+        }
+
+        /**
+         * Décrit les lignes de la planche de prévisualisation.
+         *
+         * Chaque déclinaison devient `id:teinte:libellé:fond:encre`. Le fond
+         * n'est posé que là où la déclinaison serait invisible sans lui — une
+         * version blanche sur un plan blanc ne se voit pas.
+         */
+        function previewRows() {
+          var schemes = activeSchemes()
+          var rows = []
+          for (var i = 0; i < schemes.length; i += 1) {
+            var scheme = schemes[i]
+            // L'encre est mesurée sur une source sombre, qui tient lieu de
+            // tracé de logo ordinaire : une déclinaison qui l'éclaircit —
+            // blanche, réserve, personnalisée claire — a besoin d'un fond
+            // sombre pour se voir. Mesuré : noir 0, couleur 29, réserve 226,
+            // blanc 255.
+            var ink = engine.hexToRgb(
+              engine.inkColor(scheme, '#1D1D1D', state.threshold)
+            )
+            var ground = ink && engine.perceivedLuminance(ink) > 140 ? '1D1D1D' : ''
+            rows.push(
+              [
+                scheme.id,
+                (scheme.hex || '').replace('#', ''),
+                engine.schemeTitle(scheme).replace(/[:\u001f]/g, ' '),
+                ground,
+                ground ? 'E3E3E3' : '6E6E6E',
+                engine.formatColorMap(scheme.map)
+              ].join(':')
+            )
+          }
+          return rows.join(String.fromCharCode(31))
+        }
+
+        /**
+         * Met la planche de prévisualisation à jour après une capture.
+         *
+         * Elle vit dans Illustrator, à côté du document de l'utilisateur, et
+         * se complète d'une colonne à chaque composant capturé. Un échec n'en
+         * est pas un pour la capture elle-même : le composant est défini, le
+         * panneau le dit, et la planche se signale à part.
+         */
+        function updatePreview(component) {
+          if (!state.livePreview || !component.path) return
+
+          var rows = previewRows()
+          if (!rows) return
+
+          engine.call(
+            'lfBuildPreview',
+            [
+              component.name,
+              component.path,
+              rows,
+              state.threshold
+            ],
+            function (result) {
+              if (!result.ok) {
+                state.previewNotice =
+                  'Planche de prévisualisation : ' + result.value
+                renderMessages()
+                return
+              }
+              var fields = String(result.value).split(String.fromCharCode(31))
+              var missed = fields[3] || ''
+              state.previewNotice = missed
+                ? 'Planche de prévisualisation — cellules manquées : ' + missed
+                : ''
+              renderMessages()
+            }
+          )
         }
 
         /** Régénère la vignette d'un composant depuis son fichier. */
@@ -5022,6 +5126,22 @@
 
         byId('build-social').onclick = function () {
           guard('kit reseaux sociaux', buildSocialKit)
+        }
+
+        byId('live-preview').onchange = function () {
+          state.livePreview = this.checked
+          persistProject()
+        }
+
+        byId('close-preview').onclick = function () {
+          guard('fermeture de la planche', function () {
+            engine.call('lfClosePreview', [], function (result) {
+              state.previewNotice = result.ok
+                ? ''
+                : 'Fermeture de la planche : ' + result.value
+              renderMessages()
+            })
+          })
         }
 
         byId('check-host-script').onclick = function () {

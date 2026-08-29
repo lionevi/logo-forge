@@ -1121,3 +1121,55 @@ describe('silhouettes des types de composant', () => {
     expect(block.slice(0, 400)).toContain('stroke="currentColor"')
   })
 })
+
+describe('planche vivante', () => {
+  it('se met à jour après chaque capture', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('component.method = fields[9]'))
+    expect(block.slice(0, 900)).toContain('updatePreview(component)')
+    expect(SCRIPT).toContain("engine.call(\n            'lfBuildPreview'")
+  })
+
+  it('décrit une ligne par déclinaison retenue', () => {
+    const block = SCRIPT.slice(SCRIPT.indexOf('function previewRows('))
+    expect(block.slice(0, 1400)).toContain('activeSchemes()')
+    expect(block.slice(0, 1400)).toContain('engine.schemeTitle(scheme)')
+  })
+
+  it('pose un fond sombre là où la déclinaison serait invisible', () => {
+    // Mesuré sur une encre sombre : noir 0, couleur 29, réserve 226, blanc 255.
+    const block = SCRIPT.slice(SCRIPT.indexOf('function previewRows('))
+    expect(block.slice(0, 1400)).toContain('engine.hexToRgb(')
+    expect(block.slice(0, 1400)).toContain('perceivedLuminance(ink) > 140')
+  })
+
+  it('donne à chaque déclinaison sa propre table de correspondance', () => {
+    // Deux couleurs personnalisées n'ont pas la même : une table unique pour
+    // toute la planche en aurait recoloré une de travers.
+    const block = SCRIPT.slice(SCRIPT.indexOf('function previewRows('))
+    expect(block.slice(0, 1400)).toContain('engine.formatColorMap(scheme.map)')
+  })
+
+  it('n’échoue jamais la capture pour une planche ratée', () => {
+    // Le composant est défini : la planche se signale à part.
+    // Bornée à la fonction : au-delà commencent les autres, qui échouent
+    // légitimement.
+    const from = SCRIPT.indexOf('function updatePreview(')
+    const body = SCRIPT.slice(from, SCRIPT.indexOf('\n        function ', from + 10))
+
+    expect(body).toContain('state.previewNotice')
+    expect(body).not.toContain('fail(')
+  })
+
+  it('se commande, et le réglage est retenu', () => {
+    // Un état sans commande serait un réglage fantôme.
+    expect(HTML).toContain('id="live-preview"')
+    expect(SCRIPT).toContain('state.livePreview = this.checked')
+    expect(SCRIPT).toContain("['live-preview', state.livePreview !== false]")
+    expect(SCRIPT).toMatch(/PERSISTED_SETTINGS = \{[\s\S]*livePreview: true/)
+  })
+
+  it('laisse refermer la planche', () => {
+    expect(HTML).toContain('id="close-preview"')
+    expect(SCRIPT).toContain("'lfClosePreview'")
+  })
+})

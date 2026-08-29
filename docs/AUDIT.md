@@ -826,3 +826,40 @@ nommait que le chemin du fichier. Le diagnostic a donc porté d'abord sur
 `setComponent`, qui n'y était pour rien — il vérifie déjà que des objets ont
 été copiés et que le fichier n'est pas vide, et aurait refusé de définir le
 composant. Les causes sont désormais collectées et jointes au message.
+
+### Planche vivante — ce que le dépôt avait déjà, et ce qui manquait
+
+La grille composants × déclinaisons existait : c'est la **planche de revue**,
+produite d'un bloc par `lfCreatePackage` / `lfPlaceComponent` / `lfAddLabel`.
+Ce qui manquait n'était pas la grille, c'était son **rythme** : une planche qui
+s'ouvre à la première capture et se complète d'une colonne à chaque suivante,
+sans se refermer.
+
+La fonctionnalité est donc bâtie sur les primitives existantes —
+`openComponent` (copie de travail : le fichier du composant n'est jamais
+recoloré), `applyColorScheme` (déjà éprouvé), et les aides de placement — plutôt
+qu'en parallèle.
+
+**Trois écarts à la proposition reçue, chacun pour une raison mesurée :**
+
+- **Le document ne peut pas se retrouver par son nom.** `document.name` n'est
+  pas assignable dans Illustrator ; un document non enregistré s'appelle
+  « sans-titre ». Chercher par préfixe n'aurait jamais rien trouvé, et chaque
+  capture aurait ouvert une planche de plus. La planche est donc tenue par
+  référence, comme `session` et `packageDocument` le sont déjà, avec une
+  vérification qu'elle est encore ouverte — le designer a pu la fermer.
+- **`app.executeMenuCommand('undo')` pour rétablir les couleurs** aurait porté
+  sur le document actif, qui n'est plus le bon à ce moment-là, et l'annulation
+  scriptée est réputée imprévisible. Ouvrir une copie de travail par ligne
+  supprime la question : il n'y a rien à annuler.
+- **Positionner `pasted[0]` seul** aurait laissé les autres objets d'un logo
+  multi-tracés là où le collage les avait mis. Les copies sont regroupées, puis
+  le groupe est mis à l'échelle et centré.
+
+**Un défaut trouvé en éprouvant, pas en relisant :** la règle qui décide du
+fond sombre appelait `perceivedLuminance` avec un hexadécimal, alors qu'elle
+attend un triplet. Le résultat était `NaN`, la comparaison toujours fausse, et
+**aucune ligne blanche n'aurait reçu de fond** — la planche aurait montré des
+cellules vides en affirmant les avoir remplies. Mesuré depuis, sur une encre
+sombre : noir 0, couleur 29, réserve 226, blanc 255. Le seuil est posé à 140,
+sur ces valeurs.

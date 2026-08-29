@@ -2066,6 +2066,331 @@ var LogoForge = (function () {
     }
   }
 
+  /* ---------------------------------------------------------------------- *
+   * Document de prévisualisation
+   *
+   * Une planche qui se construit au fur et à mesure : une ligne par
+   * déclinaison, une colonne par composant capturé. Elle reste ouverte entre
+   * deux captures — c'est ce qui la distingue de la planche de revue, produite
+   * d'un bloc à la demande.
+   *
+   * Le document est tenu par référence, et non retrouvé par son nom : le nom
+   * d'un document Illustrator n'est pas assignable, un document non enregistré
+   * s'appelle « sans-titre ». Chercher par nom aurait créé une planche de plus
+   * à chaque capture.
+   * ---------------------------------------------------------------------- */
+
+  var previewDocument = null;
+  var previewColumns = 0;
+  var previewRows = 0;
+
+  /** Géométrie de la planche, en points. */
+  var PREVIEW = {
+    labelWidth: 150,
+    cellWidth: 400,
+    cellHeight: 200,
+    margin: 40,
+    labelSize: 14
+  };
+
+  /** La planche est-elle encore ouverte ? L'utilisateur a pu la fermer. */
+  function previewIsOpen() {
+    if (!previewDocument) return false;
+    try {
+      for (var i = 0; i < app.documents.length; i += 1) {
+        if (app.documents[i] === previewDocument) return true;
+      }
+    } catch (checkError) {
+      // Document fermé : l'accès lève plutôt que de rendre faux.
+    }
+    previewDocument = null;
+    previewColumns = 0;
+    previewRows = 0;
+    return false;
+  }
+
+  /** Rectangle du plan de travail d'une ligne, pour un nombre de colonnes. */
+  function previewRowRect(row, columns) {
+    // `-0 * x` vaut -0 : anodin pour Illustrator, déroutant dans un rapport.
+    var top = row === 0 ? 0 : -row * (PREVIEW.cellHeight + PREVIEW.margin);
+    var width =
+      PREVIEW.labelWidth +
+      columns * (PREVIEW.cellWidth + PREVIEW.margin) +
+      PREVIEW.margin;
+    return [0, top, width, top - PREVIEW.cellHeight];
+  }
+
+  /** Couleur RVB à partir d'un hexadécimal, pour les fonds et les libellés. */
+  function rgbFromHex(hex) {
+    var clean = String(hex).replace('#', '');
+    var color = new RGBColor();
+    color.red = parseInt(clean.substring(0, 2), 16) || 0;
+    color.green = parseInt(clean.substring(2, 4), 16) || 0;
+    color.blue = parseInt(clean.substring(4, 6), 16) || 0;
+    return color;
+  }
+
+  /**
+   * Peint le fond d'une ligne.
+   *
+   * Une déclinaison blanche sur un plan de travail blanc est invisible : la
+   * ligne qui la porte reçoit un fond sombre, sans quoi la planche mentirait
+   * par omission.
+   */
+  function paintPreviewRow(rect, hex) {
+    var width = Math.abs(rect[2] - rect[0]);
+    var height = Math.abs(rect[1] - rect[3]);
+    var ground = previewDocument.pathItems.rectangle(rect[1], rect[0], width, height);
+    ground.filled = true;
+    ground.fillColor = rgbFromHex(hex);
+    ground.stroked = false;
+    try {
+      ground.zOrder(ZOrderMethod.SENDTOBACK);
+    } catch (orderError) {
+      // Posé avant tout le reste : il est déjà au fond.
+    }
+    return ground;
+  }
+
+  /** Écrit le libellé d'une ligne, à gauche de sa cellule. */
+  function writePreviewLabel(rect, text, hex) {
+    var frame = previewDocument.textFrames.add();
+    frame.contents = String(text);
+    try {
+      frame.textRange.characterAttributes.size = PREVIEW.labelSize;
+      frame.textRange.characterAttributes.fillColor = rgbFromHex(hex || '969696');
+    } catch (attributeError) {
+      // Police ou attribut refusé : le libellé reste lisible par défaut.
+    }
+    frame.position = [rect[0] + PREVIEW.margin, rect[1] - PREVIEW.margin];
+    return frame;
+  }
+
+  /**
+   * Ouvre la planche de prévisualisation, ou la retrouve.
+   *
+   * @param rows déclinaisons, décrites `id | teinte | libellé | fond`.
+   */
+  function ensurePreviewDocument(rows) {
+    if (previewIsOpen()) return previewDocument;
+
+    var first = previewRowRect(0, 1);
+    previewDocument = app.documents.add(
+      DocumentColorSpace.RGB,
+      Math.abs(first[2] - first[0]),
+      Math.abs(first[1] - first[3])
+    );
+    previewColumns = 0;
+    previewRows = rows.length;
+
+    for (var r = 0; r < rows.length; r += 1) {
+      var rect = previewRowRect(r, 1);
+      var board =
+        r === 0 ? previewDocument.artboards[0] : previewDocument.artboards.add(rect);
+      board.artboardRect = rect;
+      try {
+        board.name = rows[r].label;
+      } catch (nameError) {
+        // Le nom d'un plan de travail peut être refusé ; la planche reste
+        // lisible grâce à son libellé écrit.
+      }
+      if (rows[r].ground) paintPreviewRow(rect, rows[r].ground);
+      writePreviewLabel(rect, rows[r].label, rows[r].ink);
+    }
+
+    return previewDocument;
+  }
+
+  /** Élargit chaque plan de travail pour accueillir une colonne de plus. */
+  function widenPreview(columns) {
+    for (var r = 0; r < previewDocument.artboards.length; r += 1) {
+      previewDocument.artboards[r].artboardRect = previewRowRect(r, columns);
+    }
+  }
+
+  /**
+   * Ajoute une colonne à la planche de prévisualisation.
+   *
+   * Une colonne par composant, une ligne par déclinaison. Le composant est
+   * ouvert en copie de travail — le fichier d'origine n'est jamais recoloré —
+   * et refermé après chaque ligne, ce qui dispense d'annuler quoi que ce soit.
+   *
+   * @param spec déclinaisons, séparées par UNIT, chacune
+   *   `id:teinte:libellé:fond:encre:correspondances`.
+   * @returns lignes, colonnes, cellules remplies, cellules manquées.
+   */
+  function buildPreviewColumn(componentName, path, spec, threshold) {
+    try {
+      var raw = String(spec).split(UNIT);
+      var rows = [];
+      for (var i = 0; i < raw.length; i += 1) {
+        if (!raw[i]) continue;
+        var parts = raw[i].split(':');
+        rows.push({
+          id: parts[0] || 'fullColor',
+          hex: parts[1] || '',
+          label: parts[2] || parts[0] || '',
+          ground: parts[3] || '',
+          ink: parts[4] || '',
+          // La table de correspondance appartient à la déclinaison : deux
+          // couleurs personnalisées n'ont pas la même.
+          map: parts[5] || ''
+        });
+      }
+      if (rows.length === 0) return err('aucune declinaison a prévisualiser');
+
+      var source = new File(path);
+      if (!source.exists) return err('composant introuvable : ' + path);
+
+      var fresh = !previewIsOpen();
+      ensurePreviewDocument(rows);
+      var column = previewColumns;
+      widenPreview(column + 1);
+
+      var placed = 0;
+      var missed = [];
+
+      for (var r = 0; r < rows.length && r < previewDocument.artboards.length; r += 1) {
+        var opened = openComponent(path);
+        if (opened.indexOf('OK') !== 0) {
+          missed.push(rows[r].label + ' : ouverture');
+          continue;
+        }
+
+        if (rows[r].id !== 'fullColor') {
+          var applied = applyColorScheme(
+            rows[r].id,
+            rows[r].hex,
+            threshold,
+            rows[r].map
+          );
+          if (applied.indexOf('OK') !== 0) {
+            endSession();
+            missed.push(rows[r].label + ' : recolorage');
+            continue;
+          }
+        }
+
+        var work = session.document;
+        var items = topLevelItems(work);
+        if (items.length === 0) {
+          endSession();
+          missed.push(rows[r].label + ' : composant vide');
+          continue;
+        }
+
+        var refusals = [];
+        app.activeDocument = work;
+        var copies = [];
+        var layer = previewDocument.layers[0];
+        for (var k = 0; k < items.length; k += 1) {
+          try {
+            copies.push(items[k].duplicate(layer, ElementPlacement.PLACEATEND));
+          } catch (dupError) {
+            if (refusals.length < 2) refusals.push(describe(dupError));
+          }
+        }
+        if (copies.length === 0) {
+          copies = copyThrough(work, previewDocument, items, refusals);
+        }
+        endSession();
+
+        if (copies.length === 0) {
+          missed.push(rows[r].label + (refusals.length ? ' : ' + refusals[0] : ''));
+          continue;
+        }
+
+        app.activeDocument = previewDocument;
+        var group = previewDocument.groupItems.add();
+        var grouped = 0;
+        for (var c = 0; c < copies.length; c += 1) {
+          try {
+            copies[c].move(group, ElementPlacement.PLACEATEND);
+            grouped += 1;
+          } catch (moveError) {
+            try {
+              copies[c].remove();
+            } catch (removeError) {
+              /* déjà retirée */
+            }
+          }
+        }
+        if (grouped === 0) {
+          try {
+            group.remove();
+          } catch (removeError) {
+            /* déjà retiré */
+          }
+          missed.push(rows[r].label + ' : regroupement');
+          continue;
+        }
+
+        placeInPreviewCell(group, r, column);
+        placed += 1;
+      }
+
+      previewColumns = column + 1;
+      app.activeDocument = previewDocument;
+
+      return ok(
+        [
+          previewRows,
+          previewColumns,
+          placed,
+          missed.join(' ; '),
+          fresh ? 'nouvelle' : 'mise a jour',
+          componentName
+        ].join(UNIT)
+      );
+    } catch (e) {
+      return err(describe(e));
+    }
+  }
+
+  /** Met un groupe à l'échelle de sa cellule, et l'y centre. */
+  function placeInPreviewCell(group, row, column) {
+    var rect = previewRowRect(row, previewColumns + 1);
+    var cellLeft =
+      rect[0] + PREVIEW.labelWidth + column * (PREVIEW.cellWidth + PREVIEW.margin);
+    var cellTop = rect[1] - PREVIEW.margin;
+    var boxWidth = PREVIEW.cellWidth - PREVIEW.margin;
+    var boxHeight = PREVIEW.cellHeight - PREVIEW.margin * 2;
+
+    var bounds = group.visibleBounds;
+    var width = Math.abs(bounds[2] - bounds[0]);
+    var height = Math.abs(bounds[1] - bounds[3]);
+    if (!width || !height) return;
+
+    // Jamais agrandi : un petit composant grossi paraîtrait plus imposant
+    // qu'il n'est, et la planche sert justement à comparer.
+    var scale = Math.min(boxWidth / width, boxHeight / height, 1);
+    if (isFinite(scale) && scale > 0 && scale !== 1) {
+      group.resize(scale * 100, scale * 100);
+    }
+
+    var placedBounds = group.visibleBounds;
+    var placedWidth = Math.abs(placedBounds[2] - placedBounds[0]);
+    var placedHeight = Math.abs(placedBounds[1] - placedBounds[3]);
+    group.position = [
+      cellLeft + (boxWidth - placedWidth) / 2,
+      cellTop - (boxHeight - placedHeight) / 2
+    ];
+  }
+
+  /** Referme la planche de prévisualisation, sans l'enregistrer. */
+  function closePreviewDocument() {
+    if (!previewIsOpen()) return ok('aucune planche');
+    try {
+      previewDocument.close(SaveOptions.DONOTSAVECHANGES);
+    } catch (closeError) {
+      return err(describe(closeError));
+    }
+    previewDocument = null;
+    previewColumns = 0;
+    previewRows = 0;
+    return ok('fermee');
+  }
+
   /** Écrit un libellé sur la planche. */
   function addLabelAt(text, left, top, size) {
     try {
@@ -2212,6 +2537,8 @@ var LogoForge = (function () {
     writeTextFile: writeTextFile,
     writeIco: writeIco,
     setPackageBackground: setPackageBackground,
+    buildPreviewColumn: buildPreviewColumn,
+    closePreviewDocument: closePreviewDocument,
     listFiles: listFiles,
     beginSession: beginSession,
     endSession: endSession,
@@ -2262,6 +2589,13 @@ function lfPing() {
  * l'exposerait pas ne doit pas empêcher le panneau de démarrer : l'anglais
  * sert alors de repli, comme le fait Illustrator lui-même.
  */
+function lfBuildPreview(componentName, path, schemes, threshold) {
+  return LogoForge.buildPreviewColumn(componentName, path, schemes, threshold);
+}
+function lfClosePreview() {
+  return LogoForge.closePreviewDocument();
+}
+
 function lfGetLocale() {
   try {
     var locale = String(app.locale || '');
