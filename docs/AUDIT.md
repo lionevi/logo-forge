@@ -1005,3 +1005,43 @@ quand elle ne construit rien. Le nom cherché dans le journal était par ailleur
 L'ajout d'une couleur personnalisée trace de même son début, son refus et son
 ajout — le bouton « + Color Scheme » a bien son gestionnaire, éprouvé par un
 clic réel dans le scénario navigateur.
+
+## BUG-027 — `input[type=color]` est inerte dans CEP
+
+Symptômes rapportés, tous les trois cohérents avec la même cause : la pipette
+ne fait rien, les champs RVB refusent la frappe, aucune couleur ne peut être
+choisie. `input[type=color]` délègue à une fenêtre native que le Chromium
+embarqué de CEP ne gréé pas : l'élément existe, se peint, et n'ouvre rien.
+
+**Approche retenue : un sélecteur dessiné dans le panneau, et une pastille qui
+imite le champ remplacé.** Les trois `input[type=color]` deviennent des boutons
+`.swatch-field` dont la propriété `.value` est redéfinie
+(`Object.defineProperty`) : le reste du panneau continue de lire et d'écrire
+`.value`, et `.click()` ouvre toujours un sélecteur. Aucun appelant n'a été
+réécrit — c'est ce qui garantit qu'aucun n'a été oublié.
+
+Le sélecteur lui-même : carré saturation/luminosité en dégradés CSS empilés
+sur la teinte pure, glissière de teinte en dégradé à six arrêts, aperçu,
+champ hexadécimal et trois champs RVB, tous éditables au clavier. Aucune
+librairie, aucun `canvas`, ES5 strict — les mêmes contraintes que le reste du
+panneau, vérifiées par le contrôle acorn déjà en place.
+
+**Trois détails qui décident de l'usage :**
+
+- **La teinte est tenue en TSV, pas déduite du RVB.** Un gris n'a pas de
+  teinte : la recalculer ferait sauter la glissière au rouge dès qu'on approche
+  du bord gauche du carré.
+- **Le suivi du glissement vit sur `document`.** La souris sort du carré bien
+  avant que le doigt ne se relève ; un `onmousemove` posé sur le carré
+  décrocherait au premier débordement.
+- **Le champ en cours de frappe n'est jamais réécrit.** Reformater « 26 » en
+  « #262626 » sous les doigts rend la saisie impossible ; une saisie
+  incomplète ne repeint rien.
+
+Éprouvé dans Chromium, aux gestes réels : glissement dans le carré, clic sur la
+glissière, frappe hexadécimale, frappe d'une composante, flèches du clavier,
+« Annuler » qui ne laisse aucune trace, « Valider » qui applique, la pastille
+d'une ligne existante qui rouvre le sélecteur sur sa couleur, et Échap. Les
+conversions TSV ↔ RVB sont éprouvées sur le code livré lui-même, extrait du
+panneau et exécuté tel quel — recopier ces calculs dans l'épreuve n'aurait
+rien prouvé.

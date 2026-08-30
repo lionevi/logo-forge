@@ -43,7 +43,14 @@ export async function run(browser) {
   )
 
   await page.fill('#custom-name', 'Bleu marque')
-  await page.fill('#custom-hex', '#2680eb')
+  // La couleur se choisit dans le sélecteur du panneau : le champ natif
+  // n'existe plus, et le remplir directement ne prouverait rien du chemin réel.
+  await page.click('#custom-hex')
+  await page.waitForTimeout(150)
+  await page.fill('#cp-hex', '#2680eb')
+  await page.waitForTimeout(120)
+  await page.click('#cp-apply')
+  await page.waitForTimeout(150)
   await page.click('#add-custom')
   await page.waitForTimeout(200)
   scenario.equal(

@@ -754,14 +754,100 @@
         font-family: inherit;
         font-size: 12px;
       }
-      input[type='color'] {
+      /*
+        Champ couleur.
+
+        `input[type=color]` ouvre, dans CEP, une fenêtre native qui n'y est pas
+        gréée : la pipette reste inerte et les champs RVB refusent la frappe.
+        Le champ est donc une pastille qui ouvre le sélecteur du panneau.
+      */
+      .swatch-field {
+        display: block;
         width: 100%;
         height: 26px;
-        padding: 1px;
+        margin-bottom: 8px;
+        padding: 0;
         border: 1px solid #4a4a4a;
         border-radius: 4px;
-        background: #252525;
         cursor: pointer;
+      }
+      .swatch-field:focus {
+        border-color: #2680eb;
+        outline: none;
+      }
+      .swatch-field[disabled] {
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      /* Sélecteur de couleur du panneau. */
+      .cp-area {
+        position: relative;
+        height: 148px;
+        margin-bottom: 12px;
+        border: 1px solid #4a4a4a;
+        border-radius: 4px;
+        background-image: linear-gradient(
+            to top,
+            rgb(0, 0, 0),
+            rgba(0, 0, 0, 0)
+          ),
+          linear-gradient(to right, rgb(255, 255, 255), rgba(255, 255, 255, 0));
+        cursor: crosshair;
+      }
+      .cp-area:focus,
+      .cp-hue:focus {
+        border-color: #2680eb;
+        outline: none;
+      }
+      .cp-cursor {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        margin: -6px 0 0 -6px;
+        border: 2px solid #ffffff;
+        border-radius: 50%;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+      }
+      .cp-hue {
+        position: relative;
+        height: 16px;
+        margin-bottom: 12px;
+        border: 1px solid #4a4a4a;
+        border-radius: 4px;
+        background-image: linear-gradient(
+          to right,
+          #ff0000 0%,
+          #ffff00 17%,
+          #00ff00 33%,
+          #00ffff 50%,
+          #0000ff 67%,
+          #ff00ff 83%,
+          #ff0000 100%
+        );
+        cursor: ew-resize;
+      }
+      .cp-hue-cursor {
+        position: absolute;
+        top: -2px;
+        width: 6px;
+        height: 18px;
+        margin-left: -3px;
+        border: 1px solid #ffffff;
+        border-radius: 2px;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+      }
+      .cp-preview {
+        height: 30px;
+        margin-bottom: 8px;
+        border: 1px solid #4a4a4a;
+        border-radius: 4px;
+      }
+      .cp-label {
+        display: block;
+        margin-bottom: 2px;
+        color: #a9a9a9;
+        font-size: 10px;
       }
       input[type='range'] {
         width: 100%;
@@ -959,6 +1045,12 @@
         height: 300px;
         margin-bottom: -150px;
       }
+      .dialog.picker {
+        top: auto;
+        bottom: 50%;
+        height: 420px;
+        margin-bottom: -210px;
+      }
       .dialog h3 {
         margin: 0 0 12px;
         font-size: 13px;
@@ -1113,7 +1205,13 @@
               </div>
               <div class="col">
                 <label for="custom-hex">Couleur</label>
-                <input type="color" id="custom-hex" value="#2680eb" />
+                <button
+                  type="button"
+                  class="swatch-field"
+                  id="custom-hex"
+                  data-value="#2680eb"
+                  aria-label="Choisir la couleur"
+                ></button>
               </div>
             </div>
             <button class="button small" id="add-custom">+ Color Scheme</button>
@@ -1127,7 +1225,13 @@
               logo sera posé.
             </p>
             <label class="check-row">
-              <input type="color" id="contrast-custom" value="#2680eb" />
+              <button
+                type="button"
+                class="swatch-field"
+                id="contrast-custom"
+                data-value="#2680eb"
+                aria-label="Choisir la couleur à éprouver"
+              ></button>
               <span class="check-label" style="width: auto">Fond personnalisé</span>
             </label>
             <div id="contrast-list"></div>
@@ -1464,7 +1568,13 @@
                 </div>
                 <div class="col-4">
                   <label for="social-background">Couleur</label>
-                  <input type="color" id="social-background" value="#FFFFFF" />
+                  <button
+                    type="button"
+                    class="swatch-field"
+                    id="social-background"
+                    data-value="#FFFFFF"
+                    aria-label="Choisir la couleur de fond"
+                  ></button>
                 </div>
                 <div class="col-4">
                   <label for="social-margin">Marge (%)</label>
@@ -1552,6 +1662,47 @@
             </div>
             <div class="col">
               <button class="button small" id="close-settings">Fermer</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sélecteur de couleur -->
+      <div class="veil" id="color-veil">
+        <div class="dialog picker">
+          <h2 class="section-title" id="color-title">Couleur</h2>
+          <div class="cp-area" id="cp-area" tabindex="0" role="application"
+            aria-label="Saturation et luminosité, réglables aux flèches">
+            <span class="cp-cursor" id="cp-cursor"></span>
+          </div>
+          <div class="cp-hue" id="cp-hue" tabindex="0" role="slider"
+            aria-label="Teinte, réglable aux flèches" aria-valuemin="0"
+            aria-valuemax="359" aria-valuenow="0">
+            <span class="cp-hue-cursor" id="cp-hue-cursor"></span>
+          </div>
+          <div class="cp-preview" id="cp-preview"></div>
+          <label class="cp-label" for="cp-hex">Hexadécimal</label>
+          <input type="text" id="cp-hex" maxlength="7" spellcheck="false" />
+          <div class="row">
+            <div class="col">
+              <label class="cp-label" for="cp-r">R</label>
+              <input type="text" id="cp-r" maxlength="3" />
+            </div>
+            <div class="col">
+              <label class="cp-label" for="cp-g">V</label>
+              <input type="text" id="cp-g" maxlength="3" />
+            </div>
+            <div class="col">
+              <label class="cp-label" for="cp-b">B</label>
+              <input type="text" id="cp-b" maxlength="3" />
+            </div>
+          </div>
+          <div class="row">
+            <div class="col">
+              <button class="button small" id="cp-cancel">Annuler</button>
+            </div>
+            <div class="col">
+              <button class="button small primary" id="cp-apply">Valider</button>
             </div>
           </div>
         </div>
@@ -1749,6 +1900,7 @@
           'evaluatePreflight', 'folderTemplate', 'formatBytes', 'formatColorMap',
           'formatDuration', 'gridSettings', 'hexToRgb', 'inkColor',
           'log', 'logHistory', 'perceivedLuminance', 'planDirectories',
+          'rgbToHex',
           'planExport', 'planPackageGrid', 'planSocialKit', 'readDocumentInfo',
           'runDiagnostics', 'runFullExport', 'runPackageBuild', 'runSocialKit',
           'sanitize', 'schemeTitle', 'snapshotMatches', 'totalBytes',
@@ -4681,6 +4833,229 @@
           })
         }
 
+        /* ---------------------------------------------------------------- *
+         * Sélecteur de couleur
+         *
+         * `input[type=color]` ouvre une fenêtre native que CEP ne gréé pas :
+         * la pipette reste inerte, les champs RVB refusent la frappe, et le
+         * designer ne peut pas choisir sa couleur. Le sélecteur est donc
+         * dessiné dans le panneau — carré saturation/luminosité, glissière de
+         * teinte, champs hexadécimal et RVB — sans aucune dépendance, en
+         * ES5 strict.
+         * ---------------------------------------------------------------- */
+
+        /** Couleur en cours d'édition, en TSV : la teinte survit au gris. */
+        var pickerHsv = { h: 0, s: 0, v: 0 }
+
+        /** Ce qu'on fait de la couleur validée, et d'où elle vient. */
+        var pickerCommit = null
+        var pickerOrigin = null
+
+        /** Zone tirée à la souris : 'area', 'hue', ou rien. */
+        var pickerDrag = ''
+
+        /**
+         * Convertit une couleur TSV en RVB.
+         *
+         * @param h teinte en degrés, s et v de 0 à 1.
+         */
+        function hsvToRgb(h, s, v) {
+          var sector = ((h % 360) + 360) % 360 / 60
+          var index = Math.floor(sector)
+          var rest = sector - index
+          var p = v * (1 - s)
+          var q = v * (1 - s * rest)
+          var t = v * (1 - s * (1 - rest))
+          var table = [
+            [v, t, p],
+            [q, v, p],
+            [p, v, t],
+            [p, q, v],
+            [t, p, v],
+            [v, p, q]
+          ]
+          var triplet = table[index % 6]
+          return [
+            Math.round(triplet[0] * 255),
+            Math.round(triplet[1] * 255),
+            Math.round(triplet[2] * 255)
+          ]
+        }
+
+        /** Convertit une couleur RVB en TSV. */
+        function rgbToHsv(rgb) {
+          var r = rgb[0] / 255
+          var g = rgb[1] / 255
+          var b = rgb[2] / 255
+          var max = Math.max(r, g, b)
+          var min = Math.min(r, g, b)
+          var span = max - min
+
+          var h = 0
+          if (span !== 0) {
+            if (max === r) h = 60 * (((g - b) / span + 6) % 6)
+            else if (max === g) h = 60 * ((b - r) / span + 2)
+            else h = 60 * ((r - g) / span + 4)
+          }
+          return { h: h, s: max === 0 ? 0 : span / max, v: max }
+        }
+
+        /**
+         * Relit une saisie hexadécimale.
+         *
+         * Le dièse est facultatif et la forme courte acceptée : ce qu'on tape
+         * dans un champ n'a pas à être ce qu'on stocke. Rend `null` tant que la
+         * saisie n'est pas complète, pour ne pas repeindre à chaque frappe.
+         */
+        function normalizeHex(text) {
+          var clean = String(text || '').replace(/[^0-9a-fA-F]/g, '')
+          if (clean.length === 3) {
+            clean =
+              clean.charAt(0) + clean.charAt(0) +
+              clean.charAt(1) + clean.charAt(1) +
+              clean.charAt(2) + clean.charAt(2)
+          }
+          if (clean.length !== 6) return null
+          return '#' + clean.toLowerCase()
+        }
+
+        /** Couleur courante du sélecteur, en RVB. */
+        function pickerRgb() {
+          return hsvToRgb(pickerHsv.h, pickerHsv.s, pickerHsv.v)
+        }
+
+        /**
+         * Repeint le sélecteur d'après l'état TSV.
+         *
+         * @param typing champ en cours de frappe, laissé intact : réécrire
+         *   « 26 » en « #262626 » sous les doigts rendrait la saisie
+         *   impossible.
+         */
+        function paintPicker(typing) {
+          var rgb = pickerRgb()
+          var hex = engine.rgbToHex(rgb)
+          var pure = engine.rgbToHex(hsvToRgb(pickerHsv.h, 1, 1))
+
+          var area = byId('cp-area')
+          if (area) area.style.backgroundColor = pure
+          var cursor = byId('cp-cursor')
+          if (cursor) {
+            cursor.style.left = pickerHsv.s * 100 + '%'
+            cursor.style.top = (1 - pickerHsv.v) * 100 + '%'
+          }
+          var hue = byId('cp-hue')
+          if (hue) hue.setAttribute('aria-valuenow', String(Math.round(pickerHsv.h)))
+          var hueCursor = byId('cp-hue-cursor')
+          if (hueCursor) hueCursor.style.left = (pickerHsv.h / 360) * 100 + '%'
+          var preview = byId('cp-preview')
+          if (preview) preview.style.background = hex
+
+          if (typing !== 'cp-hex' && byId('cp-hex')) byId('cp-hex').value = hex
+          var fields = ['cp-r', 'cp-g', 'cp-b']
+          for (var i = 0; i < fields.length; i += 1) {
+            if (typing === fields[i]) continue
+            var field = byId(fields[i])
+            if (field) field.value = String(rgb[i])
+          }
+        }
+
+        /** Pose une couleur dans le sélecteur, teinte comprise. */
+        function setPickerColor(hex) {
+          var rgb = engine.hexToRgb(hex)
+          if (!rgb) return
+          var hsv = rgbToHsv(rgb)
+          // Un gris n'a pas de teinte : conserver celle du curseur évite que
+          // la glissière ne saute au rouge dès qu'on approche du bord gauche.
+          pickerHsv.h = hsv.s === 0 ? pickerHsv.h : hsv.h
+          pickerHsv.s = hsv.s
+          pickerHsv.v = hsv.v
+        }
+
+        /**
+         * Ouvre le sélecteur sur une couleur.
+         *
+         * @param commit reçoit la couleur validée ; rien n'est appliqué tant
+         *   que le designer n'a pas validé, et « Annuler » ne laisse aucune
+         *   trace.
+         */
+        function openColorPicker(hex, title, commit) {
+          setPickerColor(hex || '#000000')
+          pickerCommit = commit
+          var label = byId('color-title')
+          if (label) label.innerHTML = escapeHtml(title || 'Couleur')
+          byId('color-veil').className = 'veil on'
+          paintPicker('')
+          var area = byId('cp-area')
+          if (area && area.focus) area.focus()
+        }
+
+        /** Referme le sélecteur, sans rien appliquer. */
+        function closeColorPicker() {
+          byId('color-veil').className = 'veil'
+          pickerCommit = null
+          pickerOrigin = null
+          pickerDrag = ''
+        }
+
+        /** Position d'un clic dans un élément, de 0 à 1 sur chaque axe. */
+        function ratioWithin(element, event) {
+          var box = element.getBoundingClientRect()
+          var x = box.width ? (event.clientX - box.left) / box.width : 0
+          var y = box.height ? (event.clientY - box.top) / box.height : 0
+          return [
+            Math.max(0, Math.min(1, x)),
+            Math.max(0, Math.min(1, y))
+          ]
+        }
+
+        /** Lit la saturation et la luminosité sous le curseur. */
+        function pickFromArea(event) {
+          var at = ratioWithin(byId('cp-area'), event)
+          pickerHsv.s = at[0]
+          pickerHsv.v = 1 - at[1]
+          paintPicker('')
+        }
+
+        /** Lit la teinte sous le curseur. */
+        function pickFromHue(event) {
+          pickerHsv.h = ratioWithin(byId('cp-hue'), event)[0] * 360
+          paintPicker('')
+        }
+
+        /**
+         * Convertit un champ `input[type=color]` en pastille.
+         *
+         * Le reste du panneau continue de lire et d'écrire `.value`, et
+         * `.click()` ouvre toujours un sélecteur : seule la fenêtre native est
+         * remplacée. Sans cette équivalence, chaque appelant aurait été à
+         * réécrire, et le prochain oublié aurait été muet.
+         */
+        function colorField(id, title) {
+          var element = byId(id)
+          if (!element) return
+
+          element.style.background = element.getAttribute('data-value') || '#000000'
+          Object.defineProperty(element, 'value', {
+            get: function () {
+              return this.getAttribute('data-value') || ''
+            },
+            set: function (hex) {
+              var clean = normalizeHex(hex) || '#000000'
+              this.setAttribute('data-value', clean)
+              this.style.background = clean
+            }
+          })
+
+          element.onclick = function () {
+            var field = this
+            pickerOrigin = field
+            openColorPicker(field.value, title, function (chosen) {
+              field.value = chosen
+              if (typeof field.onchange === 'function') field.onchange.call(field)
+            })
+          }
+        }
+
         /**
          * Décrit les lignes de la planche de prévisualisation.
          *
@@ -4965,7 +5340,8 @@
 
           var chip = target.getAttribute('data-chip')
           if (chip !== null) {
-            // Le sélecteur natif est le seul disponible dans CEP.
+            // La pastille du formulaire sert d'éditeur : elle ouvre le
+            // sélecteur du panneau et rend la couleur à la ligne visée.
             var picker = byId('custom-hex')
             picker.value = state.customs[parseInt(chip, 10)].hex
             picker.setAttribute('data-editing', chip)
@@ -4979,6 +5355,121 @@
           state.customs[parseInt(renamed, 10)].name = event.target.value
           persistProject()
           renderDerived()
+        }
+
+        /* ---------------------------------------------------------------- *
+         * Gestes du sélecteur de couleur
+         * ---------------------------------------------------------------- */
+
+        byId('cp-area').onmousedown = function (event) {
+          pickerDrag = 'area'
+          pickFromArea(event)
+          // Sans cela, le glissement sélectionne le texte du dialogue et le
+          // curseur décroche dès qu'on sort du carré.
+          if (event.preventDefault) event.preventDefault()
+        }
+
+        byId('cp-hue').onmousedown = function (event) {
+          pickerDrag = 'hue'
+          pickFromHue(event)
+          if (event.preventDefault) event.preventDefault()
+        }
+
+        // Le suivi vit sur le document : la souris sort du carré bien avant
+        // que le doigt ne se relève.
+        document.onmousemove = function (event) {
+          if (pickerDrag === 'area') pickFromArea(event)
+          else if (pickerDrag === 'hue') pickFromHue(event)
+        }
+
+        document.onmouseup = function () {
+          pickerDrag = ''
+        }
+
+        /** Déplace le curseur aux flèches, d'un pas ou d'un grand pas. */
+        function pickerKey(event, horizontal, vertical) {
+          var step = event.shiftKey ? 10 : 1
+          var key = event.keyCode
+          var moved = false
+
+          if (key === 37 || key === 39) {
+            var dx = (key === 39 ? 1 : -1) * step
+            if (horizontal === 'hue') {
+              pickerHsv.h = ((pickerHsv.h + dx + 360) % 360)
+            } else {
+              pickerHsv.s = Math.max(0, Math.min(1, pickerHsv.s + dx / 100))
+            }
+            moved = true
+          } else if (vertical && (key === 38 || key === 40)) {
+            var dy = (key === 38 ? 1 : -1) * step
+            pickerHsv.v = Math.max(0, Math.min(1, pickerHsv.v + dy / 100))
+            moved = true
+          }
+
+          if (!moved) return
+          paintPicker('')
+          if (event.preventDefault) event.preventDefault()
+        }
+
+        byId('cp-area').onkeydown = function (event) {
+          pickerKey(event, 'sat', true)
+        }
+
+        byId('cp-hue').onkeydown = function (event) {
+          pickerKey(event, 'hue', false)
+        }
+
+        byId('cp-hex').oninput = function () {
+          var hex = normalizeHex(this.value)
+          if (!hex) return
+          setPickerColor(hex)
+          paintPicker('cp-hex')
+        }
+
+        byId('color-veil').oninput = function (event) {
+          var id = event.target.id
+          if (id !== 'cp-r' && id !== 'cp-g' && id !== 'cp-b') return
+
+          var parts = [byId('cp-r').value, byId('cp-g').value, byId('cp-b').value]
+          var rgb = []
+          for (var i = 0; i < 3; i += 1) {
+            var number = parseInt(parts[i], 10)
+            // Un champ vidé pour être retapé ne doit pas repeindre en noir.
+            if (isNaN(number)) return
+            rgb.push(Math.max(0, Math.min(255, number)))
+          }
+          setPickerColor(engine.rgbToHex(rgb))
+          paintPicker(id)
+        }
+
+        // Échap referme, Entrée valide : un dialogue qui ne se referme qu'à la
+        // souris se referme mal dans un panneau étroit.
+        byId('color-veil').onkeydown = function (event) {
+          if (event.keyCode === 27) {
+            closeColorPicker()
+          } else if (event.keyCode === 13) {
+            byId('cp-apply').onclick()
+          } else {
+            return
+          }
+          if (event.preventDefault) event.preventDefault()
+        }
+
+        byId('cp-apply').onclick = function () {
+          var chosen = engine.rgbToHex(pickerRgb())
+          var commit = pickerCommit
+          closeColorPicker()
+          if (commit) commit(chosen)
+        }
+
+        byId('cp-cancel').onclick = function () {
+          closeColorPicker()
+        }
+
+        // Un clic hors du dialogue referme, comme les autres voiles du
+        // panneau ; un clic dedans ne doit rien faire.
+        byId('color-veil').onmousedown = function (event) {
+          if (event.target === this) closeColorPicker()
         }
 
         byId('contrast-custom').onchange = function () {
@@ -5764,6 +6255,12 @@
           if (LF_BRAND.icon) byId('brand-mark').innerHTML = LF_BRAND.icon
           byId('open-settings').innerHTML = ICONS.settings
           byId('refresh').innerHTML = ICONS.refresh
+          // Avant tout rendu : `renderSocialPresets` écrit dans un de ces
+          // champs, et il doit déjà savoir se peindre.
+          beacon('champs de couleur')
+          colorField('custom-hex', 'Couleur personnalisée')
+          colorField('contrast-custom', 'Couleur à éprouver')
+          colorField('social-background', 'Fond des canevas')
           beacon('projet enregistré relu')
           restoreProject()
           applyRestoredSettings()
