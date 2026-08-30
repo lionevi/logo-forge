@@ -12,6 +12,7 @@
  * du même code portent la même empreinte, et un panneau modifié la change.
  */
 
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 
 /** Marqueur remplacé dans `panel-cep.html`. */
@@ -23,12 +24,37 @@ export function fingerprint(text) {
 }
 
 /**
+ * Commit d'où sort le panneau, s'il y en a un.
+ *
+ * L'empreinte dit si deux panneaux diffèrent ; le commit dit **lequel** on
+ * regarde. C'est ce qui manquait pour trancher entre « le défaut n'est pas
+ * corrigé » et « ce dossier a été construit avant le correctif » : le second
+ * cas se lit désormais sur le panneau lui-même.
+ *
+ * Un `+` signale un arbre de travail modifié : le panneau ne correspond alors
+ * exactement à aucun commit.
+ */
+export function sourceRevision(root) {
+  try {
+    const run = (...args) =>
+      execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    const head = run('rev-parse', '--short', 'HEAD')
+    const dirty = run('status', '--porcelain') !== ''
+    return head + (dirty ? '+' : '')
+  } catch (error) {
+    // Pas de dépôt, ou pas de git : l'empreinte seule fait l'affaire.
+    return ''
+  }
+}
+
+/**
  * Pose l'empreinte dans le panneau.
  *
  * @param html panneau, marque déjà intégrée.
  * @param date jour de construction, au format ISO court.
+ * @param revision commit d'où sort le panneau, éventuellement vide.
  */
-export function stampBuild(html, date) {
+export function stampBuild(html, date, revision) {
   if (html.indexOf(MARKER) < 0) {
     throw new Error(`marqueur « ${MARKER} » absent de panel-cep.html`)
   }
@@ -36,7 +62,10 @@ export function stampBuild(html, date) {
   // pas changer ce qu'elle mesure.
   const stamp = fingerprint(html.replace(MARKER, ''))
   return {
-    html: html.replace(MARKER, JSON.stringify({ stamp: stamp, date: date })),
+    html: html.replace(
+      MARKER,
+      JSON.stringify({ stamp: stamp, date: date, commit: revision || '' }),
+    ),
     stamp: stamp,
   }
 }

@@ -1612,6 +1612,8 @@
                 À comparer avec l'empreinte écrite par « npm run build ». Si
                 elles diffèrent, Illustrator sert une copie ancienne : c'est le
                 dossier des extensions qu'il faut remettre à jour, pas le code.
+                Le commit indiqué dit de quelle version du code ce panneau
+                a été construit.
               </p>
               <p class="notice" id="build-stamp">Empreinte inconnue.</p>
             </div>
@@ -3779,7 +3781,14 @@
           }
           host.className = 'notice done'
           host.innerHTML = escapeHtml(
-            'Empreinte ' + LF_BUILD.stamp + ' — construit le ' + (LF_BUILD.date || '?')
+            'Empreinte ' +
+              LF_BUILD.stamp +
+              ' — construit le ' +
+              (LF_BUILD.date || '?') +
+              // Le commit tranche la question qui revient : « le défaut n'est
+              // pas corrigé » ou « ce dossier a été construit avant le
+              // correctif ». Un « + » signale un arbre modifié.
+              (LF_BUILD.commit ? ' depuis ' + LF_BUILD.commit : '')
           )
         }
 

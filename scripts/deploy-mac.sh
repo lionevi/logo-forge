@@ -143,7 +143,8 @@ echo "=== Déploiement terminé ==="
 echo
 echo "Illustrator → Fenêtre → Extensions → Logo Forge"
 echo
-echo "Empreinte déployée : $SOURCE_STAMP"
+SOURCE_COMMIT=$(grep -o '"commit":"[^"]*"' dist/index.html | head -1 | cut -d'"' -f4)
+echo "Empreinte déployée : $SOURCE_STAMP${SOURCE_COMMIT:+ (depuis $SOURCE_COMMIT)}"
 echo "Réglages → Diagnostics affiche la même en tête du volet. Si elle diffère,"
 echo "Illustrator sert une copie ancienne — ce n est pas le code qui est en cause."
 echo

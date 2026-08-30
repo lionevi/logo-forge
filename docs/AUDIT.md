@@ -1082,3 +1082,35 @@ montré et qu'aucune épreuve ne mesurait : les boutons « Annuler » et
 « Valider » étaient rognés par le bas du dialogue, et le champ B passait à la
 ligne. Carré ramené à 120 px, dialogue à 380, et trois colonnes égales pour
 R, V, B.
+
+## BUG-029 — Le panneau dit maintenant de quel commit il sort
+
+Signalement : « il reste 3 occurrences de `<input type="color">` dans
+`dist/index.html` après le build ».
+
+**Trois** est un nombre exact, et c'est ce qui a permis de trancher : le
+panneau en portait exactement trois jusqu'au commit `298e3d8`, et zéro depuis
+`650b11f`.
+
+```
+source à 298e3d8 : 3 occurrence(s)
+source à 650b11f : 0 occurrence(s)
+source à HEAD    : 0 occurrence(s)
+```
+
+Le `dist/` éprouvé sortait donc d'un arbre antérieur au correctif. `dist/` est
+dans `.gitignore` : un `git pull` ne le rafraîchit pas, et un `npm run build`
+lancé sur un arbre resté en arrière reproduit fidèlement les trois champs.
+
+L'empreinte posée à BUG-028 disait déjà que deux panneaux diffèrent ; elle ne
+disait pas **lequel** on regardait. Le panneau construit porte désormais aussi
+le commit d'où il sort, avec un `+` quand l'arbre de travail est modifié :
+
+```
+panneau : empreinte 2f68e84, depuis 4a3a109+
+```
+
+Il est écrit à la fin du build, affiché en tête des diagnostics, et rappelé par
+le déploiement. La question « le défaut n'est-il pas corrigé, ou ce dossier
+a-t-il été construit avant le correctif ? » se lit maintenant sur le panneau
+lui-même, sans rien relire.

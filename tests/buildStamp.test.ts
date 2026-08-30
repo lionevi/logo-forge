@@ -13,7 +13,13 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { MARKER, fingerprint, readStamp, stampBuild } from '../scripts/stamp-build.mjs'
+import {
+  MARKER,
+  fingerprint,
+  readStamp,
+  sourceRevision,
+  stampBuild,
+} from '../scripts/stamp-build.mjs'
 
 const HERE = import.meta.dirname
 const PANEL = readFileSync(resolve(HERE, '../src/panel-cep.html'), 'utf8')
@@ -39,12 +45,19 @@ describe('calcul de l’empreinte', () => {
 describe('pose de l’empreinte', () => {
   const document_ = '<html><script>var LF_BUILD = ' + MARKER + '</script></html>'
 
-  it('remplace le marqueur par l’empreinte et la date', () => {
-    const stamped = stampBuild(document_, '2026-08-30')
+  it('remplace le marqueur par l’empreinte, la date et le commit', () => {
+    const stamped = stampBuild(document_, '2026-08-30', 'abc1234')
 
     expect(stamped.html).toContain('"stamp":"' + stamped.stamp + '"')
     expect(stamped.html).toContain('"date":"2026-08-30"')
+    expect(stamped.html).toContain('"commit":"abc1234"')
     expect(stamped.html).not.toContain(MARKER)
+  })
+
+  it('accepte un panneau construit hors dépôt', () => {
+    // Une archive dézippée n'a pas de commit : ce n'est pas une raison de
+    // refuser de construire.
+    expect(stampBuild(document_, '2026-08-30').html).toContain('"commit":""')
   })
 
   it('ne mesure pas le marqueur qu’elle remplace', () => {
@@ -69,6 +82,21 @@ describe('pose de l’empreinte', () => {
   })
 })
 
+describe('commit d’origine', () => {
+  /**
+   * L'empreinte dit si deux panneaux diffèrent ; le commit dit lequel on
+   * regarde. C'est ce qui tranche entre « le défaut n'est pas corrigé » et
+   * « ce dossier a été construit avant le correctif ».
+   */
+  it('rend le commit court du dépôt', () => {
+    expect(sourceRevision(resolve(HERE, '..'))).toMatch(/^[0-9a-f]{7,}\+?$/)
+  })
+
+  it('rend une chaîne vide hors d’un dépôt, sans lever', () => {
+    expect(sourceRevision('/')).toBe('')
+  })
+})
+
 describe('branchement', () => {
   it('le panneau porte le marqueur', () => {
     expect(PANEL).toContain('var LF_BUILD = ' + MARKER)
@@ -83,10 +111,12 @@ describe('branchement', () => {
     // comparaison des tailles laisserait passer une copie ancienne.
     expect(DEPLOY).toContain('(empreinte)')
     expect(DEPLOY).toContain('SOURCE_STAMP')
+    expect(DEPLOY).toContain('SOURCE_COMMIT')
   })
 
-  it('le panneau l’affiche dans ses diagnostics', () => {
+  it('le panneau l’affiche dans ses diagnostics, commit compris', () => {
     expect(PANEL).toContain('id="build-stamp"')
     expect(PANEL).toContain('function renderBuildStamp()')
+    expect(PANEL).toContain('LF_BUILD.commit')
   })
 })
