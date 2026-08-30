@@ -1045,3 +1045,40 @@ d'une ligne existante qui rouvre le sélecteur sur sa couleur, et Échap. Les
 conversions TSV ↔ RVB sont éprouvées sur le code livré lui-même, extrait du
 panneau et exécuté tel quel — recopier ces calculs dans l'épreuve n'aurait
 rien prouvé.
+
+## BUG-028 — Distinguer une copie ancienne d'un défaut non corrigé
+
+Signalement : « le sélecteur custom n'a pas remplacé `input[type=color]` ;
+Safari montre une grille, Illustrator ouvre le sélecteur macOS ».
+
+**Constat mesuré, avant toute correction :** le panneau construit ne contient
+plus aucun champ couleur natif. Les six occurrences de la chaîne
+`input[type=color]` dans `dist/index.html` sont des commentaires, le sélecteur
+CSS du garde-fou, et son message. Compté sur le DOM monté, et non sur le
+fichier : zéro élément. Les trois champs ont été remplacés au commit `650b11f`,
+poussé peu avant ce signalement — le panneau éprouvé était donc antérieur.
+
+Ce n'est pas la première fois qu'une mise au point porte sur un panneau qui
+n'est pas celui qu'on vient de construire, et **une copie ancienne restée dans
+le dossier des extensions se comporte exactement comme un défaut non corrigé.**
+Rien à l'écran ne les distinguait. Trois ajouts pour que cela ne se reproduise
+plus :
+
+- **Une empreinte de build**, calculée sur le contenu du panneau (pas sur
+  l'heure : deux builds du même code portent la même). Elle est écrite à la fin
+  du build, affichée **en tête des diagnostics**, et comparée par
+  `deploy-mac.sh`. Éprouvé : sept caractères modifiés dans la copie déployée ne
+  changent aucune taille de fichier — toutes les vérifications d'octets passent
+  — et la comparaison d'empreinte, elle, refuse le déploiement.
+- **Un garde-fou de build** : `check-panel-boot.mjs` compte les
+  `input[type=color]` sur le DOM monté et refuse la livraison. Éprouvé sur deux
+  injections, l'une écrite dans le document, l'autre fabriquée par le script —
+  toutes deux refusées.
+- **Un garde-fou d'exécution** : au démarrage, le panneau constate lui-même
+  qu'aucun champ natif n'est présent, et l'affiche en clair sinon.
+
+Le sélecteur a par ailleurs été remis d'aplomb sur ce qu'une capture d'écran a
+montré et qu'aucune épreuve ne mesurait : les boutons « Annuler » et
+« Valider » étaient rognés par le bas du dialogue, et le champ B passait à la
+ligne. Carré ramené à 120 px, dialogue à 380, et trois colonnes égales pour
+R, V, B.

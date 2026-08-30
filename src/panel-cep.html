@@ -783,8 +783,8 @@
       /* Sélecteur de couleur du panneau. */
       .cp-area {
         position: relative;
-        height: 148px;
-        margin-bottom: 12px;
+        height: 120px;
+        margin-bottom: 10px;
         border: 1px solid #4a4a4a;
         border-radius: 4px;
         background-image: linear-gradient(
@@ -812,7 +812,7 @@
       .cp-hue {
         position: relative;
         height: 16px;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
         border: 1px solid #4a4a4a;
         border-radius: 4px;
         background-image: linear-gradient(
@@ -838,7 +838,7 @@
         box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
       }
       .cp-preview {
-        height: 30px;
+        height: 26px;
         margin-bottom: 8px;
         border: 1px solid #4a4a4a;
         border-radius: 4px;
@@ -877,6 +877,11 @@
       .col {
         float: left;
         width: 50%;
+        padding: 0 3px;
+      }
+      .col-3 {
+        float: left;
+        width: 33.33%;
         padding: 0 3px;
       }
       .col-4 {
@@ -1048,8 +1053,11 @@
       .dialog.picker {
         top: auto;
         bottom: 50%;
-        height: 420px;
-        margin-bottom: -210px;
+        /* Mesuré : le contenu tient en 372 px. Un dialogue plus haut que le
+           panneau rognerait ses boutons, et « Valider » deviendrait
+           inatteignable dans une fenêtre courte. */
+        height: 380px;
+        margin-bottom: -190px;
       }
       .dialog h3 {
         margin: 0 0 12px;
@@ -1599,6 +1607,16 @@
 
           <div class="pane" id="sub-diag">
             <div class="section">
+              <h2 class="section-title">Version du panneau</h2>
+              <p class="summary">
+                À comparer avec l'empreinte écrite par « npm run build ». Si
+                elles diffèrent, Illustrator sert une copie ancienne : c'est le
+                dossier des extensions qu'il faut remettre à jour, pas le code.
+              </p>
+              <p class="notice" id="build-stamp">Empreinte inconnue.</p>
+            </div>
+
+            <div class="section">
               <h2 class="section-title">Contrôle du système</h2>
               <p class="summary">
                 Interroge Illustrator, une sonde après l'autre. Aucune n'écrit
@@ -1684,15 +1702,15 @@
           <label class="cp-label" for="cp-hex">Hexadécimal</label>
           <input type="text" id="cp-hex" maxlength="7" spellcheck="false" />
           <div class="row">
-            <div class="col">
+            <div class="col-3">
               <label class="cp-label" for="cp-r">R</label>
               <input type="text" id="cp-r" maxlength="3" />
             </div>
-            <div class="col">
+            <div class="col-3">
               <label class="cp-label" for="cp-g">V</label>
               <input type="text" id="cp-g" maxlength="3" />
             </div>
-            <div class="col">
+            <div class="col-3">
               <label class="cp-label" for="cp-b">B</label>
               <input type="text" id="cp-b" maxlength="3" />
             </div>
@@ -2230,6 +2248,15 @@
          * apparence, sans trou ni erreur.
          */
         var LF_BRAND = /* LF_BRAND */ {}
+
+        /**
+         * Empreinte du panneau construit.
+         *
+         * Une copie ancienne restée dans le dossier des extensions se comporte
+         * exactement comme un défaut non corrigé, et rien à l'écran ne les
+         * distingue. L'empreinte, affichée dans les diagnostics, tranche.
+         */
+        var LF_BUILD = /* LF_BUILD */ {}
 
         var STORAGE_KEY = 'logo-forge-project'
 
@@ -3731,6 +3758,51 @@
             html
         }
 
+        /**
+         * Affiche l'empreinte du panneau, et ce qu'elle vaut.
+         *
+         * Un panneau ouvert depuis les sources, sans passer par le build, n'a
+         * pas d'empreinte : le dire évite de chercher une différence là où il
+         * n'y a rien à comparer.
+         */
+        function renderBuildStamp() {
+          var host = byId('build-stamp')
+          if (!host) return
+
+          if (!LF_BUILD.stamp) {
+            host.className = 'notice'
+            host.innerHTML = escapeHtml(
+              'Panneau non construit : ouvert depuis les sources, sans ' +
+                'empreinte. Lancez « npm run build ».'
+            )
+            return
+          }
+          host.className = 'notice done'
+          host.innerHTML = escapeHtml(
+            'Empreinte ' + LF_BUILD.stamp + ' — construit le ' + (LF_BUILD.date || '?')
+          )
+        }
+
+        /**
+         * Refuse les champs couleur natifs, s'il en restait un.
+         *
+         * `input[type=color]` délègue à une fenêtre du système : inerte dans
+         * CEP, et dans Safari elle s'ouvre par-dessus le panneau. Le sélecteur
+         * du panneau les remplace tous ; ce contrôle constate qu'aucun n'est
+         * revenu, au lieu de le supposer.
+         */
+        function checkNativeColorFields() {
+          var natives = document.querySelectorAll('input[type=color]')
+          if (!natives.length) return
+          showError(
+            'Champ couleur natif :',
+            natives.length +
+              ' champ(s) « input type=color » subsistent dans ce panneau. ' +
+              'Ils ouvrent une fenêtre du système, inerte dans CEP. ' +
+              'Le sélecteur du panneau doit les remplacer.'
+          )
+        }
+
         function renderHostScript() {
           var result = state.hostScript
           var host = byId('host-script-result')
@@ -4679,6 +4751,7 @@
             ['variables', renderDocVariables],
             ['diagnostics', renderDiagnostics],
             ['chargement', renderHostScript],
+            ['version', renderBuildStamp],
             ['essai d’export', renderTestExport],
             ['journal', renderLog],
             ['contrôle', renderPreflight],
@@ -5943,6 +6016,7 @@
         }
 
         byId('refresh').onclick = function () {
+          checkNativeColorFields()
           beacon('lecture du document')
           refreshDocument()
           guard('vérification des composants', function () {

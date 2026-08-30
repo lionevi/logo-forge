@@ -1373,3 +1373,36 @@ describe('journal de l’ajout d’une couleur', () => {
     expect(handler).toContain('add-color: ajoutée')
   })
 })
+
+describe('version du panneau', () => {
+  /**
+   * Une copie ancienne restée dans le dossier des extensions se comporte
+   * exactement comme un défaut non corrigé. L'empreinte, affichée en tête des
+   * diagnostics, permet de trancher sans relire un octet.
+   */
+  it('affiche son empreinte en tête des diagnostics', () => {
+    const pane = HTML.slice(
+      HTML.indexOf('id="sub-diag"'),
+      HTML.indexOf('id="export-veil"'),
+    )
+
+    expect(pane.indexOf('id="build-stamp"')).toBeLessThan(
+      pane.indexOf('id="run-diagnostics"'),
+    )
+  })
+
+  it('dit clairement qu’un panneau non construit n’en a pas', () => {
+    const body = SCRIPT.slice(
+      SCRIPT.indexOf('function renderBuildStamp'),
+      SCRIPT.indexOf('function checkNativeColorFields'),
+    )
+
+    expect(body).toContain('Panneau non construit')
+  })
+
+  it('constate l’absence de champ couleur natif au démarrage', () => {
+    expect(SCRIPT).toContain('function checkNativeColorFields()')
+    expect(SCRIPT).toContain("document.querySelectorAll('input[type=color]')")
+    expect(SCRIPT).toMatch(/checkNativeColorFields\(\)\s*\n\s*beacon/)
+  })
+})

@@ -11,6 +11,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
 
 import { collectBrand, inlineBrand } from './scripts/inline-brand.mjs'
+import { stampBuild } from './scripts/stamp-build.mjs'
 
 const root = resolve(import.meta.dirname, 'src')
 const outDir = resolve(import.meta.dirname, 'dist')
@@ -37,11 +38,16 @@ function copyStaticFiles(): Plugin {
       // Le panneau part en un seul fichier ; les SVG de marque déposés dans
       // `src/assets/` y sont intégrés en ligne. Ce qui manque ne casse rien.
       const { brand, notes } = collectBrand(resolve(root, 'assets'))
-      writeFileSync(
-        resolve(outDir, 'index.html'),
+      // L'empreinte est posée en dernier : elle porte sur le panneau tel qu'il
+      // part, marque comprise. C'est elle qui distingue une copie ancienne
+      // restée dans le dossier des extensions d'un défaut non corrigé.
+      const stamped = stampBuild(
         inlineBrand(readFileSync(resolve(root, 'panel-cep.html'), 'utf8'), brand),
+        new Date().toISOString().slice(0, 10),
       )
+      writeFileSync(resolve(outDir, 'index.html'), stamped.html)
       for (const note of notes) process.stdout.write(`marque : ${note}\n`)
+      process.stdout.write(`panneau : empreinte ${stamped.stamp}\n`)
 
       // La version React reste livrée à côté, pour l'hôte UXP.
       copyFileSync(resolve(root, 'index.html'), resolve(outDir, 'panel-react.html'))

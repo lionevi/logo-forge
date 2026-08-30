@@ -119,6 +119,19 @@ else
   printf '   OK      %-24s %s fichiers\n' "(total)" "$deployed_count"
 fi
 
+# L'empreinte dit la même chose que les tailles, mais elle est lisible depuis
+# le panneau : c'est elle qu'on compare quand Illustrator semble servir une
+# ancienne version.
+STAMP=$(grep -o '"stamp":"[0-9a-f]*"' "$EXT/index.html" 2>/dev/null | head -1 | cut -d'"' -f4)
+SOURCE_STAMP=$(grep -o '"stamp":"[0-9a-f]*"' dist/index.html | head -1 | cut -d'"' -f4)
+if [ -z "$STAMP" ] || [ "$STAMP" != "$SOURCE_STAMP" ]; then
+  printf '   ECART   %-24s « %s » sur place, « %s » attendue\n' \
+    "(empreinte)" "$STAMP" "$SOURCE_STAMP"
+  FAILED=1
+else
+  printf '   OK      %-24s %s\n' "(empreinte)" "$STAMP"
+fi
+
 echo
 if [ "$FAILED" != "0" ]; then
   echo "=== ECHEC : le dossier déployé ne correspond pas à dist/ ==="
@@ -129,5 +142,10 @@ fi
 echo "=== Déploiement terminé ==="
 echo
 echo "Illustrator → Fenêtre → Extensions → Logo Forge"
-echo "Puis Réglages → Diagnostics → « Vérifier jsx/main.jsx » pour confirmer"
-echo "que la couche ExtendScript est bien chargée."
+echo
+echo "Empreinte déployée : $SOURCE_STAMP"
+echo "Réglages → Diagnostics affiche la même en tête du volet. Si elle diffère,"
+echo "Illustrator sert une copie ancienne — ce n est pas le code qui est en cause."
+echo
+echo "Puis « Vérifier jsx/main.jsx » pour confirmer que la couche ExtendScript"
+echo "est bien chargée."

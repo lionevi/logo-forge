@@ -7,6 +7,7 @@
 
 export interface Rendered {
   cards: number
+  nativeColorFields: number
   tabs: number
   bodyLength: number
   fatal: string

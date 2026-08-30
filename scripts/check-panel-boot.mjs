@@ -135,6 +135,10 @@ export async function bootPanel(html, options) {
 
   const rendered = {
     cards: document_.querySelectorAll('.comp-card').length,
+    // `input[type=color]` délègue à une fenêtre du système : inerte dans le
+    // Chromium de CEP, et ouverte par-dessus le panneau dans Safari. Comptés
+    // sur le DOM monté, donc y compris ceux qu'un rendu aurait fabriqués.
+    nativeColorFields: document_.querySelectorAll('input[type=color]').length,
     tabs: document_.querySelectorAll('.tabs .tab').length,
     bodyLength: text('.panel-body').length,
     fatal: text('#fatal'),
@@ -155,6 +159,13 @@ export function judge({ faults, rendered }) {
   // est prêt : le lire encore, c'est lire l'endroit exact où ça s'est arrêté.
   if (rendered.beacon) {
     problems.push('démarrage interrompu, dernière étape atteinte : ' + rendered.beacon)
+  }
+  if (rendered.nativeColorFields) {
+    problems.push(
+      `${rendered.nativeColorFields} champ(s) « input type=color » : ` +
+        'la fenêtre du système est inerte dans CEP, le sélecteur du panneau ' +
+        'doit les remplacer',
+    )
   }
   if (rendered.cards === 0) problems.push('aucune carte de composant rendue')
   if (rendered.tabs === 0) problems.push('aucun onglet rendu')

@@ -103,6 +103,33 @@ describe('ce que le contrôle refuse', () => {
     expect(problems.join(' ')).toContain('exception au démarrage')
   })
 
+  it('un champ couleur natif, écrit dans le document', async () => {
+    // Il délègue à une fenêtre du système : inerte dans CEP, ouverte
+    // par-dessus le panneau dans Safari.
+    const natif = LIVING.replace(
+      '<div class="panel">',
+      '<div class="panel"><input type="color" value="#2680eb" />',
+    )
+    const directory = pack(natif)
+    const problems = judge(await boot(natif, directory))
+
+    expect(problems.join(' ')).toContain('input type=color')
+  })
+
+  it('un champ couleur natif fabriqué par le script', async () => {
+    // Le contrôle lit le DOM monté, pas le fichier : un champ créé au rendu
+    // est vu comme un champ écrit à la main.
+    const natif = LIVING.replace(
+      'var witness =',
+      'body.innerHTML += String.fromCharCode(60) + "input type=color>";' +
+        'var witness =',
+    )
+    const directory = pack(natif)
+    const problems = judge(await boot(natif, directory))
+
+    expect(problems.join(' ')).toContain('input type=color')
+  })
+
   it('un corps rendu presque vide', async () => {
     const maigre = LIVING.replace(/for \(var c = 0; c < 4/, 'for (var c = 0; c < 0')
     const directory = pack(maigre)
